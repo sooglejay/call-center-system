@@ -54,7 +54,7 @@ const initDatabase = async () => {
   try {
     console.log('正在检查数据库连接...');
     await pool.query('SELECT NOW()');
-    console.log('数据库连接成功！');
+    console.log('✅ 数据库连接成功！');
 
     // 读取并执行 SQL 初始化脚本
     const sqlPath = path.join(__dirname, 'scripts', 'init-db.sql');
@@ -63,12 +63,15 @@ const initDatabase = async () => {
       console.log('正在执行数据库初始化...');
       const sql = fs.readFileSync(sqlPath, 'utf-8');
       await pool.query(sql);
-      console.log('数据库初始化完成！');
+      console.log('✅ 数据库初始化完成！');
     } else {
-      console.log('SQL 初始化文件不存在，跳过数据库初始化');
+      console.log('⚠️ SQL 初始化文件不存在，跳过数据库初始化');
     }
   } catch (error) {
-    console.error('数据库初始化失败:', error);
+    console.error('❌ 数据库连接失败:', error);
+    console.log('\n💡 提示：请确保 PostgreSQL 已启动');
+    console.log('   本地开发：docker-compose -f docker-compose.db.yml up -d');
+    console.log('   或使用 Railway/Vercel 部署后的云数据库\n');
     // 不阻止应用启动，只是记录错误
   }
 };
