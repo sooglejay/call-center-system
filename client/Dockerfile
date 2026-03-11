@@ -6,29 +6,29 @@ WORKDIR /app
 # 安装 pnpm
 RUN npm install -g pnpm
 
-# 复制 package 文件
-COPY package.json pnpm-lock.yaml* ./
+# 复制依赖文件
+COPY package.json pnpm-lock.yaml ./
 
 # 安装依赖
-RUN pnpm install
+RUN pnpm install --frozen-lockfile
 
 # 复制源代码
 COPY . .
 
-# 构建
-RUN pnpm build
+# 构建（使用默认环境变量）
+RUN pnpm run build
 
-# 生产阶段
+# 生产阶段 - 使用 Nginx
 FROM nginx:alpine AS production
 
-# 复制构建产物
+# 复制构建产物到 Nginx 目录
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# 复制 nginx 配置
+# 复制 Nginx 配置
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # 暴露端口
 EXPOSE 80
 
-# 启动 nginx
+# 启动 Nginx
 CMD ["nginx", "-g", "daemon off;"]

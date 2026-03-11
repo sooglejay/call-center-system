@@ -108,6 +108,12 @@ export const configApi = {
   })
 };
 
+// 通信记录API
+export const communicationApi = {
+  getRecords: (params?: any) => api.get('/communication/records', { params }),
+  getStats: () => api.get('/communication/stats')
+};
+
 import type { User, Customer, CallRecord, Task, AgentConfig, SystemConfig, Stats, DashboardStats, AgentRanking } from '../types';
 export type { User, Customer, CallRecord, Task, AgentConfig, SystemConfig, Stats, DashboardStats, AgentRanking };
 

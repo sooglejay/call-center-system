@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Form, Input, Button, message, Typography } from 'antd';
 import { PhoneOutlined, LockOutlined } from '@ant-design/icons';
-import { authApi } from '../services/api';
-import { useAuthStore } from '../stores';
+import { authApi } from '../../services/api';
+import { useAuthStore } from '../../stores';
 
 const { Title } = Typography;
 

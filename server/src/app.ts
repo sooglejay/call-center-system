@@ -13,6 +13,7 @@ import twilioRoutes from './routes/twilio.routes';
 import configRoutes from './routes/config.routes';
 import reportRoutes from './routes/report.routes';
 import systemRoutes from './routes/system.routes';
+import communicationRoutes from './routes/communication.routes';
 
 dotenv.config();
 
@@ -38,6 +39,7 @@ app.use('/api/twilio', twilioRoutes);
 app.use('/api/config', configRoutes);
 app.use('/api/report', reportRoutes);
 app.use('/api/system', systemRoutes);
+app.use('/api/communication', communicationRoutes);
 
 // 错误处理
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

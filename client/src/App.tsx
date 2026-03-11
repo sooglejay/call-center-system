@@ -11,6 +11,7 @@ import Stats from './pages/admin/Stats';
 import SystemConfig from './pages/admin/SystemConfig';
 import AgentDashboard from './pages/agent/Dashboard';
 import CallList from './pages/agent/CallList';
+import CommunicationRecords from './pages/agent/CommunicationRecords';
 import MyStats from './pages/agent/MyStats';
 import Settings from './pages/agent/Settings';
 
@@ -46,6 +47,7 @@ function App() {
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<AgentDashboard />} />
             <Route path="calls" element={<CallList />} />
+            <Route path="communication" element={<CommunicationRecords />} />
             <Route path="stats" element={<MyStats />} />
             <Route path="settings" element={<Settings />} />
           </Route>

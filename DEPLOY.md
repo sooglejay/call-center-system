@@ -1,223 +1,318 @@
 # 部署指南
 
-## 免费云服务部署（推荐）
+本文档介绍如何将呼叫中心系统部署到生产环境。
 
-本项目支持多种免费云服务部署方案，选择适合你的方式：
+## 部署架构
 
-### 方案一：Vercel + Railway（推荐）
-
-#### 1. 部署前端到 Vercel
-
-```bash
-# 安装 Vercel CLI
-npm i -g vercel
-
-# 登录
-vercel login
-
-# 进入前端目录并部署
-cd client
-vercel
-
-# 生产部署
-vercel --prod
+```
+┌─────────────────┐     ┌──────────────────┐
+│   Vercel        │────▶│   Railway        │
+│   (Frontend)    │     │   (Backend + DB) │
+│                 │◀────│                  │
+└─────────────────┘     └──────────────────┘
+         │                       │
+         ▼                       ▼
+  https://call-center-    https://call-center-api
+  demo.vercel.app         .railway.app
 ```
 
-#### 2. 部署后端到 Railway
+## 快速部署
+
+### 1. 部署后端到 Railway
+
+[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new)
+
+**步骤：**
+
+1. 点击上方按钮或登录 [Railway](https://railway.app)
+2. 选择 "Deploy from GitHub repo"
+3. 选择你的 fork 的仓库
+4. 添加 PostgreSQL 数据库（New → Database → PostgreSQL）
+5. 配置环境变量（见下方）
+6. 部署完成后会获得 API URL: `https://call-center-api.up.railway.app`
+
+**环境变量配置：**
+
+```env
+NODE_ENV=production
+PORT=5001
+JWT_SECRET=your-super-secret-jwt-key
+DATABASE_URL=${{Postgres.DATABASE_URL}}  # Railway 会自动填充
+TWILIO_ACCOUNT_SID=your-twilio-account-sid
+TWILIO_AUTH_TOKEN=your-twilio-auth-token
+TWILIO_PHONE_NUMBER=your-twilio-phone-number
+```
+
+### 2. 部署前端到 Vercel
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new)
+
+**步骤：**
+
+1. 点击上方按钮或登录 [Vercel](https://vercel.com)
+2. 导入 GitHub 仓库
+3. 配置项目：
+   - **Framework Preset**: Vite
+   - **Root Directory**: `client`
+4. 添加环境变量：
+   ```env
+   VITE_API_URL=https://call-center-api.up.railway.app/api
+   ```
+5. 点击 Deploy
+
+## 详细部署步骤
+
+### 后端部署 (Railway)
+
+#### 方法一：通过 Railway CLI
 
 ```bash
 # 安装 Railway CLI
-npm i -g @railway/cli
+npm install -g @railway/cli
 
 # 登录
 railway login
 
-# 进入后端目录
-cd server
-
 # 初始化项目
+cd server
 railway init
 
-# 添加 PostgreSQL 数据库
+# 添加 PostgreSQL
 railway add --database postgres
 
-# 设置环境变量
-railway variables set JWT_SECRET=your-secret
+# 配置环境变量
 railway variables set NODE_ENV=production
+railway variables set JWT_SECRET=your-secret
 
 # 部署
 railway up
 ```
 
-#### 3. 配置前端 API 地址
+#### 方法二：通过 Dockerfile
 
-在 Vercel 控制台设置环境变量：
-- `VITE_API_URL`: 你的 Railway 后端地址 (如 `https://call-center-api.up.railway.app`)
+项目已包含 `server/Dockerfile`，Railway 会自动检测并使用。
 
-### 方案二：Docker Compose 部署
+```dockerfile
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci --only=production
+
+COPY . .
+RUN npm run build
+
+EXPOSE 5001
+
+CMD ["npm", "start"]
+```
+
+### 前端部署 (Vercel)
+
+#### 方法一：通过 Vercel CLI
 
 ```bash
-# 克隆项目
-git clone https://github.com/sooglejay/call-center-system.git
-cd call-center-system
+# 安装 Vercel CLI
+npm install -g vercel
 
-# 启动所有服务
-docker-compose up -d
+# 登录
+vercel login
 
-# 查看日志
-docker-compose logs -f
-
-# 停止服务
-docker-compose down
+# 部署
+cd client
+vercel --prod
 ```
 
-访问地址：
-- 前端: http://localhost:3000
-- 后端 API: http://localhost:5001
-- 数据库: localhost:5432
+#### 方法二：配置文件
 
-### 方案三：Render 部署
+项目已包含 `client/vercel.json`：
 
-1. Fork 本仓库到你的 GitHub
-2. 在 Render 创建 New Web Service
-3. 选择你的仓库
-4. 配置：
-   - Build Command: `cd server && pnpm install && pnpm build`
-   - Start Command: `cd server && pnpm start`
-5. 添加 PostgreSQL 数据库
-6. 设置环境变量
-
-## 环境变量配置
-
-### 必需变量
-
-| 变量名 | 说明 | 示例 |
-|--------|------|------|
-| PORT | 服务端口 | 5001 |
-| DB_HOST | 数据库主机 | localhost |
-| DB_PORT | 数据库端口 | 5432 |
-| DB_NAME | 数据库名 | callcenter |
-| DB_USER | 数据库用户 | callcenter |
-| DB_PASSWORD | 数据库密码 | your_password |
-| JWT_SECRET | JWT 密钥 | your-secret-key |
-
-### 可选变量（Twilio 集成）
-
-| 变量名 | 说明 | 示例 |
-|--------|------|------|
-| TWILIO_ACCOUNT_SID | Twilio Account SID | ACxxxxxxxx |
-| TWILIO_AUTH_TOKEN | Twilio Auth Token | your_auth_token |
-| TWILIO_PHONE_NUMBER | 发信号码 | +1234567890 |
-| TWILIO_CALLBACK_URL | Webhook 回调地址 | https://xxx/api/twilio/webhook |
-
-## GitHub Actions 自动部署
-
-项目已配置 CI/CD，推送到 main 分支会自动：
-
-1. 运行代码检查
-2. 构建前端并部署到 Vercel
-3. 构建后端（可扩展部署到 Railway）
-
-### 配置 Secrets
-
-在 GitHub 仓库 Settings → Secrets → Actions 添加：
-
-```
-VERCEL_TOKEN=your_vercel_token
-VERCEL_ORG_ID=your_org_id
-VERCEL_PROJECT_ID=your_project_id
-RAILWAY_TOKEN=your_railway_token
+```json
+{
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": "vite"
+}
 ```
 
-## 数据库迁移
+## 配置 Twilio
 
-### 自动迁移
+部署完成后，需要在 Twilio 控制台配置 Webhook：
 
-后端启动时会自动创建表结构。
+1. 登录 [Twilio Console](https://console.twilio.com)
+2. 进入 Phone Numbers → Manage → Active numbers
+3. 点击你的号码
+4. 配置 Voice & Fax：
+   - **Accept incoming**: Webhook
+   - **Webhook URL**: `https://call-center-api.railway.app/api/twilio/voice`
+   - **HTTP Method**: POST
+5. 配置 Status Callback：
+   - **Status Callback URL**: `https://call-center-api.railway.app/api/twilio/status`
+   - **Status Callback Events**: 勾选所有选项
 
-### 手动迁移
+## 初始化数据库
 
+部署后需要初始化数据库表：
+
+```bash
+# 连接到 Railway PostgreSQL
+railway connect postgres
+
+# 执行初始化 SQL
+\i server/src/scripts/init-db.sql
+```
+
+或使用 Railway 的 SQL 执行功能。
+
+## 验证部署
+
+### 检查后端
+
+```bash
+curl https://call-center-api.railway.app/api/system/health
+```
+
+预期响应：
+```json
+{
+  "status": "ok",
+  "timestamp": "2024-01-01T00:00:00.000Z"
+}
+```
+
+### 检查前端
+
+访问 `https://call-center-demo.vercel.app`，应能看到登录页面。
+
+## 自定义域名（可选）
+
+### Vercel 自定义域名
+
+1. 进入项目设置 → Domains
+2. 添加你的域名
+3. 按提示配置 DNS
+
+### Railway 自定义域名
+
+1. 进入项目设置 → Domains
+2. 添加你的域名
+3. 配置 DNS CNAME 记录
+
+## 监控与日志
+
+### Railway 日志
+
+```bash
+# 查看实时日志
+railway logs -f
+
+# 查看特定服务日志
+railway logs -s server
+```
+
+### Vercel 日志
+
+```bash
+# 查看部署日志
+vercel logs --production
+```
+
+## 更新部署
+
+### 自动更新（推荐）
+
+配置 GitHub Actions 后，推送到 main 分支会自动触发部署：
+
+```bash
+git add .
+git commit -m "feat: update features"
+git push origin main
+```
+
+### 手动更新
+
+**Railway:**
 ```bash
 cd server
-psql -U your_db_user -d callcenter -f src/scripts/init-db.sql
+railway up
 ```
 
-## 生产环境优化
+**Vercel:**
+```bash
+cd client
+vercel --prod
+```
 
-### 1. 启用 HTTPS
+## 故障排查
 
-使用 Cloudflare 或 Let's Encrypt：
+### 后端问题
+
+**问题：无法连接数据库**
+- 检查 `DATABASE_URL` 环境变量
+- 确认 PostgreSQL 服务已启动
+
+**问题：Twilio 通话失败**
+- 检查 Twilio 配置是否正确
+- 验证 Webhook URL 可访问
+- 检查日志中的错误信息
+
+### 前端问题
+
+**问题：API 请求失败**
+- 检查 `VITE_API_URL` 是否正确
+- 确认后端服务正常运行
+- 检查浏览器控制台网络请求
+
+**问题：404 页面**
+- 确认 `vercel.json` 中 rewrite 配置正确
+
+## 安全建议
+
+1. **JWT Secret**: 使用强随机字符串，至少 32 位
+2. **数据库**: 使用 Railway 提供的内部网络连接
+3. **CORS**: 生产环境限制允许的域名
+4. **HTTPS**: 确保使用 HTTPS（Vercel 和 Railway 默认提供）
+
+## 成本估算
+
+| 服务 | 免费额度 | 预估月费 |
+|------|---------|---------|
+| Vercel | 100GB 带宽 | 免费 |
+| Railway | $5 信用额度 | $5+ |
+| Twilio | 试用金 | 按量付费 |
+
+## 备份策略
+
+定期备份 PostgreSQL 数据库：
 
 ```bash
-# 使用 certbot
-sudo apt install certbot
-sudo certbot --nginx
+# 导出数据
+pg_dump $DATABASE_URL > backup.sql
+
+# 恢复数据
+psql $DATABASE_URL < backup.sql
 ```
 
-### 2. 配置 Nginx 反向代理
+或使用 Railway 的自动备份功能。
 
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-    return 301 https://$server_name$request_uri;
-}
+## 扩展阅读
 
-server {
-    listen 443 ssl;
-    server_name your-domain.com;
-    
-    ssl_certificate /path/to/cert.pem;
-    ssl_certificate_key /path/to/key.pem;
-    
-    location /api {
-        proxy_pass http://localhost:5001;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-    }
-    
-    location / {
-        root /path/to/client/dist;
-        try_files $uri $uri/ /index.html;
-    }
-}
-```
+- [Railway 文档](https://docs.railway.app)
+- [Vercel 文档](https://vercel.com/docs)
+- [Twilio 文档](https://www.twilio.com/docs)
+- [Docker 文档](https://docs.docker.com)
 
-### 3. 监控和日志
+## 获取帮助
 
-使用 PM2 管理服务：
+如有部署问题，请：
 
-```bash
-npm install -g pm2
-
-# 启动
-pm2 start server/dist/app.js --name "call-center-api"
-
-# 保存配置
-pm2 save
-pm2 startup
-
-# 查看日志
-pm2 logs call-center-api
-```
-
-## 常见问题
-
-### 1. 数据库连接失败
-
-检查数据库配置是否正确，确保数据库服务已启动。
-
-### 2. 前端无法连接后端
-
-检查 `VITE_API_URL` 是否配置正确，确保后端服务可访问。
-
-### 3. Twilio 回调不生效
-
-确保服务器有公网 IP，Webhook URL 可访问。
-
-## 支持
-
-如有问题，请提交 Issue 或联系：sooglejay@gmail.com
+1. 查看项目 [Issues](https://github.com/yourusername/call-center-system/issues)
+2. 检查服务日志
+3. 联系支持团队

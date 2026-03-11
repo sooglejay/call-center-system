@@ -1,255 +1,235 @@
-# 自动拨打电话客服销售系统 📞
+# 智能呼叫中心系统
 
-[![CI/CD](https://github.com/sooglejay/call-center-system/actions/workflows/ci.yml/badge.svg)](https://github.com/sooglejay/call-center-system/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org/)
-[![React](https://img.shields.io/badge/react-18-blue.svg)](https://react.dev/)
+<p align="center">
+  <img src="https://img.shields.io/badge/React-18-blue?logo=react" alt="React 18">
+  <img src="https://img.shields.io/badge/Node.js-20-green?logo=node.js" alt="Node.js 20">
+  <img src="https://img.shields.io/badge/PostgreSQL-15-blue?logo=postgresql" alt="PostgreSQL">
+  <img src="https://img.shields.io/badge/Twilio-API-red?logo=twilio" alt="Twilio">
+  <img src="https://img.shields.io/badge/License-MIT-yellow" alt="License">
+</p>
 
-> 基于 Web 的全功能自动拨打电话客服销售系统，支持管理员和客服双角色，集成 Twilio 实现电话拨打、录音等功能。
+一款基于 Web 的智能自动拨打电话客服销售系统，支持管理员和客服双角色，集成 Twilio 实现电话拨打、录音、语音信箱和短信通知等功能。
 
-## ✨ 功能特性
+## 在线演示
+
+- **前台地址**: https://call-center-demo.vercel.app
+- **后台 API**: https://call-center-api.railway.app
+
+> 演示账号：
+> - 管理员：`admin` / `admin123`
+> - 客服：`agent` / `agent123`
+
+## 功能特性
 
 ### 管理员功能
-- 👥 **人员管理** - 对电话销售人员进行增删改查、密码重置
-- 📊 **批量导入客户** - 支持 Excel/CSV/TXT 文件上传，OCR 识别预留
-- 📝 **任务分配** - 圈选客户分配给指定客服作为周/日工作任务
-- 📈 **监控统计** - 查看所有客服的电话拨打情况、业绩完成度排名
+- 仪表盘数据可视化
+- 用户管理（创建/编辑/删除客服账号）
+- 客户管理（导入/分配/跟进）
+- 任务管理（创建外呼任务）
+- 通话记录查看与统计
+- 系统配置（Twilio 集成设置）
 
 ### 客服功能
-- 📱 **电话列表** - 待拨打/已拨打列表，支持多种过滤条件
-- 🤖 **自动拨号** - 一键开始自动拨号，支持选号策略和拨号延迟配置
-- 🎵 **通话录音** - 自动保存录音，支持在线回放
-- 🏆 **业绩查看** - 查看个人业绩统计、排名、完成度
+- 个人工作台
+- 客户电话列表
+- 一键拨号（Twilio 集成）
+- 通话记录与备注
+- 语音信箱查看
+- 短信发送记录
+- 业绩统计
 
-### 技术亮点
-- 🎯 **前后端分离** - React 18 + Node.js + TypeScript
-- 📦 **自动拨号队列** - 智能选号策略，避免重复拨打
-- 🔐 **JWT 认证** - 安全的身份验证机制
-- 🎨 **企业级 UI** - Ant Design 5 美观界面
+### 核心特性
+- 自动拨号支持
+- 通话录音存储
+- **未接通自动转语音信箱**
+- **未接通自动发送短信通知**
+- 实时通话状态监控
+- 响应式设计
 
-## 🚀 在线体验
+## 技术栈
 
-### 演示环境
-- **前台地址**: https://call-center-demo.vercel.app (即将部署)
-- **后台 API**: https://call-center-api.railway.app (即将部署)
+### 前端
+- **React 18** - UI 框架
+- **TypeScript** - 类型安全
+- **Ant Design 5** - 组件库
+- **Zustand** - 状态管理
+- **Vite** - 构建工具
 
-### 演示账号
-```
-管理员: admin / admin123
-客服: agent / agent123
-```
+### 后端
+- **Node.js 20** - 运行时
+- **Express** - Web 框架
+- **TypeScript** - 类型安全
+- **PostgreSQL** - 数据库
+- **Twilio SDK** - 电话服务
+- **JWT** - 身份认证
 
-## 📦 快速开始
+### 部署
+- **Docker** - 容器化
+- **Vercel** - 前端托管
+- **Railway** - 后端托管
+- **GitHub Actions** - CI/CD
+
+## 快速开始
 
 ### 环境要求
 - Node.js >= 20
-- PostgreSQL >= 14
-- pnpm >= 8
+- PostgreSQL >= 15
+- Twilio 账号
 
 ### 本地开发
 
+1. 克隆项目
 ```bash
-# 1. 克隆项目
-git clone https://github.com/sooglejay/call-center-system.git
+git clone https://github.com/yourusername/call-center-system.git
 cd call-center-system
+```
 
-# 2. 安装依赖并启动后端
+2. 安装依赖
+```bash
+# 安装前端依赖
+cd client && npm install
+
+# 安装后端依赖
+cd ../server && npm install
+```
+
+3. 配置环境变量
+
+**server/.env**
+```env
+PORT=5001
+DATABASE_URL=postgresql://user:password@localhost:5432/callcenter
+JWT_SECRET=your-secret-key
+```
+
+4. 初始化数据库
+```bash
 cd server
-pnpm install
-cp .env.example .env
-# 编辑 .env 配置数据库
-pnpm dev
-
-# 3. 新终端 - 安装依赖并启动前端
-cd client
-pnpm install
-pnpm dev
-
-# 4. 访问 http://localhost:3000
+psql -d callcenter -f src/scripts/init-db.sql
 ```
 
-### 数据库初始化
+5. 启动服务
 
-```sql
--- 创建数据库用户和数据库
-CREATE USER callcenter WITH PASSWORD 'your_password';
-CREATE DATABASE callcenter OWNER callcenter;
+```bash
+# 启动后端
+cd server && npm run dev
 
--- 初始化表结构（首次运行自动创建）
--- 或执行 server/src/scripts/init-db.sql
+# 启动前端（新终端）
+cd client && npm run dev
 ```
 
-## 🏗️ 项目架构
+6. 访问系统
+- 前端：http://localhost:5173
+- 后端 API：http://localhost:5001
+
+### Docker 部署
+
+```bash
+# 启动所有服务
+docker-compose up -d
+
+# 查看日志
+docker-compose logs -f
+```
+
+## 生产部署
+
+详见 [DEPLOY.md](./DEPLOY.md)
+
+### 一键部署
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/yourusername/call-center-system&root-directory=client)
+
+[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/your-template)
+
+## Twilio 配置
+
+1. 注册 [Twilio](https://www.twilio.com) 账号
+2. 购买电话号码
+3. 在系统配置页面填写：
+   - Account SID
+   - Auth Token
+   - 发信号码
+   - Webhook 回调 URL
+
+### Webhook 配置
+
+在 Twilio Console 中配置以下 Webhook URL：
+- **Voice Webhook**: `https://your-api.com/api/twilio/voice`
+- **Status Callback**: `https://your-api.com/api/twilio/status`
+
+## 项目结构
 
 ```
 call-center-system/
-├── client/                    # 前端 (React 18 + TypeScript + Ant Design)
+├── client/                 # 前端项目
 │   ├── src/
-│   │   ├── pages/            # 页面组件
-│   │   │   ├── admin/        # 管理员后台
-│   │   │   ├── agent/        # 客服工作台
-│   │   │   └── login/        # 登录页
-│   │   ├── services/         # API 服务
-│   │   └── stores/           # 状态管理 (Zustand)
+│   │   ├── pages/         # 页面组件
+│   │   ├── components/    # 公共组件
+│   │   ├── services/      # API 服务
+│   │   └── stores/        # 状态管理
 │   └── package.json
-│
-├── server/                    # 后端 (Node.js + Express + TypeScript)
+├── server/                 # 后端项目
 │   ├── src/
-│   │   ├── controllers/      # 控制器
-│   │   ├── routes/           # 路由
-│   │   ├── middleware/       # 中间件
-│   │   └── config/           # 配置
+│   │   ├── controllers/   # 控制器
+│   │   ├── routes/        # 路由
+│   │   ├── services/      # 业务服务
+│   │   └── scripts/       # 脚本
 │   └── package.json
-│
-├── .github/workflows/         # CI/CD 配置
-├── docker-compose.yml         # Docker 部署
+├── docker-compose.yml      # Docker 配置
 └── README.md
 ```
 
-## 🔧 配置说明
+## API 文档
 
-### 后端环境变量 (.env)
+### 认证
+- `POST /api/auth/login` - 登录
+- `GET /api/auth/me` - 获取当前用户
 
+### 通话
+- `POST /api/twilio/call` - 拨打电话
+- `GET /api/twilio/call/:sid/status` - 查询通话状态
+- `POST /api/twilio/call/:sid/end` - 结束通话
+
+### 通信记录
+- `GET /api/communication/records` - 获取通信记录
+- `GET /api/communication/stats` - 获取通信统计
+
+更多 API 详见源码。
+
+## 环境变量
+
+### 前端 (.env)
+```env
+VITE_API_URL=http://localhost:5001/api
+```
+
+### 后端 (.env)
 ```env
 PORT=5001
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=callcenter
-DB_USER=callcenter
-DB_PASSWORD=your_password
-JWT_SECRET=your-secret-key
-
-# Twilio 配置（可选）
-TWILIO_ACCOUNT_SID=your_account_sid
-TWILIO_AUTH_TOKEN=your_auth_token
-TWILIO_PHONE_NUMBER=+1234567890
-TWILIO_CALLBACK_URL=https://your-domain.com/api/twilio/webhook
+DATABASE_URL=postgresql://user:pass@host:5432/db
+JWT_SECRET=your-secret
+NODE_ENV=production
 ```
 
-### Twilio 集成
-
-1. 注册 [Twilio](https://www.twilio.com) 账号
-2. 获取 Account SID 和 Auth Token
-3. 购买电话号码
-4. 在系统配置页填入信息
-5. 配置 Webhook URL 用于接收通话状态
-
-## 🚀 部署
-
-### Docker 部署（推荐）
-
-```bash
-# 使用 Docker Compose 一键部署
-docker-compose up -d
-
-# 服务将运行在:
-# - 前端: http://localhost:3000
-# - 后端: http://localhost:5001
-# - 数据库: localhost:5432
-```
-
-### 免费云服务部署
-
-#### 前端部署到 Vercel
-
-```bash
-# 安装 Vercel CLI
-npm i -g vercel
-
-# 部署
-cd client
-vercel --prod
-```
-
-#### 后端部署到 Railway
-
-```bash
-# 安装 Railway CLI
-npm i -g @railway/cli
-
-# 部署
-cd server
-railway login
-railway init
-railway up
-```
-
-### GitHub Actions 自动部署
-
-项目已配置 CI/CD，每次推送到 main 分支会自动：
-- ✅ 运行代码检查
-- ✅ 构建前端
-- ✅ 构建后端
-- ✅ 部署到预览环境
-
-## 📝 API 文档
-
-### 认证相关
-```
-POST /api/auth/login          # 登录
-GET  /api/auth/me             # 获取当前用户
-```
-
-### 用户管理
-```
-GET    /api/users             # 获取用户列表
-POST   /api/users             # 创建用户
-PUT    /api/users/:id         # 更新用户
-DELETE /api/users/:id         # 删除用户
-```
-
-### 客户管理
-```
-GET    /api/customers         # 获取客户列表
-GET    /api/customers/agent/list  # 获取客服的客户
-POST   /api/customers/import  # 批量导入
-```
-
-### 通话管理
-```
-GET    /api/calls             # 获取通话记录
-POST   /api/calls             # 创建通话
-GET    /api/calls/next/dial   # 获取下一个拨打客户
-```
-
-## 🛠️ 技术栈
-
-| 层级 | 技术 |
-|------|------|
-| 前端 | React 18, TypeScript, Ant Design 5, Zustand, Axios |
-| 后端 | Node.js, Express, TypeScript, JWT |
-| 数据库 | PostgreSQL |
-| 电话服务 | Twilio API |
-| 部署 | Docker, GitHub Actions, Vercel, Railway |
-
-## 📝 更新日志
-
-### v1.0.0 (2024-03)
-- ✨ 初始版本发布
-- ✨ 管理员后台完整功能
-- ✨ 客服工作台完整功能
-- ✨ 自动拨号系统
-- ✨ Twilio 集成
-
-## 🤝 贡献指南
+## 贡献指南
 
 欢迎提交 Issue 和 Pull Request！
 
-1. Fork 本仓库
-2. 创建你的分支 (`git checkout -b feature/AmazingFeature`)
+1. Fork 本项目
+2. 创建功能分支 (`git checkout -b feature/AmazingFeature`)
 3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
 4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 创建 Pull Request
+5. 打开 Pull Request
 
-## 📄 许可证
+## 许可证
 
-[MIT](LICENSE) © sooglejay
+[MIT](LICENSE) © 2024 Call Center System
 
-## 💬 联系方式
+## 支持
 
-- Email: sooglejay@gmail.com
-- GitHub: [@sooglejay](https://github.com/sooglejay)
+如有问题，请提交 [Issue](https://github.com/yourusername/call-center-system/issues) 或联系支持团队。
 
 ---
 
-⭐ 如果这个项目对你有帮助，请给个 Star！
+<p align="center">Made with ❤️ by Call Center Team</p>
