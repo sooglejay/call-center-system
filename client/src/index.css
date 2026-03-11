@@ -1,0 +1,102 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f0f2f5;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.ant-layout {
+  min-height: 100vh;
+}
+
+.ant-layout-sider {
+  background: #001529;
+}
+
+.ant-layout-header {
+  background: #fff;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+}
+
+.ant-layout-content {
+  margin: 24px;
+  padding: 24px;
+  background: #fff;
+  border-radius: 4px;
+  min-height: 280px;
+}
+
+.auto-dial-panel {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 380px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+}
+
+.auto-dial-panel .panel-header {
+  padding: 16px;
+  border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.auto-dial-panel .panel-body {
+  padding: 16px;
+}
+
+.auto-dial-panel .panel-footer {
+  padding: 16px;
+  border-top: 1px solid #f0f0f0;
+  display: flex;
+  gap: 8px;
+}
+
+.calling-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: #f6ffed;
+  border: 1px solid #b7eb8f;
+  border-radius: 4px;
+  margin-bottom: 16px;
+}
+
+.calling-status.dialing {
+  background: #e6f7ff;
+  border-color: #91d5ff;
+}
+
+.calling-status.connected {
+  background: #f6ffed;
+  border-color: #b7eb8f;
+}
+
+.recording-player {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.duplicate-badge {
+  color: #ff4d4f;
+  font-weight: bold;
+}
