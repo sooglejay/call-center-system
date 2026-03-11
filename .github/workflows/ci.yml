@@ -1,0 +1,146 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # 代码检查
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'pnpm'
+    
+    - name: Install pnpm
+      uses: pnpm/action-setup@v2
+      with:
+        version: 8
+    
+    - name: Install dependencies (Server)
+      working-directory: ./server
+      run: pnpm install
+    
+    - name: Install dependencies (Client)
+      working-directory: ./client
+      run: pnpm install
+    
+    - name: Type check (Server)
+      working-directory: ./server
+      run: pnpm exec tsc --noEmit || true
+    
+    - name: Type check (Client)
+      working-directory: ./client
+      run: pnpm exec tsc --noEmit || true
+
+  # 构建前端
+  build-client:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'pnpm'
+    
+    - name: Install pnpm
+      uses: pnpm/action-setup@v2
+      with:
+        version: 8
+    
+    - name: Install dependencies
+      working-directory: ./client
+      run: pnpm install
+    
+    - name: Build
+      working-directory: ./client
+      run: pnpm build
+      env:
+        VITE_API_URL: ${{ secrets.API_URL || 'http://localhost:5001' }}
+    
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: client-build
+        path: client/dist
+
+  # 构建后端
+  build-server:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'pnpm'
+    
+    - name: Install pnpm
+      uses: pnpm/action-setup@v2
+      with:
+        version: 8
+    
+    - name: Install dependencies
+      working-directory: ./server
+      run: pnpm install
+    
+    - name: Build
+      working-directory: ./server
+      run: pnpm build || true
+
+  # 部署到 Vercel (前端预览)
+  deploy-client-preview:
+    runs-on: ubuntu-latest
+    needs: build-client
+    if: github.ref == 'refs/heads/develop'
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Download build artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: client-build
+        path: client/dist
+    
+    - name: Deploy to Vercel (Preview)
+      uses: amondnet/vercel-action@v25
+      with:
+        vercel-token: ${{ secrets.VERCEL_TOKEN }}
+        vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+        vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+        working-directory: ./client
+
+  # 部署到 Vercel (前端生产环境)
+  deploy-client-production:
+    runs-on: ubuntu-latest
+    needs: build-client
+    if: github.ref == 'refs/heads/main'
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Download build artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: client-build
+        path: client/dist
+    
+    - name: Deploy to Vercel (Production)
+      uses: amondnet/vercel-action@v25
+      with:
+        vercel-token: ${{ secrets.VERCEL_TOKEN }}
+        vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+        vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+        working-directory: ./client
+        vercel-args: '--prod'

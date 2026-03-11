@@ -11,6 +11,8 @@ import taskRoutes from './routes/task.routes';
 import statsRoutes from './routes/stats.routes';
 import twilioRoutes from './routes/twilio.routes';
 import configRoutes from './routes/config.routes';
+import reportRoutes from './routes/report.routes';
+import systemRoutes from './routes/system.routes';
 
 dotenv.config();
 
@@ -34,11 +36,8 @@ app.use('/api/tasks', taskRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/twilio', twilioRoutes);
 app.use('/api/config', configRoutes);
-
-// 健康检查
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
+app.use('/api/report', reportRoutes);
+app.use('/api/system', systemRoutes);
 
 // 错误处理
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -49,6 +48,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 app.listen(PORT, () => {
   console.log(`服务器运行在端口 ${PORT}`);
   console.log(`API地址: http://localhost:${PORT}/api`);
+  console.log(`健康检查: http://localhost:${PORT}/api/system/health`);
 });
 
 export default app;
