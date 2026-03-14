@@ -15,10 +15,10 @@ git clone <你的仓库地址>
 cd call-center-system
 ```
 
-### 2. 安装依赖
+### 2. 安装依赖（自动编译 + 初始化数据库）
 
 ```bash
-# 安装后端依赖（会自动编译 better-sqlite3）
+# 安装后端依赖（会自动编译 better-sqlite3 并初始化数据库）
 cd server
 pnpm install
 
@@ -27,41 +27,36 @@ cd ../client
 pnpm install
 ```
 
-**注意：** macOS/Windows 用户在执行 `pnpm install` 时会**自动编译** better-sqlite3，如遇问题请手动执行：
+**说明：** 
+- macOS/Windows 会自动编译 better-sqlite3
+- 首次安装会自动执行 `pnpm db:seed` 初始化数据库（约需 30 秒）
+- 如果数据库已存在则跳过初始化
 
+**如果遇到编译错误**，手动执行：
 ```bash
 cd server/node_modules/.pnpm/better-sqlite3@12.8.0/node_modules/better-sqlite3
 node-gyp clean && node-gyp configure && node-gyp build
-```
-
-### 3. 配置环境变量
-
-后端已预设默认配置，无需修改即可运行。如需自定义，复制 `.env.example` 到 `.env`：
-
-```bash
-cd server
-cp .env.example .env
-```
-
-### 4. 初始化数据库并生成测试数据
-
-```bash
-# 进入后端目录
-cd server
-
-# 生成测试数据（约67个客户、30条通话记录、20个任务）
+cd ../../../../../..
 pnpm db:seed
 ```
 
-### 5. 启动服务
+### 3. 启动服务
 
 ```bash
 # 启动后端服务（端口 3001）
+cd server
 pnpm dev
 
 # 另开终端，启动前端（端口 5173）
 cd client
 pnpm dev
+```
+
+**如需重新生成测试数据**（可选）：
+```bash
+cd server
+pnpm db:seed        # 完整数据（67客户、30通话、20任务）
+pnpm db:seed:mini   # 最小数据
 ```
 
 ### 6. 访问系统
