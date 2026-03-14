@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Form, Input, Button, message, Typography } from 'antd';
 import { PhoneOutlined, LockOutlined } from '@ant-design/icons';
@@ -15,31 +15,30 @@ export default function LoginPage() {
   const handleLogin = async (values: { username: string; password: string }) => {
     setLoading(true);
     try {
+      console.log('[Login] 开始登录...', values.username);
       const response = await authApi.login(values.username, values.password);
       const { token, user } = response.data;
+      
+      console.log('[Login] 登录成功，token:', token.substring(0, 20) + '...');
+      console.log('[Login] 用户信息:', user);
       
       // 保存到 localStorage
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(user));
+      console.log('[Login] 已保存到 localStorage');
       
       // 更新状态
       setAuth(token, user);
+      console.log('[Login] 已更新 zustand 状态');
+      
       message.success('登录成功');
       
-      // 延迟跳转，确保 localStorage 和状态更新完成
-      setTimeout(() => {
-        // 使用 navigate 进行客户端路由跳转
-        navigate('/', { replace: true });
-        
-        // 如果 navigate 不生效，强制刷新页面
-        setTimeout(() => {
-          if (window.location.pathname === '/login') {
-            window.location.href = '/';
-          }
-        }, 100);
-      }, 300);
+      // 立即跳转
+      console.log('[Login] 准备跳转到 /');
+      navigate('/', { replace: true });
+      
     } catch (error: any) {
-      console.error('登录错误:', error);
+      console.error('[Login] 登录错误:', error);
       message.error(error.response?.data?.error || '登录失败');
     } finally {
       setLoading(false);
