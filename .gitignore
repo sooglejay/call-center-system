@@ -43,6 +43,14 @@ uploads/
 # Docker
 .dockerignore
 
+# Database
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+data/*.sqlite
+data/*.sqlite-shm
+data/*.sqlite-wal
+
 # Misc
 .cache/
 .temp/
