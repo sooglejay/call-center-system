@@ -3,7 +3,17 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
-import pool from './config/database';
+
+// 根据环境选择数据库
+dotenv.config();
+const useSQLite = process.env.USE_SQLITE === 'true' || !process.env.DATABASE_URL;
+
+// 动态导入数据库配置
+const dbModule = useSQLite 
+  ? require('./config/database.sqlite')
+  : require('./config/database');
+
+const pool = dbModule.default;
 
 import authRoutes from './routes/auth.routes';
 import userRoutes from './routes/user.routes';
@@ -17,10 +27,8 @@ import reportRoutes from './routes/report.routes';
 import systemRoutes from './routes/system.routes';
 import communicationRoutes from './routes/communication.routes';
 
-dotenv.config();
-
 const app = express();
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.PORT || 5000;
 
 // 中间件
 app.use(cors());
@@ -53,6 +61,14 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 const initDatabase = async () => {
   try {
     console.log('正在检查数据库连接...');
+    
+    if (useSQLite) {
+      // SQLite 版本 - 数据库已经在导入时初始化
+      console.log('✅ SQLite 数据库已就绪');
+      return;
+    }
+    
+    // PostgreSQL 版本
     await pool.query('SELECT NOW()');
     console.log('✅ 数据库连接成功！');
 
