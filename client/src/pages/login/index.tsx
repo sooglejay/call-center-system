@@ -1,44 +1,30 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import { Card, Form, Input, Button, message, Typography } from 'antd';
 import { PhoneOutlined, LockOutlined } from '@ant-design/icons';
 import { authApi } from '../../services/api';
-import { useAuthStore } from '../../stores';
 
 const { Title } = Typography;
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
-  const { setAuth } = useAuthStore();
 
   const handleLogin = async (values: { username: string; password: string }) => {
     setLoading(true);
     try {
-      console.log('[Login] 开始登录...', values.username);
       const response = await authApi.login(values.username, values.password);
       const { token, user } = response.data;
-      
-      console.log('[Login] 登录成功，token:', token.substring(0, 20) + '...');
-      console.log('[Login] 用户信息:', user);
       
       // 保存到 localStorage
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(user));
-      console.log('[Login] 已保存到 localStorage');
-      
-      // 更新状态
-      setAuth(token, user);
-      console.log('[Login] 已更新 zustand 状态');
       
       message.success('登录成功');
       
-      // 立即跳转
-      console.log('[Login] 准备跳转到 /');
-      navigate('/', { replace: true });
+      // 强制刷新跳转到首页
+      window.location.href = '/';
       
     } catch (error: any) {
-      console.error('[Login] 登录错误:', error);
+      console.error('登录错误:', error);
       message.error(error.response?.data?.error || '登录失败');
     } finally {
       setLoading(false);
