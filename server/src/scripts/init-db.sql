@@ -133,7 +133,12 @@ CREATE TABLE IF NOT EXISTS unanswered_records (
 
 -- 插入默认管理员用户 (密码: admin123)
 INSERT INTO users (username, password, role, real_name, status) 
-VALUES ('admin', '$2b$10$YourHashedPasswordHere', 'admin', '系统管理员', 'active')
+VALUES ('admin', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjIXDZJ8JQYVZlHKbXRKJVB0eWlxGqC', 'admin', '系统管理员', 'active')
+ON CONFLICT (username) DO NOTHING;
+
+-- 插入默认客服用户 (密码: agent123)
+INSERT INTO users (username, password, role, real_name, status) 
+VALUES ('agent', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjIXDZJ8JQYVZlHKbXRKJVB0eWlxGqC', 'agent', '客服专员', 'active')
 ON CONFLICT (username) DO NOTHING;
 
 -- 插入默认系统配置
