@@ -2,6 +2,20 @@
 # =====================================================
 # 客服外呼系统 - Docker 一键部署脚本
 # 适用于 CentOS 7 / Ubuntu / Debian 等 Linux 发行版
+# 
+# 用法:
+#   ./deploy-call-center.sh [选项]
+#
+# 选项:
+#   -p, --http-port <端口>    HTTP 端口 (默认: 80)
+#   -a, --api-port <端口>     API 端口 (默认: 5001)
+#   -d, --domain <域名>       访问域名 (默认: localhost)
+#   -h, --help                显示帮助信息
+#
+# 示例:
+#   ./deploy-call-center.sh                           # 使用默认端口
+#   ./deploy-call-center.sh -p 8080 -a 8081          # 自定义端口
+#   ./deploy-call-center.sh --http-port 8080         # 仅修改 HTTP 端口
 # =====================================================
 
 set -e  # 遇到错误立即退出
@@ -30,18 +44,110 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# 显示帮助信息
+show_help() {
+    echo "客服外呼系统 - Docker 部署脚本"
+    echo ""
+    echo "用法: $0 [选项]"
+    echo ""
+    echo "选项:"
+    echo "  -p, --http-port <端口>    HTTP 端口 (默认: 80)"
+    echo "  -a, --api-port <端口>     API 端口 (默认: 5001)"
+    echo "  -d, --domain <域名>       访问域名 (默认: localhost)"
+    echo "  -h, --help                显示帮助信息"
+    echo ""
+    echo "示例:"
+    echo "  $0                           # 使用默认端口"
+    echo "  $0 -p 8080 -a 8081          # 自定义端口"
+    echo "  $0 --http-port 8080         # 仅修改 HTTP 端口"
+    echo ""
+}
+
+# 解析命令行参数
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -p|--http-port)
+                HTTP_PORT="$2"
+                shift 2
+                ;;
+            -a|--api-port)
+                API_PORT="$2"
+                shift 2
+                ;;
+            -d|--domain)
+                DOMAIN="$2"
+                shift 2
+                ;;
+            -h|--help)
+                show_help
+                exit 0
+                ;;
+            *)
+                print_error "未知参数: $1"
+                show_help
+                exit 1
+                ;;
+        esac
+    done
+}
+
+# 检查端口是否被占用
+check_port() {
+    local port=$1
+    local name=$2
+    if command -v ss &> /dev/null; then
+        if ss -tuln | grep -q ":$port "; then
+            print_error "端口 $port 已被占用，无法启动 $name"
+            print_info "请使用 -p 或 -a 参数指定其他端口"
+            print_info "示例: $0 -p 8080 -a 8081"
+            exit 1
+        fi
+    elif command -v netstat &> /dev/null; then
+        if netstat -tuln 2>/dev/null | grep -q ":$port "; then
+            print_error "端口 $port 已被占用，无法启动 $name"
+            print_info "请使用 -p 或 -a 参数指定其他端口"
+            print_info "示例: $0 -p 8080 -a 8081"
+            exit 1
+        fi
+    fi
+}
+
 # 检查是否为 root 用户
 if [[ $EUID -ne 0 ]]; then
    print_error "请使用 root 用户运行此脚本"
    exit 1
 fi
 
-# 项目配置
+# 默认配置
 PROJECT_NAME="call-center-system"
 PROJECT_DIR="/opt/${PROJECT_NAME}"
-DOMAIN="${DOMAIN:-localhost}"
-HTTP_PORT="${HTTP_PORT:-80}"
-API_PORT="${API_PORT:-5001}"
+DOMAIN="localhost"
+HTTP_PORT="80"
+API_PORT="5001"
+
+# 解析命令行参数
+parse_args "$@"
+
+# 验证端口号是否为数字
+if ! [[ "$HTTP_PORT" =~ ^[0-9]+$ ]] || [ "$HTTP_PORT" -lt 1 ] || [ "$HTTP_PORT" -gt 65535 ]; then
+    print_error "HTTP 端口必须是 1-65535 之间的数字"
+    exit 1
+fi
+
+if ! [[ "$API_PORT" =~ ^[0-9]+$ ]] || [ "$API_PORT" -lt 1 ] || [ "$API_PORT" -gt 65535 ]; then
+    print_error "API 端口必须是 1-65535 之间的数字"
+    exit 1
+fi
+
+if [ "$HTTP_PORT" -eq "$API_PORT" ]; then
+    print_error "HTTP 端口和 API 端口不能相同"
+    exit 1
+fi
+
+# 检查端口占用
+check_port $HTTP_PORT "前端服务"
+check_port $API_PORT "后端 API 服务"
 
 print_info "开始部署客服外呼系统..."
 print_info "项目目录: ${PROJECT_DIR}"
@@ -227,7 +333,7 @@ EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
 EOF
 
-# Nginx 配置
+# Nginx 配置 - 使用变量替换端口
 cat > client/nginx.conf << EOF
 server {
     listen 80;
@@ -275,7 +381,7 @@ server {
 }
 EOF
 
-# Docker Compose 配置
+# Docker Compose 配置 - 使用传入的端口变量
 cat > docker-compose.yml << EOF
 version: '3.8'
 
@@ -324,31 +430,9 @@ services:
     networks:
       - call-center-network
 
-  # 可选：使用 PostgreSQL 替代 SQLite
-  # postgres:
-  #   image: postgres:15-alpine
-  #   container_name: call-center-db
-  #   restart: always
-  #   environment:
-  #     POSTGRES_USER: callcenter
-  #     POSTGRES_PASSWORD: ${DB_PASSWORD:-$(openssl rand -base64 16)}
-  #     POSTGRES_DB: callcenter
-  #   volumes:
-  #     - postgres_data:/var/lib/postgresql/data
-  #   networks:
-  #     - call-center-network
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "pg_isready -U callcenter"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-
 networks:
   call-center-network:
     driver: bridge
-
-# volumes:
-#   postgres_data:
 EOF
 
 # 环境变量模板
@@ -372,12 +456,6 @@ JWT_EXPIRES_IN=24h
 # 文件上传
 UPLOAD_PATH=./uploads
 MAX_FILE_SIZE=10485760
-
-# Twilio 配置 (可选，用于电话功能)
-# TWILIO_ACCOUNT_SID=your_account_sid
-# TWILIO_AUTH_TOKEN=your_auth_token
-# TWILIO_PHONE_NUMBER=your_phone_number
-# TWILIO_WEBHOOK_URL=https://your-domain.com/api/calls/webhook
 
 # 前端 API 地址
 VITE_API_URL=http://${DOMAIN}:${API_PORT}
@@ -492,10 +570,10 @@ echo "📊 数据目录: ${PROJECT_DIR}/data"
 echo "📝 日志目录: ${PROJECT_DIR}/logs"
 echo ""
 echo "🔧 常用命令："
-echo "   查看日志:   docker-compose logs -f"
-echo "   重启服务:   docker-compose restart"
-echo "   停止服务:   docker-compose down"
-echo "   更新代码:   docker-compose up -d --build"
+echo "   查看日志:   cd ${PROJECT_DIR} && docker-compose logs -f"
+echo "   重启服务:   cd ${PROJECT_DIR} && docker-compose restart"
+echo "   停止服务:   cd ${PROJECT_DIR} && docker-compose down"
+echo "   更新代码:   cd ${PROJECT_DIR} && docker-compose up -d --build"
 echo ""
 echo "👤 默认管理员账号："
 echo "   用户名: admin"
@@ -506,4 +584,9 @@ echo "   1. 请及时修改默认管理员密码"
 echo "   2. 修改 .env 文件中的 JWT_SECRET"
 echo "   3. 生产环境建议配置 HTTPS"
 echo ""
+if [ "${HTTP_PORT}" != "80" ]; then
+    echo "💡 提示：您使用了非标准 HTTP 端口 ${HTTP_PORT}"
+    echo "   访问时需要加上端口号，如: http://your-ip:${HTTP_PORT}"
+    echo ""
+fi
 echo "====================================================="
