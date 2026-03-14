@@ -246,7 +246,11 @@ export const batchAssignAgents = async (req: any, res: Response) => {
     for (const customerId of customer_ids) {
       const result = await query('SELECT * FROM customers WHERE id = $1', [customerId]);
       if (result.rows.length > 0) {
-        // 更新客户（内存中简化处理）
+        // 更新客户分配
+        await query(
+          'UPDATE customers SET assigned_to = $1, assigned_to_name = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
+          [assigned_to, agentName, customerId]
+        );
         updatedCount++;
       }
     }

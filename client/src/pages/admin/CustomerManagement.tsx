@@ -58,6 +58,10 @@ export default function CustomerManagement() {
   const [sortBy, setSortBy] = useState<string>('created_at');
   const [activeLetters, setActiveLetters] = useState<string[]>([]);
   const [nameGroups, setNameGroups] = useState<Record<string, number>>({});
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [currentCustomer, setCurrentCustomer] = useState<Customer | null>(null);
+  const [editForm] = Form.useForm();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -316,8 +320,35 @@ export default function CustomerManagement() {
       key: 'action',
       render: (_: any, record: Customer) => (
         <Space>
-          <Button type="link" size="small">详情</Button>
-          <Button type="link" size="small">编辑</Button>
+          <Button 
+            type="link" 
+            size="small"
+            onClick={() => {
+              setCurrentCustomer(record);
+              setDetailModalVisible(true);
+            }}
+          >
+            详情
+          </Button>
+          <Button 
+            type="link" 
+            size="small"
+            onClick={() => {
+              setCurrentCustomer(record);
+              editForm.setFieldsValue({
+                name: record.name,
+                phone: record.phone,
+                email: record.email,
+                company: record.company,
+                address: record.address,
+                status: record.status,
+                remark: record.remark,
+              });
+              setEditModalVisible(true);
+            }}
+          >
+            编辑
+          </Button>
         </Space>
       )
     }
@@ -646,6 +677,171 @@ export default function CustomerManagement() {
                 </Select.Option>
               ))}
             </Select>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 客户详情弹窗 */}
+      <Modal
+        title="客户详情"
+        open={detailModalVisible}
+        onCancel={() => {
+          setDetailModalVisible(false);
+          setCurrentCustomer(null);
+        }}
+        footer={[
+          <Button key="close" onClick={() => {
+            setDetailModalVisible(false);
+            setCurrentCustomer(null);
+          }}>
+            关闭
+          </Button>
+        ]}
+        width={600}
+      >
+        {currentCustomer && (
+          <div>
+            <Row gutter={[16, 16]}>
+              <Col span={12}>
+                <Text type="secondary">客户姓名</Text>
+                <div style={{ fontSize: 16, fontWeight: 'bold' }}>{currentCustomer.name || '未命名'}</div>
+              </Col>
+              <Col span={12}>
+                <Text type="secondary">联系电话</Text>
+                <div style={{ fontSize: 16 }}>{currentCustomer.phone || '-'}</div>
+              </Col>
+              <Col span={12}>
+                <Text type="secondary">邮箱</Text>
+                <div>{currentCustomer.email || '-'}</div>
+              </Col>
+              <Col span={12}>
+                <Text type="secondary">公司名称</Text>
+                <div>{currentCustomer.company || '-'}</div>
+              </Col>
+              <Col span={24}>
+                <Text type="secondary">联系地址</Text>
+                <div>{currentCustomer.address || '-'}</div>
+              </Col>
+              <Col span={12}>
+                <Text type="secondary">客户状态</Text>
+                <div>
+                  <Tag color={statusColors[currentCustomer.status || 'pending']}>
+                    {statusLabels[currentCustomer.status || 'pending']}
+                  </Tag>
+                </div>
+              </Col>
+              <Col span={12}>
+                <Text type="secondary">分配客服</Text>
+                <div>{currentCustomer.assigned_to_name || <Tag color="default">未分配</Tag>}</div>
+              </Col>
+              <Col span={24}>
+                <Text type="secondary">备注</Text>
+                <div style={{ background: '#f5f5f5', padding: 12, borderRadius: 4, minHeight: 60 }}>
+                  {currentCustomer.remark || '无备注'}
+                </div>
+              </Col>
+              <Col span={12}>
+                <Text type="secondary">导入时间</Text>
+                <div>{currentCustomer.created_at ? new Date(currentCustomer.created_at).toLocaleString() : '-'}</div>
+              </Col>
+              <Col span={12}>
+                <Text type="secondary">最后更新</Text>
+                <div>{currentCustomer.updated_at ? new Date(currentCustomer.updated_at).toLocaleString() : '-'}</div>
+              </Col>
+            </Row>
+          </div>
+        )}
+      </Modal>
+
+      {/* 客户编辑弹窗 */}
+      <Modal
+        title="编辑客户"
+        open={editModalVisible}
+        onOk={async () => {
+          try {
+            const values = await editForm.validateFields();
+            await customerApi.updateCustomer(currentCustomer!.id, values);
+            message.success('更新成功');
+            setEditModalVisible(false);
+            setCurrentCustomer(null);
+            fetchCustomers();
+          } catch (error) {
+            message.error('更新失败');
+          }
+        }}
+        onCancel={() => {
+          setEditModalVisible(false);
+          setCurrentCustomer(null);
+          editForm.resetFields();
+        }}
+        width={600}
+      >
+        <Form form={editForm} layout="vertical">
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                name="name"
+                label="客户姓名"
+                rules={[{ required: true, message: '请输入客户姓名' }]}
+              >
+                <Input placeholder="客户姓名" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                name="phone"
+                label="联系电话"
+                rules={[{ required: true, message: '请输入联系电话' }]}
+              >
+                <Input placeholder="联系电话" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                name="email"
+                label="邮箱"
+              >
+                <Input placeholder="邮箱" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                name="company"
+                label="公司名称"
+              >
+                <Input placeholder="公司名称" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item
+            name="address"
+            label="联系地址"
+          >
+            <Input.TextArea rows={2} placeholder="联系地址" />
+          </Form.Item>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                name="status"
+                label="客户状态"
+              >
+                <Select placeholder="选择状态">
+                  <Select.Option value="pending">待跟进</Select.Option>
+                  <Select.Option value="contacted">已联系</Select.Option>
+                  <Select.Option value="interested">有意向</Select.Option>
+                  <Select.Option value="converted">已转化</Select.Option>
+                  <Select.Option value="not_interested">无意向</Select.Option>
+                </Select>
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item
+            name="remark"
+            label="备注"
+          >
+            <Input.TextArea rows={3} placeholder="备注信息" />
           </Form.Item>
         </Form>
       </Modal>
