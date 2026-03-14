@@ -58,7 +58,8 @@ export const customerApi = {
   getCustomer: (id: number) => api.get(`/customers/${id}`),
   updateCustomer: (id: number, data: any) => api.put(`/customers/${id}`, data),
   deleteCustomer: (id: number) => api.delete(`/customers/${id}`),
-  importCustomers: (customers: any[], assigned_to?: number) => api.post('/customers/import', { customers, assigned_to })
+  importCustomers: (customers: any[], assigned_to?: number) => api.post('/customers/import', { customers, assigned_to }),
+  batchAssign: (customer_ids: number[], assigned_to: number) => api.post('/customers/batch-assign', { customer_ids, assigned_to })
 };
 
 // 通话API

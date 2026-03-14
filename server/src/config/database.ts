@@ -25,11 +25,11 @@ const generateCustomers = () => [
   { id: 8, name: '吴十', phone: '13800138008', email: 'wushi@example.com', company: '天宇建设', address: '南京市鼓楼区', notes: '已签约', status: 'converted', priority: 1, assigned_to: 2, imported_by: 1, created_at: daysAgo(20), updated_at: daysAgo(3) },
   { id: 9, name: '郑一', phone: '13800138009', email: 'zhengyi@example.com', company: '云端网络', address: '西安市雁塔区', notes: '产品咨询', status: 'pending', priority: 2, assigned_to: 2, imported_by: 1, created_at: daysAgo(6), updated_at: daysAgo(2) },
   { id: 10, name: '陈二', phone: '13800138010', email: 'chener@example.com', company: '明达咨询', address: '重庆市渝中区', notes: '价格敏感', status: 'interested', priority: 2, assigned_to: 2, imported_by: 1, created_at: daysAgo(5), updated_at: daysAgo(1) },
-  { id: 11, name: '刘明', phone: '13900139001', email: 'liuming@example.com', company: '东方电子', address: '苏州市工业园区', notes: '大批量采购', status: 'pending', priority: 1, assigned_to: 2, imported_by: 1, created_at: daysAgo(4), updated_at: daysAgo(1) },
-  { id: 12, name: '黄强', phone: '13900139002', email: 'huangqiang@example.com', company: '国信证券', address: '天津市和平区', notes: '需演示', status: 'contacted', priority: 1, assigned_to: 2, imported_by: 1, created_at: daysAgo(3), updated_at: daysAgo(1) },
-  { id: 13, name: '林娜', phone: '13900139003', email: 'linna@example.com', company: '美丽化妆品', address: '青岛市市南区', notes: '正在比较', status: 'interested', priority: 2, assigned_to: 2, imported_by: 1, created_at: daysAgo(6), updated_at: daysAgo(2) },
-  { id: 14, name: '何伟', phone: '13900139004', email: 'hewei@example.com', company: '鑫源制造', address: '宁波市鄞州区', notes: '预算有限', status: 'pending', priority: 3, assigned_to: 2, imported_by: 1, created_at: daysAgo(8), updated_at: daysAgo(3) },
-  { id: 15, name: '高敏', phone: '13900139005', email: 'gaomin@example.com', company: '智慧教育', address: '厦门市思明区', notes: '决策中', status: 'contacted', priority: 2, assigned_to: 2, imported_by: 1, created_at: daysAgo(7), updated_at: daysAgo(2) },
+  { id: 11, name: '刘明', phone: '13900139001', email: 'liuming@example.com', company: '东方电子', address: '苏州市工业园区', notes: '大批量采购', status: 'pending', priority: 1, assigned_to: null, imported_by: 1, created_at: daysAgo(4), updated_at: daysAgo(1) },
+  { id: 12, name: '黄强', phone: '13900139002', email: 'huangqiang@example.com', company: '国信证券', address: '天津市和平区', notes: '需演示', status: 'contacted', priority: 1, assigned_to: null, imported_by: 1, created_at: daysAgo(3), updated_at: daysAgo(1) },
+  { id: 13, name: '林娜', phone: '13900139003', email: 'linna@example.com', company: '美丽化妆品', address: '青岛市市南区', notes: '正在比较', status: 'interested', priority: 2, assigned_to: null, imported_by: 1, created_at: daysAgo(6), updated_at: daysAgo(2) },
+  { id: 14, name: '何伟', phone: '13900139004', email: 'hewei@example.com', company: '鑫源制造', address: '宁波市鄞州区', notes: '预算有限', status: 'pending', priority: 3, assigned_to: null, imported_by: 1, created_at: daysAgo(8), updated_at: daysAgo(3) },
+  { id: 15, name: '高敏', phone: '13900139005', email: 'gaomin@example.com', company: '智慧教育', address: '厦门市思明区', notes: '决策中', status: 'contacted', priority: 2, assigned_to: null, imported_by: 1, created_at: daysAgo(7), updated_at: daysAgo(2) },
 ];
 
 const generateCalls = () => [

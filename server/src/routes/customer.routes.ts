@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getCustomers, getCustomerById, updateCustomer, deleteCustomer, batchImportCustomers, getAgentCustomers } from '../controllers/customer.controller';
+import { getCustomers, getCustomerById, updateCustomer, deleteCustomer, batchImportCustomers, getAgentCustomers, batchAssignAgents } from '../controllers/customer.controller';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
 
 const router = Router();
@@ -12,5 +12,6 @@ router.get('/:id', getCustomerById);
 router.put('/:id', updateCustomer);
 router.delete('/:id', adminMiddleware, deleteCustomer);
 router.post('/import', adminMiddleware, batchImportCustomers);
+router.post('/batch-assign', adminMiddleware, batchAssignAgents);
 
 export default router;
