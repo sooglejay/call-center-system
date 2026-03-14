@@ -21,9 +21,13 @@ const initSQLite = () => {
 
   const db = new Database(dbPath);
 
-  // 启用外键约束和WAL模式
-  db.pragma('journal_mode = WAL');
+  // 启用外键约束
   db.pragma('foreign_keys = ON');
+  
+  // 在 macOS 上禁用 WAL 模式以避免 I/O 错误
+  if (process.platform !== 'darwin') {
+    db.pragma('journal_mode = WAL');
+  }
 
   // 初始化数据库表
   const initSql = `
