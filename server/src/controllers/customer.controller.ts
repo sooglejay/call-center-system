@@ -222,47 +222,85 @@ export const batchImportCustomers = async (req: any, res: Response) => {
 
 // 批量分配客服
 export const batchAssignAgents = async (req: any, res: Response) => {
+  console.log('[批量分配] 开始处理分配请求:', {
+    body: req.body,
+    user: req.user?.id,
+    timestamp: new Date().toISOString()
+  });
+  
   try {
     const { customer_ids, assigned_to } = req.body;
     
     if (!Array.isArray(customer_ids) || customer_ids.length === 0) {
+      console.log('[批量分配] 失败: 未选择客户');
       return res.status(400).json({ error: '请选择要分配的客户' });
     }
     
     if (!assigned_to) {
+      console.log('[批量分配] 失败: 未选择客服');
       return res.status(400).json({ error: '请选择要分配的客服' });
     }
     
     // 验证客服是否存在
+    console.log(`[批量分配] 验证客服是否存在: ID=${assigned_to}`);
     const agentResult = await query('SELECT * FROM users WHERE id = $1 AND role = $2', [assigned_to, 'agent']);
     if (agentResult.rows.length === 0) {
-      return res.status(400).json({ error: '客服不存在' });
+      console.log(`[批量分配] 失败: 客服ID=${assigned_to} 不存在或不是客服角色`);
+      return res.status(400).json({ 
+        error: '客服不存在', 
+        detail: `ID=${assigned_to} 的用户不存在或不是客服角色` 
+      });
     }
     
     const agentName = agentResult.rows[0].real_name;
+    console.log(`[批量分配] 找到客服: ${agentName} (ID=${assigned_to})`);
     
     // 批量更新客户
     let updatedCount = 0;
+    let failedCustomers: number[] = [];
+    
     for (const customerId of customer_ids) {
+      console.log(`[批量分配] 处理客户ID=${customerId}`);
       const result = await query('SELECT * FROM customers WHERE id = $1', [customerId]);
       if (result.rows.length > 0) {
-        // 更新客户分配
-        await query(
-          'UPDATE customers SET assigned_to = $1, assigned_to_name = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
-          [assigned_to, agentName, customerId]
-        );
-        updatedCount++;
+        const customer = result.rows[0];
+        console.log(`[批量分配] 找到客户: ${customer.name} (ID=${customerId}), 原分配: ${customer.assigned_to_name || '未分配'}`);
+        
+        try {
+          // 更新客户分配
+          await query(
+            'UPDATE customers SET assigned_to = $1, assigned_to_name = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
+            [assigned_to, agentName, customerId]
+          );
+          console.log(`[批量分配] 成功更新客户 ${customerId}`);
+          updatedCount++;
+        } catch (updateError) {
+          console.error(`[批量分配] 更新客户 ${customerId} 失败:`, updateError);
+          failedCustomers.push(customerId);
+        }
+      } else {
+        console.log(`[批量分配] 客户ID=${customerId} 不存在`);
+        failedCustomers.push(customerId);
       }
     }
+    
+    console.log(`[批量分配] 完成: 成功=${updatedCount}, 失败=${failedCustomers.length}`);
     
     res.json({
       message: `成功将 ${updatedCount} 个客户分配给 ${agentName}`,
       assigned_count: updatedCount,
-      agent_name: agentName
+      failed_count: failedCustomers.length,
+      failed_ids: failedCustomers,
+      agent_name: agentName,
+      agent_id: assigned_to
     });
   } catch (error) {
-    console.error('批量分配客服错误:', error);
-    res.status(500).json({ error: '服务器错误' });
+    console.error('[批量分配] 服务器错误:', error);
+    res.status(500).json({ 
+      error: '服务器错误', 
+      detail: error instanceof Error ? error.message : '未知错误',
+      timestamp: new Date().toISOString()
+    });
   }
 };
 

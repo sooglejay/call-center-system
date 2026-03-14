@@ -235,6 +235,11 @@ export default function CustomerManagement() {
   };
 
   const handleBatchAssign = async () => {
+    console.log('[批量分配] 开始分配流程:', {
+      selectedCustomers: selectedRowKeys,
+      targetAgentId: assignAgentId
+    });
+    
     if (selectedRowKeys.length === 0) {
       message.warning('请先选择客户');
       return;
@@ -243,15 +248,39 @@ export default function CustomerManagement() {
       message.warning('请选择要分配的客服');
       return;
     }
+    
     try {
+      console.log(`[批量分配] 调用API: customer_ids=${selectedRowKeys}, assigned_to=${assignAgentId}`);
       const response = await customerApi.batchAssign(selectedRowKeys, assignAgentId);
+      console.log('[批量分配] API响应:', response.data);
+      
       message.success(response.data.message);
       setAssignModalVisible(false);
       setSelectedRowKeys([]);
       setAssignAgentId(undefined);
       fetchCustomers();
-    } catch (error) {
-      message.error('分配失败');
+    } catch (error: any) {
+      console.error('[批量分配] 失败:', error);
+      
+      // 提取详细错误信息
+      const errorDetail = error.response?.data?.detail || '';
+      const errorMessage = error.response?.data?.error || '分配失败';
+      const failedCount = error.response?.data?.failed_count;
+      
+      let displayMessage = errorMessage;
+      if (errorDetail) {
+        displayMessage += `: ${errorDetail}`;
+      }
+      if (failedCount !== undefined && failedCount > 0) {
+        displayMessage += ` (失败${failedCount}个)`;
+      }
+      
+      message.error(displayMessage);
+      
+      // 如果是部分失败，给出提示
+      if (error.response?.data?.assigned_count > 0) {
+        message.warning(`部分成功: ${error.response.data.assigned_count}个客户已分配`);
+      }
     }
   };
 
