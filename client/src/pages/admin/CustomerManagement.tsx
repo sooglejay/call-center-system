@@ -69,14 +69,15 @@ export default function CustomerManagement() {
     setLoading(true);
     try {
       const response = await customerApi.getCustomers({ 
-        sort_by: sortBy,
-        status: filterStatus || undefined,
-        assigned_to: filterAssigned || undefined
+        sort_by: sortBy
       });
       setCustomers(response.data.data);
       if (response.data.name_groups) {
         setNameGroups(response.data.name_groups);
       }
+    } catch (error) {
+      console.error('获取客户列表失败:', error);
+      message.error('获取客户列表失败');
     } finally {
       setLoading(false);
     }
@@ -110,7 +111,7 @@ export default function CustomerManagement() {
     }
     
     // 客服过滤
-    if (filterAssigned !== '') {
+    if (filterAssigned) {
       if (filterAssigned === '0') {
         filtered = filtered.filter(c => !c.assigned_to);
       } else {
