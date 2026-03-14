@@ -116,6 +116,22 @@ function buildBetterSqlite3() {
   }
 }
 
+// 检查 tsx 是否可用
+function checkTsxAvailable() {
+  try {
+    // 尝试在本地 node_modules 中查找 tsx
+    const tsxPath = path.join(rootDir, 'node_modules/.bin/tsx');
+    if (fs.existsSync(tsxPath)) {
+      return tsxPath;
+    }
+    // 尝试使用 npx
+    execSync('npx tsx --version', { stdio: 'ignore' });
+    return 'npx tsx';
+  } catch {
+    return null;
+  }
+}
+
 // 初始化数据库
 function seedDatabase() {
   if (checkDatabaseExists()) {
@@ -125,15 +141,25 @@ function seedDatabase() {
 
   console.log('🌱 初始化数据库...');
 
+  // 检查 tsx 是否可用（在 pnpm workspaces 中可能还未安装）
+  const tsxCmd = checkTsxAvailable();
+  if (!tsxCmd) {
+    console.log('⚠️  tsx 尚未安装，跳过数据库初始化');
+    console.log('   将在首次运行 "pnpm dev" 时自动初始化数据库表结构');
+    console.log('   如需测试数据，请运行: pnpm db:seed');
+    return false;
+  }
+
   try {
     process.chdir(rootDir);
     
     // 执行种子数据（会自动创建表并插入数据）
-    execSync('npx tsx src/scripts/seed.ts --mini', { stdio: 'inherit' });
+    execSync(`${tsxCmd} src/scripts/seed.ts --mini`, { stdio: 'inherit' });
     console.log('✅ 数据库初始化完成');
     return true;
   } catch (error) {
     console.error('❌ 数据库初始化失败');
+    console.log('   可以稍后手动运行: pnpm db:seed');
     return false;
   }
 }
