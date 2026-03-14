@@ -4,6 +4,7 @@
   "description": "自动拨打电话客服销售系统后端",
   "main": "dist/app.js",
   "scripts": {
+    "postinstall": "node scripts/postinstall.js || true",
     "dev": "tsx watch src/app.ts",
     "build": "tsc",
     "start": "node dist/app.js",
