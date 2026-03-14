@@ -17,7 +17,8 @@ export const login = async (req: Request, res: Response) => {
     }
     
     const user = result.rows[0];
-    const isValidPassword = await bcrypt.compare(password, user.password);
+    // 明文密码比较（开发便利）
+    const isValidPassword = password === user.password;
     
     if (!isValidPassword) {
       return res.status(401).json({ error: '用户名或密码错误' });
@@ -91,14 +92,15 @@ export const changePassword = async (req: any, res: Response) => {
       return res.status(404).json({ error: '用户不存在' });
     }
     
-    const isValidPassword = await bcrypt.compare(old_password, userResult.rows[0].password);
+    // 明文密码比较（开发便利）
+    const isValidPassword = old_password === userResult.rows[0].password;
     if (!isValidPassword) {
       return res.status(400).json({ error: '原密码错误' });
     }
     
-    const hashedPassword = await bcrypt.hash(new_password, 10);
+    // 明文存储密码（开发便利）
     await query('UPDATE users SET password = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', 
-      [hashedPassword, req.user.id]);
+      [new_password, req.user.id]);
     
     res.json({ message: '密码修改成功' });
   } catch (error) {
