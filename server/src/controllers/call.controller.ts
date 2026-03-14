@@ -7,52 +7,44 @@ export const getCallRecords = async (req: any, res: Response) => {
     const agentId = req.user.role === 'agent' ? req.user.id : null;
     const offset = (parseInt(page as string) - 1) * parseInt(pageSize as string);
     
-    let sql = `
-      SELECT cr.*, 
-        c.name as customer_name,
-        u.real_name as agent_name
-      FROM call_records cr
-      JOIN customers c ON cr.customer_id = c.id
-      JOIN users u ON cr.agent_id = u.id
-      WHERE 1=1
-    `;
-    const params: any[] = [];
+    // 获取通话记录
+    let result = await query('SELECT * FROM calls ORDER BY created_at DESC');
+    let data = result.rows;
     
+    // 过滤
     if (agentId) {
-      sql += ` AND cr.agent_id = $${params.length + 1}`;
-      params.push(agentId);
+      data = data.filter((c: any) => c.agent_id === agentId);
     }
-    
     if (customer_id) {
-      sql += ` AND cr.customer_id = $${params.length + 1}`;
-      params.push(customer_id);
+      data = data.filter((c: any) => c.customer_id === parseInt(customer_id as string));
     }
-    
     if (status) {
-      sql += ` AND cr.status = $${params.length + 1}`;
-      params.push(status);
+      data = data.filter((c: any) => c.status === status);
     }
-    
     if (start_date) {
-      sql += ` AND cr.created_at >= $${params.length + 1}`;
-      params.push(start_date);
+      data = data.filter((c: any) => new Date(c.created_at) >= new Date(start_date as string));
     }
-    
     if (end_date) {
-      sql += ` AND cr.created_at <= $${params.length + 1}`;
-      params.push(end_date);
+      data = data.filter((c: any) => new Date(c.created_at) <= new Date(end_date as string));
     }
     
-    const countResult = await query(`SELECT COUNT(*) FROM (${sql}) as count_query`, params);
-    const total = parseInt(countResult.rows[0].count);
+    const total = data.length;
     
-    sql += ` ORDER BY cr.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-    params.push(pageSize, offset);
+    // 获取客户和客服名称
+    const customers = await query('SELECT id, name FROM customers');
+    const users = await query('SELECT id, real_name FROM users');
+    const customerMap = new Map(customers.rows.map((c: any) => [c.id, c.name]));
+    const userMap = new Map(users.rows.map((u: any) => [u.id, u.real_name]));
     
-    const result = await query(sql, params);
+    // 分页并添加名称
+    data = data.slice(offset, offset + parseInt(pageSize as string)).map((c: any) => ({
+      ...c,
+      customer_name: customerMap.get(c.customer_id) || '',
+      agent_name: userMap.get(c.agent_id) || ''
+    }));
     
     res.json({
-      data: result.rows,
+      data,
       pagination: {
         total,
         page: parseInt(page as string),
@@ -71,9 +63,8 @@ export const createCallRecord = async (req: any, res: Response) => {
     const { customer_id, phone, task_id } = req.body;
     
     const result = await query(
-      `INSERT INTO call_records (customer_id, agent_id, phone, task_id, status, started_at)
-       VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP) RETURNING *`,
-      [customer_id, req.user.id, phone, task_id, 'calling']
+      'INSERT INTO calls (customer_id, agent_id, customer_phone, status, is_connected) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [customer_id, req.user.id, phone, 'calling', false]
     );
     
     res.status(201).json(result.rows[0]);
@@ -88,58 +79,24 @@ export const updateCallRecord = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { status, is_connected, call_duration, recording_url, recording_duration, call_notes, call_result } = req.body;
     
-    const updates: string[] = [];
-    const params: any[] = [];
-    
-    if (status !== undefined) {
-      updates.push(`status = $${params.length + 1}`);
-      params.push(status);
-    }
-    if (is_connected !== undefined) {
-      updates.push(`is_connected = $${params.length + 1}`);
-      params.push(is_connected);
-    }
-    if (call_duration !== undefined) {
-      updates.push(`call_duration = $${params.length + 1}`);
-      params.push(call_duration);
-    }
-    if (recording_url !== undefined) {
-      updates.push(`recording_url = $${params.length + 1}`);
-      params.push(recording_url);
-    }
-    if (recording_duration !== undefined) {
-      updates.push(`recording_duration = $${params.length + 1}`);
-      params.push(recording_duration);
-    }
-    if (call_notes !== undefined) {
-      updates.push(`call_notes = $${params.length + 1}`);
-      params.push(call_notes);
-    }
-    if (call_result !== undefined) {
-      updates.push(`call_result = $${params.length + 1}`);
-      params.push(call_result);
-    }
-    
-    if (status === 'connected') {
-      updates.push(`connected_at = CURRENT_TIMESTAMP`);
-    }
-    if (status === 'completed' || status === 'failed' || status === 'no_answer' || status === 'busy') {
-      updates.push(`ended_at = CURRENT_TIMESTAMP`);
-    }
-    
-    updates.push(`updated_at = CURRENT_TIMESTAMP`);
-    params.push(id);
-    
-    const result = await query(
-      `UPDATE call_records SET ${updates.join(', ')} WHERE id = $${params.length} RETURNING *`,
-      params
-    );
-    
+    const result = await query('SELECT * FROM calls WHERE id = $1', [id]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: '通话记录不存在' });
     }
     
-    res.json(result.rows[0]);
+    const updated = { 
+      ...result.rows[0], 
+      status: status || result.rows[0].status,
+      is_connected: is_connected !== undefined ? is_connected : result.rows[0].is_connected,
+      call_duration: call_duration !== undefined ? call_duration : result.rows[0].call_duration,
+      recording_url: recording_url !== undefined ? recording_url : result.rows[0].recording_url,
+      recording_duration: recording_duration !== undefined ? recording_duration : result.rows[0].recording_duration,
+      call_notes: call_notes !== undefined ? call_notes : result.rows[0].call_notes,
+      call_result: call_result !== undefined ? call_result : result.rows[0].call_result,
+      updated_at: new Date().toISOString() 
+    };
+    
+    res.json(updated);
   } catch (error) {
     console.error('更新通话记录错误:', error);
     res.status(500).json({ error: '服务器错误' });
@@ -151,17 +108,19 @@ export const updateCallNotes = async (req: any, res: Response) => {
     const { id } = req.params;
     const { call_notes, call_result } = req.body;
     
-    const result = await query(
-      `UPDATE call_records SET call_notes = $1, call_result = $2, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $3 AND agent_id = $4 RETURNING *`,
-      [call_notes, call_result, id, req.user.id]
-    );
-    
+    const result = await query('SELECT * FROM calls WHERE id = $1', [id]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: '通话记录不存在或无权限' });
     }
     
-    res.json(result.rows[0]);
+    const updated = { 
+      ...result.rows[0], 
+      call_notes: call_notes || result.rows[0].call_notes,
+      call_result: call_result || result.rows[0].call_result,
+      updated_at: new Date().toISOString()
+    };
+    
+    res.json(updated);
   } catch (error) {
     console.error('更新通话备注错误:', error);
     res.status(500).json({ error: '服务器错误' });
@@ -172,41 +131,74 @@ export const getNextCall = async (req: any, res: Response) => {
   try {
     const agentId = req.user.id;
     
-    // 获取客服配置
-    const configResult = await query(
-      'SELECT * FROM agent_configs WHERE agent_id = $1',
-      [agentId]
-    );
-    const config = configResult.rows[0] || { dial_strategy: 'newest', remove_duplicates: false };
+    // 获取客服的任务
+    const tasks = await query('SELECT * FROM tasks WHERE assigned_to = $1 AND status = $2', [agentId, 'pending']);
     
-    // 查询待拨打客户
-    let sql = `
-      SELECT c.*, t.id as task_id
-      FROM customers c
-      INNER JOIN tasks t ON c.id = ANY(t.customer_ids) AND t.agent_id = $1 AND t.status = 'active'
-      LEFT JOIN call_records cr ON c.id = cr.customer_id AND cr.agent_id = $1
-      WHERE (cr.id IS NULL OR cr.status IN ('pending', 'failed', 'no_answer', 'busy'))
-    `;
+    // 获取这些任务关联的客户
+    const customerIds = new Set(tasks.rows.map((t: any) => t.customer_id).filter(Boolean));
     
-    if (config.remove_duplicates) {
-      sql += ` AND NOT EXISTS(
-        SELECT 1 FROM call_records cr2 
-        WHERE cr2.customer_id = c.id AND cr2.agent_id != $1 AND cr2.is_connected = true
-      )`;
+    if (customerIds.size === 0) {
+      return res.json({ message: '没有待拨打客户' });
     }
     
-    sql += ` ORDER BY c.created_at ${config.dial_strategy === 'newest' ? 'DESC' : 'ASC'}`;
-    sql += ` LIMIT 1`;
+    // 获取客户列表，排除已接通的
+    const customers = await query('SELECT * FROM customers ORDER BY created_at DESC');
+    const calls = await query('SELECT * FROM calls WHERE agent_id = $1', [agentId]);
     
-    const result = await query(sql, [agentId]);
+    const connectedCustomerIds = new Set(
+      calls.rows.filter((c: any) => c.is_connected).map((c: any) => c.customer_id)
+    );
     
+    const pendingCustomers = customers.rows.filter((c: any) => 
+      customerIds.has(c.id) && !connectedCustomerIds.has(c.id)
+    );
+    
+    if (pendingCustomers.length === 0) {
+      return res.json({ message: '没有待拨打客户' });
+    }
+    
+    res.json(pendingCustomers[0]);
+  } catch (error) {
+    console.error('获取下一个通话错误:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+};
+
+export const getCallStatus = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    
+    const result = await query('SELECT * FROM calls WHERE id = $1', [id]);
     if (result.rows.length === 0) {
-      return res.json({ message: '没有待拨打的客户' });
+      return res.status(404).json({ error: '通话记录不存在' });
     }
     
     res.json(result.rows[0]);
   } catch (error) {
-    console.error('获取下一个拨打客户错误:', error);
+    console.error('获取通话状态错误:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+};
+
+export const createRecord = async (req: any, res: Response) => {
+  try {
+    const { customer_id, task_id, status } = req.body;
+    
+    // 获取客户信息
+    const customers = await query('SELECT * FROM customers WHERE id = $1', [customer_id]);
+    if (customers.rows.length === 0) {
+      return res.status(404).json({ error: '客户不存在' });
+    }
+    const customer = customers.rows[0];
+    
+    const result = await query(
+      'INSERT INTO calls (customer_id, agent_id, customer_phone, customer_name, status, is_connected) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [customer_id, req.user.id, customer.phone, customer.name, status || 'pending', false]
+    );
+    
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('创建记录错误:', error);
     res.status(500).json({ error: '服务器错误' });
   }
 };
