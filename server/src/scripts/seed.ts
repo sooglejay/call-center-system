@@ -68,7 +68,7 @@ const getFirstLetter = (name: string): string => {
 const users = [
   {
     username: 'admin',
-    password: '$2a$10$NgG1WV0QVLtPT1zDzDtE3eI9X1hJTOliq8ySP7tTPLWWV5F1YOd6K', // admin123
+    password: '$2a$10$6y4sl6kZ83uSUMOJLqTtpOLeiRrs7cMGl2PvitP3aAoCyz3zeZIcq', // admin123
     role: 'admin',
     real_name: '系统管理员',
     phone: '13800000000',
@@ -79,7 +79,7 @@ const users = [
   },
   {
     username: 'agent01',
-    password: '$2a$10$NgG1WV0QVLtPT1zDzDtE3eI9X1hJTOliq8ySP7tTPLWWV5F1YOd6K', // agent123
+    password: '$2a$10$j6R6eYVrfWiP94Wj6OQZ4.LBktoSSDq8ENJRAyNBqfgnpWESSk.5.', // agent123
     role: 'agent',
     real_name: '张小明',
     phone: '13800138001',
@@ -90,7 +90,7 @@ const users = [
   },
   {
     username: 'agent02',
-    password: '$2a$10$NgG1WV0QVLtPT1zDzDtE3eI9X1hJTOliq8ySP7tTPLWWV5F1YOd6K',
+    password: '$2a$10$j6R6eYVrfWiP94Wj6OQZ4.LBktoSSDq8ENJRAyNBqfgnpWESSk.5.',
     role: 'agent',
     real_name: '李晓红',
     phone: '13800138002',
@@ -101,7 +101,7 @@ const users = [
   },
   {
     username: 'agent03',
-    password: '$2a$10$NgG1WV0QVLtPT1zDzDtE3eI9X1hJTOliq8ySP7tTPLWWV5F1YOd6K',
+    password: '$2a$10$j6R6eYVrfWiP94Wj6OQZ4.LBktoSSDq8ENJRAyNBqfgnpWESSk.5.',
     role: 'agent',
     real_name: '王建国',
     phone: '13800138003',
@@ -112,14 +112,14 @@ const users = [
   },
   {
     username: 'agent04',
-    password: '$2a$10$NgG1WV0QVLtPT1zDzDtE3eI9X1hJTOliq8ySP7tTPLWWV5F1YOd6K',
+    password: '$2a$10$j6R6eYVrfWiP94Wj6OQZ4.LBktoSSDq8ENJRAyNBqfgnpWESSk.5.',
     role: 'agent',
     real_name: '刘芳华',
     phone: '13800138004',
     email: 'liufh@callcenter.com',
     department: '客服部',
     position: '客服专员',
-    status: 'inactive'
+    status: 'active'
   }
 ];
 
