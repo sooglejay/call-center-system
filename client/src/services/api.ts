@@ -54,6 +54,8 @@ export const userApi = {
 // 客户API
 export const customerApi = {
   getCustomers: (params?: any) => api.get('/customers', { params }),
+  getCustomersByNameLetter: (letters?: string, unassigned_only?: boolean) => api.get('/customers/by-name-letter', { params: { letters, unassigned_only } }),
+  getNameLetterStats: (unassigned_only?: boolean) => api.get('/customers/name-letter-stats', { params: { unassigned_only } }),
   getAgentCustomers: (params?: any) => api.get('/customers/agent/list', { params }),
   getCustomer: (id: number) => api.get(`/customers/${id}`),
   updateCustomer: (id: number, data: any) => api.put(`/customers/${id}`, data),

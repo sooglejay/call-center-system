@@ -1,8 +1,4 @@
-import { Pool } from 'pg';
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
+import { query } from '../config/database';
 
 export class ConfigService {
   private cache: Map<string, string> = new Map();
@@ -17,7 +13,8 @@ export class ConfigService {
     }
 
     try {
-      const result = await pool.query(
+      // 使用内存数据库查询
+      const result = await query(
         'SELECT config_value FROM system_configs WHERE config_key = $1',
         [key]
       );
@@ -40,12 +37,10 @@ export class ConfigService {
    */
   async setConfig(key: string, value: string): Promise<void> {
     try {
-      await pool.query(
-        `INSERT INTO system_configs (config_key, config_value)
-         VALUES ($1, $2)
-         ON CONFLICT (config_key) 
-         DO UPDATE SET config_value = $2, updated_at = CURRENT_TIMESTAMP`,
-        [key, value]
+      // 使用内存数据库更新
+      await query(
+        'UPDATE system_configs SET config_value = $1 WHERE config_key = $2',
+        [value, key]
       );
 
       // 更新缓存

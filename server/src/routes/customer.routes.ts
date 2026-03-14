@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getCustomers, getCustomerById, updateCustomer, deleteCustomer, batchImportCustomers, getAgentCustomers, batchAssignAgents } from '../controllers/customer.controller';
+import { getCustomers, getCustomerById, updateCustomer, deleteCustomer, batchImportCustomers, getAgentCustomers, batchAssignAgents, getCustomersByNameLetter, getNameLetterStats } from '../controllers/customer.controller';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
 
 const router = Router();
@@ -7,6 +7,8 @@ const router = Router();
 router.use(authMiddleware);
 
 router.get('/', adminMiddleware, getCustomers);
+router.get('/by-name-letter', adminMiddleware, getCustomersByNameLetter);
+router.get('/name-letter-stats', adminMiddleware, getNameLetterStats);
 router.get('/agent/list', getAgentCustomers);
 router.get('/:id', getCustomerById);
 router.put('/:id', updateCustomer);

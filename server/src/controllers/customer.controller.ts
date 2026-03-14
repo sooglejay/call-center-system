@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { query } from '../config/database';
 
 // 获取姓氏首字母
-const getFirstLetter = (name: string): string => {
+export const getFirstLetter = (name: string): string => {
   if (!name) return '#';
   const firstChar = name.charAt(0);
   // 如果是中文，返回拼音首字母（简化处理）
@@ -332,6 +332,88 @@ export const getAgentCustomers = async (req: any, res: Response) => {
     });
   } catch (error) {
     console.error('获取客服客户列表错误:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+};
+
+
+// 按姓氏首字母查询客户
+export const getCustomersByNameLetter = async (req: Request, res: Response) => {
+  try {
+    const { letters, unassigned_only } = req.query;
+    
+    // 获取所有客户
+    const result = await query('SELECT * FROM customers ORDER BY name ASC');
+    let data = result.rows;
+    
+    // 如果只查询未分配客户
+    if (unassigned_only === 'true') {
+      data = data.filter((c: any) => !c.assigned_to);
+    }
+    
+    // 如果指定了姓氏首字母
+    if (letters) {
+      const letterList = (letters as string).split(',').map(l => l.toUpperCase());
+      data = data.filter((c: any) => {
+        const customerLetter = getFirstLetter(c.name || '');
+        return letterList.includes(customerLetter);
+      });
+    }
+    
+    // 获取用户名称
+    const users = await query('SELECT id, real_name FROM users');
+    const userMap = new Map(users.rows.map((u: any) => [u.id, u.real_name]));
+    
+    // 添加导入人和分配客服名称
+    data = data.map((c: any) => ({
+      ...c,
+      imported_by_name: userMap.get(c.imported_by) || '',
+      assigned_to_name: userMap.get(c.assigned_to) || '未分配'
+    }));
+    
+    // 按姓氏首字母分组
+    const groups: Record<string, typeof data> = {};
+    data.forEach((c: any) => {
+      const letter = getFirstLetter(c.name || '');
+      if (!groups[letter]) groups[letter] = [];
+      groups[letter].push(c);
+    });
+    
+    res.json({
+      data,
+      groups,
+      total: data.length
+    });
+  } catch (error) {
+    console.error('按姓氏查询客户错误:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+};
+
+// 获取姓氏首字母统计
+export const getNameLetterStats = async (req: Request, res: Response) => {
+  try {
+    const { unassigned_only } = req.query;
+    
+    // 获取所有客户
+    const result = await query('SELECT * FROM customers');
+    let data = result.rows;
+    
+    // 如果只统计未分配客户
+    if (unassigned_only === 'true') {
+      data = data.filter((c: any) => !c.assigned_to);
+    }
+    
+    // 统计每个姓氏首字母的数量
+    const stats: Record<string, number> = {};
+    data.forEach((c: any) => {
+      const letter = getFirstLetter(c.name || '');
+      stats[letter] = (stats[letter] || 0) + 1;
+    });
+    
+    res.json(stats);
+  } catch (error) {
+    console.error('获取姓氏统计错误:', error);
     res.status(500).json({ error: '服务器错误' });
   }
 };

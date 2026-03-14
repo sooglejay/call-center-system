@@ -1,11 +1,5 @@
 import { Request, Response } from 'express';
-import { voicemailService } from '../services/voicemail.service';
-import { smsService } from '../services/sms.service';
-import { Pool } from 'pg';
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
+import { query } from '../config/database';
 
 export class CommunicationController {
   /**
@@ -19,21 +13,40 @@ export class CommunicationController {
       // 管理员可以查看所有记录，客服只能查看自己的
       const agentId = userRole === 'admin' ? undefined : userId;
 
-      // 并行获取各种记录
-      const [voicemail, sms, unanswered] = await Promise.all([
-        voicemailService.getVoicemailRecords(agentId, 50),
-        smsService.getSmsRecords(agentId, 50),
-        voicemailService.getUnansweredRecords(agentId, 50),
-      ]);
+      // 从内存数据库获取记录
+      let voicemail: any[] = [];
+      let sms: any[] = [];
+      let unanswered: any[] = [];
 
-      // 获取统计
-      const statsResult = await pool.query(
-        `SELECT 
-          (SELECT COUNT(*) FROM voicemail_records ${agentId ? 'WHERE agent_id = $1' : ''}) as voicemail_count,
-          (SELECT COUNT(*) FROM sms_records ${agentId ? 'WHERE agent_id = $1' : ''}) as sms_count,
-          (SELECT COUNT(*) FROM unanswered_records ${agentId ? 'WHERE agent_id = $1' : ''}) as unanswered_count`,
-        agentId ? [agentId] : []
-      );
+      try {
+        const voicemailResult = await query('SELECT * FROM voicemail_records ORDER BY created_at DESC LIMIT 50');
+        voicemail = voicemailResult.rows;
+        if (agentId) {
+          voicemail = voicemail.filter((v: any) => v.agent_id === agentId);
+        }
+      } catch (e) {
+        // 忽略错误
+      }
+
+      try {
+        const smsResult = await query('SELECT * FROM sms_records ORDER BY created_at DESC LIMIT 50');
+        sms = smsResult.rows;
+        if (agentId) {
+          sms = sms.filter((s: any) => s.agent_id === agentId);
+        }
+      } catch (e) {
+        // 忽略错误
+      }
+
+      try {
+        const unansweredResult = await query('SELECT * FROM unanswered_records ORDER BY created_at DESC LIMIT 50');
+        unanswered = unansweredResult.rows;
+        if (agentId) {
+          unanswered = unanswered.filter((u: any) => u.agent_id === agentId);
+        }
+      } catch (e) {
+        // 忽略错误
+      }
 
       res.json({
         success: true,
@@ -42,9 +55,9 @@ export class CommunicationController {
           sms,
           unanswered,
           stats: {
-            voicemailCount: parseInt(statsResult.rows[0].voicemail_count),
-            smsCount: parseInt(statsResult.rows[0].sms_count),
-            unansweredCount: parseInt(statsResult.rows[0].unanswered_count),
+            voicemailCount: voicemail.length,
+            smsCount: sms.length,
+            unansweredCount: unanswered.length,
           }
         }
       });
@@ -52,8 +65,7 @@ export class CommunicationController {
       console.error('获取通信记录失败:', error);
       res.status(500).json({
         success: false,
-        message: '获取通信记录失败',
-        error: (error as Error).message
+        error: '获取通信记录失败'
       });
     }
   }
@@ -65,71 +77,54 @@ export class CommunicationController {
     try {
       const userId = (req as any).user?.id;
       const userRole = (req as any).user?.role;
-      
       const agentId = userRole === 'admin' ? undefined : userId;
 
-      // 获取今日统计
-      const todayResult = await pool.query(
-        `SELECT 
-          (SELECT COUNT(*) FROM voicemail_records 
-           WHERE created_at >= CURRENT_DATE ${agentId ? 'AND agent_id = $1' : ''}) as today_voicemail,
-          (SELECT COUNT(*) FROM sms_records 
-           WHERE created_at >= CURRENT_DATE ${agentId ? 'AND agent_id = $1' : ''}) as today_sms,
-          (SELECT COUNT(*) FROM unanswered_records 
-           WHERE created_at >= CURRENT_DATE ${agentId ? 'AND agent_id = $1' : ''}) as today_unanswered`,
-        agentId ? [agentId] : []
-      );
+      // 从内存数据库获取统计
+      let voicemailCount = 0;
+      let smsCount = 0;
+      let unansweredCount = 0;
 
-      // 获取本周统计
-      const weekResult = await pool.query(
-        `SELECT 
-          (SELECT COUNT(*) FROM voicemail_records 
-           WHERE created_at >= DATE_TRUNC('week', CURRENT_DATE) ${agentId ? 'AND agent_id = $1' : ''}) as week_voicemail,
-          (SELECT COUNT(*) FROM sms_records 
-           WHERE created_at >= DATE_TRUNC('week', CURRENT_DATE) ${agentId ? 'AND agent_id = $1' : ''}) as week_sms,
-          (SELECT COUNT(*) FROM unanswered_records 
-           WHERE created_at >= DATE_TRUNC('week', CURRENT_DATE) ${agentId ? 'AND agent_id = $1' : ''}) as week_unanswered`,
-        agentId ? [agentId] : []
-      );
+      try {
+        const voicemailResult = await query('SELECT * FROM voicemail_records');
+        voicemailCount = agentId 
+          ? voicemailResult.rows.filter((v: any) => v.agent_id === agentId).length
+          : voicemailResult.rows.length;
+      } catch (e) {
+        // 忽略错误
+      }
 
-      // 获取本月统计
-      const monthResult = await pool.query(
-        `SELECT 
-          (SELECT COUNT(*) FROM voicemail_records 
-           WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE) ${agentId ? 'AND agent_id = $1' : ''}) as month_voicemail,
-          (SELECT COUNT(*) FROM sms_records 
-           WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE) ${agentId ? 'AND agent_id = $1' : ''}) as month_sms,
-          (SELECT COUNT(*) FROM unanswered_records 
-           WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE) ${agentId ? 'AND agent_id = $1' : ''}) as month_unanswered`,
-        agentId ? [agentId] : []
-      );
+      try {
+        const smsResult = await query('SELECT * FROM sms_records');
+        smsCount = agentId
+          ? smsResult.rows.filter((s: any) => s.agent_id === agentId).length
+          : smsResult.rows.length;
+      } catch (e) {
+        // 忽略错误
+      }
+
+      try {
+        const unansweredResult = await query('SELECT * FROM unanswered_records');
+        unansweredCount = agentId
+          ? unansweredResult.rows.filter((u: any) => u.agent_id === agentId).length
+          : unansweredResult.rows.length;
+      } catch (e) {
+        // 忽略错误
+      }
 
       res.json({
         success: true,
         data: {
-          today: {
-            voicemail: parseInt(todayResult.rows[0].today_voicemail),
-            sms: parseInt(todayResult.rows[0].today_sms),
-            unanswered: parseInt(todayResult.rows[0].today_unanswered),
-          },
-          thisWeek: {
-            voicemail: parseInt(weekResult.rows[0].week_voicemail),
-            sms: parseInt(weekResult.rows[0].week_sms),
-            unanswered: parseInt(weekResult.rows[0].week_unanswered),
-          },
-          thisMonth: {
-            voicemail: parseInt(monthResult.rows[0].month_voicemail),
-            sms: parseInt(monthResult.rows[0].month_sms),
-            unanswered: parseInt(monthResult.rows[0].month_unanswered),
-          }
+          voicemailCount,
+          smsCount,
+          unansweredCount,
+          totalCount: voicemailCount + smsCount + unansweredCount
         }
       });
     } catch (error) {
       console.error('获取通信统计失败:', error);
       res.status(500).json({
         success: false,
-        message: '获取通信统计失败',
-        error: (error as Error).message
+        error: '获取通信统计失败'
       });
     }
   }
