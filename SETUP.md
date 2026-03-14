@@ -180,6 +180,44 @@ rm server/data/database.sqlite
 pnpm db:seed
 ```
 
+### 4. better-sqlite3 编译错误（macOS）
+
+如果在 macOS 上遇到 `Could not locate the bindings file` 错误，需要手动编译 better-sqlite3：
+
+```bash
+# 进入 better-sqlite3 目录
+cd node_modules/.pnpm/better-sqlite3@12.8.0/node_modules/better-sqlite3
+
+# 手动编译
+node-gyp clean
+node-gyp configure
+node-gyp build
+
+# 或者使用 npm 脚本
+npm run rebuild
+```
+
+**前提条件：**
+- 安装 Xcode 命令行工具: `xcode-select --install`
+- 安装 node-gyp: `npm install -g node-gyp`
+- Python 3 已安装: `python3 --version`
+
+**备选方案 - 删除重新安装：**
+
+```bash
+cd server
+rm -rf node_modules pnpm-lock.yaml
+pnpm install
+```
+
+**临时方案 - 使用内存数据库：**
+
+```bash
+# 修改 server/.env
+echo "DB_TYPE=memory" >> server/.env
+# 然后直接运行 pnpm dev（无需执行 db:seed）
+```
+
 ## 📖 项目结构
 
 ```
