@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
-import { Table, Button, Modal, Upload, message, Tabs, Select, Form, Input, Badge, Space, Tag, Radio, Divider, Typography, Checkbox } from 'antd';
-import { UploadOutlined, ImportOutlined, CameraOutlined, UserAddOutlined, TeamOutlined } from '@ant-design/icons';
+import { Table, Button, Modal, Upload, message, Tabs, Select, Form, Input, Badge, Space, Tag, Radio, Divider, Typography, Checkbox, Alert, Card, Row, Col, DownloadOutlined } from 'antd';
+import { UploadOutlined, ImportOutlined, CameraOutlined, UserAddOutlined, TeamOutlined, FileExcelOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { customerApi, configApi, userApi } from '../../services/api';
 import type { Customer, User } from '../../services/api';
 import * as XLSX from 'xlsx';
@@ -45,6 +45,7 @@ export default function CustomerManagement() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
   const [importModalVisible, setImportModalVisible] = useState(false);
+  const [importGuideVisible, setImportGuideVisible] = useState(false);
   const [assignModalVisible, setAssignModalVisible] = useState(false);
   const [importedData, setImportedData] = useState<any[]>([]);
   const [agents, setAgents] = useState<User[]>([]);
@@ -154,6 +155,50 @@ export default function CustomerManagement() {
       message.success(`成功解析 ${response.data.data.length} 条记录`);
     } catch (error) {
       message.error('文件解析失败');
+    }
+    return false;
+  };
+
+  // 下载导入模板
+  const downloadTemplate = () => {
+    const template = [
+      ['姓名', '电话', '邮箱', '公司', '地址', '备注'],
+      ['张三', '13800138001', 'zhangsan@example.com', '张三科技', '北京市朝阳区', 'VIP客户'],
+      ['李四', '13900139001', 'lisi@example.com', '李四集团', '上海市浦东新区', ''],
+      ['王五', '13700137001', '', '', '', '潜在客户'],
+    ];
+    
+    const ws = XLSX.utils.aoa_to_sheet(template);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '客户导入模板');
+    
+    // 设置列宽
+    ws['!cols'] = [
+      { wch: 12 }, // 姓名
+      { wch: 15 }, // 电话
+      { wch: 25 }, // 邮箱
+      { wch: 20 }, // 公司
+      { wch: 30 }, // 地址
+      { wch: 20 }, // 备注
+    ];
+    
+    XLSX.writeFile(wb, '客户导入模板.xlsx');
+    message.success('模板下载成功');
+  };
+
+  // 处理文件上传（从引导弹窗触发）
+  const handleFileUploadFromGuide = async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    try {
+      const response = await configApi.uploadFile(formData);
+      setImportedData(response.data.data);
+      setImportGuideVisible(false);
+      setImportModalVisible(true);
+      message.success(`成功解析 ${response.data.data.length} 条记录`);
+    } catch (error) {
+      message.error('文件解析失败，请检查文件格式是否符合要求');
     }
     return false;
   };
@@ -280,9 +325,12 @@ export default function CustomerManagement() {
               批量分配 ({selectedRowKeys.length})
             </Button>
           )}
-          <Upload beforeUpload={handleFileUpload} showUploadList={false} accept=".xlsx,.xls,.csv,.txt">
-            <Button icon={<UploadOutlined />}>导入Excel/CSV</Button>
-          </Upload>
+          <Button 
+            icon={<UploadOutlined />} 
+            onClick={() => setImportGuideVisible(true)}
+          >
+            导入Excel/CSV
+          </Button>
           <Button icon={<CameraOutlined />} onClick={() => message.info('OCR功能需要集成OCR服务')}>
             拍照识别
           </Button>
@@ -403,6 +451,91 @@ export default function CustomerManagement() {
           )}
         </TabPane>
       </Tabs>
+
+      {/* 导入引导弹窗 */}
+      <Modal
+        title={
+          <Space>
+            <InfoCircleOutlined style={{ color: '#1890ff' }} />
+            <span>导入客户数据</span>
+          </Space>
+        }
+        open={importGuideVisible}
+        onCancel={() => setImportGuideVisible(false)}
+        footer={[
+          <Button key="template" icon={<DownloadOutlined />} onClick={downloadTemplate}>
+            下载模板
+          </Button>,
+          <Upload
+            key="upload"
+            beforeUpload={handleFileUploadFromGuide}
+            showUploadList={false}
+            accept=".xlsx,.xls,.csv"
+          >
+            <Button type="primary" icon={<UploadOutlined />}>
+              选择文件导入
+            </Button>
+          </Upload>,
+        ]}
+        width={700}
+      >
+        <Alert
+          message="导入前请确认文件格式"
+          description="系统支持 Excel(.xlsx/.xls) 和 CSV 格式文件，请确保文件内容符合以下字段要求"
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+        />
+        
+        <Card title="必填字段" size="small" style={{ marginBottom: 16 }}>
+          <Row gutter={[16, 8]}>
+            <Col span={12}>
+              <Text strong style={{ color: '#ff4d4f' }}>姓名 (name)</Text>
+              <div style={{ color: '#666', fontSize: 12 }}>客户姓名，支持中英文</div>
+            </Col>
+            <Col span={12}>
+              <Text strong style={{ color: '#ff4d4f' }}>电话 (phone)</Text>
+              <div style={{ color: '#666', fontSize: 12 }}>手机号码，如：13800138000</div>
+            </Col>
+          </Row>
+        </Card>
+
+        <Card title="可选字段" size="small" style={{ marginBottom: 16 }}>
+          <Row gutter={[16, 12]}>
+            <Col span={12}>
+              <Text strong>邮箱 (email)</Text>
+              <div style={{ color: '#666', fontSize: 12 }}>如：customer@example.com</div>
+            </Col>
+            <Col span={12}>
+              <Text strong>公司 (company)</Text>
+              <div style={{ color: '#666', fontSize: 12 }}>客户所在公司名称</div>
+            </Col>
+            <Col span={12}>
+              <Text strong>地址 (address)</Text>
+              <div style={{ color: '#666', fontSize: 12 }}>客户联系地址</div>
+            </Col>
+            <Col span={12}>
+              <Text strong>备注 (remark)</Text>
+              <div style={{ color: '#666', fontSize: 12 }}>其他补充信息</div>
+            </Col>
+          </Row>
+        </Card>
+
+        <Alert
+          message="导入提示"
+          description={
+            <ul style={{ margin: 0, paddingLeft: 16 }}>
+              <li>建议先下载模板文件，按模板格式填写数据</li>
+              <li>Excel 文件建议只保留一个工作表</li>
+              <li>第一行应为表头（姓名、电话等），数据从第二行开始</li>
+              <li>单次导入建议不超过 1000 条记录</li>
+              <li>电话号码会自动去重，重复号码将跳过</li>
+            </ul>
+          }
+          type="warning"
+          showIcon
+        />
+      </Modal>
 
       {/* 导入模态框 */}
       <Modal
