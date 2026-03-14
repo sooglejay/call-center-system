@@ -1,0 +1,69 @@
+# =====================================================
+# 客服外呼系统 - Nginx 子路径配置
+# 
+# 将此配置添加到你的现有 Nginx 配置文件中
+# 例如: /etc/nginx/conf.d/your-site.conf
+# =====================================================
+
+# 在你的现有 server 块中添加以下配置
+
+server {
+    listen 80;
+    server_name yourdomain.com;  # 修改为你的域名
+
+    # ================================================
+    # 【现有网站配置 - 保持不变】
+    # ================================================
+    location / {
+        root /var/www/html;       # 你的现有网站根目录
+        index index.html;
+    }
+
+    # ================================================
+    # 【客服外呼系统配置 - 添加到现有配置中】
+    # ================================================
+    
+    # 前端页面 - 所有 /callcenter/ 路径
+    location /callcenter/ {
+        proxy_pass http://localhost:8080/;
+        proxy_http_version 1.1;
+        
+        # 关键：处理子路径下的资源引用
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # WebSocket 支持（如果需要）
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        
+        # 超时设置
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+    
+    # API 接口 - 所有 /callcenter/api/ 路径
+    location /callcenter/api/ {
+        proxy_pass http://localhost:8081/;
+        proxy_http_version 1.1;
+        
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # API 通常需要更长的超时时间
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 300s;
+    }
+    
+    # 静态资源缓存优化（可选）
+    location /callcenter/assets/ {
+        proxy_pass http://localhost:8080/assets/;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+}
