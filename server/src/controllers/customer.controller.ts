@@ -267,10 +267,10 @@ export const batchAssignAgents = async (req: any, res: Response) => {
         console.log(`[批量分配] 找到客户: ${customer.name} (ID=${customerId}), 原分配: ${customer.assigned_to_name || '未分配'}`);
         
         try {
-          // 更新客户分配
+          // 更新客户分配（只更新assigned_to，assigned_to_name通过JOIN查询）
           await query(
-            'UPDATE customers SET assigned_to = $1, assigned_to_name = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
-            [assigned_to, agentName, customerId]
+            'UPDATE customers SET assigned_to = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+            [assigned_to, customerId]
           );
           console.log(`[批量分配] 成功更新客户 ${customerId}`);
           updatedCount++;
