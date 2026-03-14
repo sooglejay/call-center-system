@@ -9,7 +9,12 @@
     "start": "node dist/app.js",
     "db:init": "tsx src/scripts/init-db.ts",
     "db:migrate": "tsx src/scripts/migrate.ts",
-    "db:seed": "tsx src/scripts/seed.ts"
+    "db:seed": "tsx src/scripts/seed.ts",
+    "db:seed:mini": "tsx src/scripts/seed.ts --mini",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:ui": "vitest --ui"
   },
   "dependencies": {
     "@types/better-sqlite3": "^7.6.13",
@@ -38,7 +43,12 @@
     "@types/pg": "^8.10.9",
     "@types/uuid": "^9.0.7",
     "@types/ws": "^8.5.10",
+    "@vitest/coverage-v8": "^1.0.0",
+    "@vitest/ui": "^1.0.0",
+    "supertest": "^6.3.3",
+    "@types/supertest": "^6.0.0",
     "tsx": "^4.7.0",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "^1.0.0"
   }
 }
