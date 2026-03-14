@@ -22,7 +22,7 @@ describe('任务管理模块测试', () => {
       await query(
         `INSERT OR IGNORE INTO users (id, username, password, role, real_name, status)
          VALUES ($1, $2, $3, $4, $5, $6)`,
-        [agentId, `testagent${agentId}`, '$2a$10$test', 'agent', `测试客服${agentId}`, 'active']
+        [agentId, `testagent${agentId}`, 'testpassword', 'agent', `测试客服${agentId}`, 'active']
       );
     }
   });

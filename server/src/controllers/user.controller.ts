@@ -42,12 +42,11 @@ export const createUser = async (req: Request, res: Response) => {
       return res.status(400).json({ error: '用户名已存在' });
     }
     
-    const hashedPassword = await bcrypt.hash(password, 10);
-    
+    // 明文存储密码（开发便利）
     const result = await query(
       `INSERT INTO users (username, password, real_name, role, phone, email)
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, username, real_name, role, phone, email, status, created_at`,
-      [username, hashedPassword, real_name, role, phone, email]
+      [username, password, real_name, role, phone, email]
     );
     
     // 为客服创建默认配置
@@ -110,9 +109,9 @@ export const resetPassword = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { new_password } = req.body;
     
-    const hashedPassword = await bcrypt.hash(new_password, 10);
+    // 明文存储密码（开发便利）
     await query('UPDATE users SET password = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', 
-      [hashedPassword, id]);
+      [new_password, id]);
     
     res.json({ message: '密码重置成功' });
   } catch (error) {
