@@ -15,17 +15,29 @@ git clone <你的仓库地址>
 cd call-center-system
 ```
 
-### 2. 安装依赖
+### 2. 安装依赖（含 better-sqlite3 编译）
 
 ```bash
 # 安装后端依赖
 cd server
 pnpm install
 
+# 编译 better-sqlite3（macOS/Windows 必需）
+cd node_modules/.pnpm/better-sqlite3@12.8.0/node_modules/better-sqlite3
+node-gyp clean
+node-gyp configure
+node-gyp build
+
+# 返回 server 目录
+cd ../../../../../..
+
 # 安装前端依赖
 cd ../client
 pnpm install
 ```
+
+**注意：** macOS 用户如果遇到 `Could not locate the bindings file` 错误，必须执行上述编译步骤。
+Windows 用户如果遇到类似问题，同样需要编译。
 
 ### 3. 配置环境变量
 
