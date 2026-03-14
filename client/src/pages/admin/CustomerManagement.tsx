@@ -144,6 +144,20 @@ export default function CustomerManagement() {
     return groups;
   }, [customers, searchText, filterStatus, filterAssigned, activeLetters, sortBy]);
 
+  // 处理分组表格的选择变化（支持跨组多选）
+  const handleGroupSelectionChange = (groupCustomers: Customer[], keys: (string | number)[], selected: boolean) => {
+    const groupIds = groupCustomers.map(c => c.id);
+    if (selected) {
+      // 选中：添加当前组的选中项，保留其他组的选中项
+      const otherSelectedKeys = selectedRowKeys.filter(k => !groupIds.includes(k as number));
+      setSelectedRowKeys([...otherSelectedKeys, ...(keys as number[])]);
+    } else {
+      // 取消选中：移除当前组的选中项，保留其他组的选中项
+      const otherSelectedKeys = selectedRowKeys.filter(k => !groupIds.includes(k as number));
+      setSelectedRowKeys(otherSelectedKeys);
+    }
+  };
+
   const handleFileUpload = async (file: File) => {
     const formData = new FormData();
     formData.append('file', file);
@@ -444,8 +458,29 @@ export default function CustomerManagement() {
                     loading={loading}
                     pagination={false}
                     rowSelection={{
-                      selectedRowKeys,
-                      onChange: (keys) => setSelectedRowKeys(keys as number[])
+                      selectedRowKeys: selectedRowKeys.filter(key => 
+                        groupCustomers.some(c => c.id === key)
+                      ),
+                      onChange: (keys) => handleGroupSelectionChange(
+                        groupCustomers, 
+                        keys, 
+                        keys.length > 0
+                      ),
+                      onSelect: (record, selected) => {
+                        if (selected) {
+                          setSelectedRowKeys([...selectedRowKeys, record.id]);
+                        } else {
+                          setSelectedRowKeys(selectedRowKeys.filter(k => k !== record.id));
+                        }
+                      },
+                      onSelectAll: (selected, selectedRows, changeRows) => {
+                        const changeIds = changeRows.map(r => r.id);
+                        if (selected) {
+                          setSelectedRowKeys([...selectedRowKeys, ...changeIds]);
+                        } else {
+                          setSelectedRowKeys(selectedRowKeys.filter(k => !changeIds.includes(k)));
+                        }
+                      }
                     }}
                   />
                 </div>
