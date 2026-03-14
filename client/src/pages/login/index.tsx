@@ -17,12 +17,22 @@ export default function LoginPage() {
     try {
       const response = await authApi.login(values.username, values.password);
       const { token, user } = response.data;
+      
+      // 保存到 localStorage
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(user));
+      
+      // 更新状态
       setAuth(token, user);
       message.success('登录成功');
-      navigate('/');
+      
+      // 使用延迟跳转，确保状态更新完成
+      setTimeout(() => {
+        // 强制页面刷新跳转到首页
+        window.location.href = '/';
+      }, 100);
     } catch (error: any) {
+      console.error('登录错误:', error);
       message.error(error.response?.data?.error || '登录失败');
     } finally {
       setLoading(false);
