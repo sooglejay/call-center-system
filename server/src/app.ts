@@ -2,18 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
-import fs from 'fs';
-
-// 根据环境选择数据库
-dotenv.config();
-const useSQLite = process.env.USE_SQLITE === 'true' || !process.env.DATABASE_URL;
-
-// 动态导入数据库配置
-const dbModule = useSQLite 
-  ? require('./config/database.sqlite')
-  : require('./config/database');
-
-const pool = dbModule.default;
+import pool from './config/database';
 
 import authRoutes from './routes/auth.routes';
 import userRoutes from './routes/user.routes';
@@ -26,6 +15,8 @@ import configRoutes from './routes/config.routes';
 import reportRoutes from './routes/report.routes';
 import systemRoutes from './routes/system.routes';
 import communicationRoutes from './routes/communication.routes';
+
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -59,37 +50,9 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 
 // 初始化数据库
 const initDatabase = async () => {
-  try {
-    console.log('正在检查数据库连接...');
-    
-    if (useSQLite) {
-      // SQLite 版本 - 数据库已经在导入时初始化
-      console.log('✅ SQLite 数据库已就绪');
-      return;
-    }
-    
-    // PostgreSQL 版本
-    await pool.query('SELECT NOW()');
-    console.log('✅ 数据库连接成功！');
-
-    // 读取并执行 SQL 初始化脚本
-    const sqlPath = path.join(__dirname, 'scripts', 'init-db.sql');
-    
-    if (fs.existsSync(sqlPath)) {
-      console.log('正在执行数据库初始化...');
-      const sql = fs.readFileSync(sqlPath, 'utf-8');
-      await pool.query(sql);
-      console.log('✅ 数据库初始化完成！');
-    } else {
-      console.log('⚠️ SQL 初始化文件不存在，跳过数据库初始化');
-    }
-  } catch (error) {
-    console.error('❌ 数据库连接失败:', error);
-    console.log('\n💡 提示：请确保 PostgreSQL 已启动');
-    console.log('   本地开发：docker-compose -f docker-compose.db.yml up -d');
-    console.log('   或使用 Railway/Vercel 部署后的云数据库\n');
-    // 不阻止应用启动，只是记录错误
-  }
+  console.log('✅ 内存数据库已就绪，包含默认用户：');
+  console.log('   - 管理员: admin / admin123');
+  console.log('   - 客服: agent / agent123');
 };
 
 // 启动服务器
