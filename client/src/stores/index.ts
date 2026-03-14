@@ -6,9 +6,11 @@ interface AuthState {
   token: string | null;
   user: User | null;
   isAuthenticated: boolean;
+  hasHydrated: boolean;  // 新增：标记是否已从 localStorage 恢复
   setAuth: (token: string, user: User) => void;
   clearAuth: () => void;
   updateUser: (user: Partial<User>) => void;
+  setHasHydrated: (state: boolean) => void;  // 新增：设置恢复状态
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -17,6 +19,7 @@ export const useAuthStore = create<AuthState>()(
       token: null,
       user: null,
       isAuthenticated: false,
+      hasHydrated: false,  // 初始为 false
       setAuth: (token, user) => set({ token, user, isAuthenticated: true }),
       clearAuth: () => {
         localStorage.removeItem('token');
@@ -25,10 +28,15 @@ export const useAuthStore = create<AuthState>()(
       },
       updateUser: (userData) => set((state) => ({
         user: state.user ? { ...state.user, ...userData } : null
-      }))
+      })),
+      setHasHydrated: (state) => set({ hasHydrated: state })
     }),
     {
-      name: 'auth-storage'
+      name: 'auth-storage',
+      onRehydrateStorage: () => (state) => {
+        // 恢复完成后设置 hasHydrated 为 true
+        state?.setHasHydrated(true);
+      }
     }
   )
 );

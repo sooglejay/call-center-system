@@ -26,11 +26,18 @@ export default function LoginPage() {
       setAuth(token, user);
       message.success('登录成功');
       
-      // 使用延迟跳转，确保状态更新完成
+      // 延迟跳转，确保 localStorage 和状态更新完成
       setTimeout(() => {
-        // 强制页面刷新跳转到首页
-        window.location.href = '/';
-      }, 100);
+        // 使用 navigate 进行客户端路由跳转
+        navigate('/', { replace: true });
+        
+        // 如果 navigate 不生效，强制刷新页面
+        setTimeout(() => {
+          if (window.location.pathname === '/login') {
+            window.location.href = '/';
+          }
+        }, 100);
+      }, 300);
     } catch (error: any) {
       console.error('登录错误:', error);
       message.error(error.response?.data?.error || '登录失败');
