@@ -698,6 +698,7 @@ export default function CustomerManagement() {
             <Select
               placeholder="选择要分配的客服"
               style={{ width: '100%' }}
+              value={assignAgentId}
               onChange={(value) => setAssignAgentId(value)}
             >
               {agents.map(agent => (
