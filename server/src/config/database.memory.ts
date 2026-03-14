@@ -36,7 +36,7 @@ class MemoryDB {
     {
       id: 1,
       username: 'admin',
-      password: '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjIXDZJ8JQYVZlHKbXRKJVB0eWlxGqC', // admin123
+      password: '$2a$10$NgG1WV0QVLtPT1zDzDtE3eI9X1hJTOliq8ySP7tTPLWWV5F1YOd6K', // admin123
       role: 'admin',
       real_name: '系统管理员',
       status: 'active'
@@ -44,7 +44,7 @@ class MemoryDB {
     {
       id: 2,
       username: 'agent',
-      password: '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjIXDZJ8JQYVZlHKbXRKJVB0eWlxGqC', // agent123
+      password: '$2a$10$NgG1WV0QVLtPT1zDzDtE3eI9X1hJTOliq8ySP7tTPLWWV5F1YOd6K', // agent123
       role: 'agent',
       real_name: '客服专员',
       status: 'active'

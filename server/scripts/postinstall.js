@@ -128,12 +128,7 @@ function seedDatabase() {
   try {
     process.chdir(rootDir);
     
-    // 先执行数据库初始化
-    try {
-      execSync('npx tsx src/scripts/init-db.ts', { stdio: 'inherit' });
-    } catch {}
-    
-    // 再执行种子数据
+    // 执行种子数据（会自动创建表并插入数据）
     execSync('npx tsx src/scripts/seed.ts --mini', { stdio: 'inherit' });
     console.log('✅ 数据库初始化完成');
     return true;

@@ -153,11 +153,11 @@ CREATE TABLE IF NOT EXISTS unanswered_records (
 
 -- 插入默认管理员用户 (密码: admin123)
 INSERT OR IGNORE INTO users (username, password, role, real_name, status) 
-VALUES ('admin', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjIXDZJ8JQYVZlHKbXRKJVB0eWlxGqC', 'admin', '系统管理员', 'active');
+VALUES ('admin', '$2a$10$NgG1WV0QVLtPT1zDzDtE3eI9X1hJTOliq8ySP7tTPLWWV5F1YOd6K', 'admin', '系统管理员', 'active');
 
 -- 插入默认客服用户 (密码: agent123)
 INSERT OR IGNORE INTO users (username, password, role, real_name, status) 
-VALUES ('agent', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjIXDZJ8JQYVZlHKbXRKJVB0eWlxGqC', 'agent', '客服专员', 'active');
+VALUES ('agent', '$2a$10$NgG1WV0QVLtPT1zDzDtE3eI9X1hJTOliq8ySP7tTPLWWV5F1YOd6K', 'agent', '客服专员', 'active');
 
 -- 插入默认系统配置
 INSERT OR IGNORE INTO system_configs (config_key, config_value, description) VALUES
