@@ -56,7 +56,7 @@ export default function CustomerManagement() {
   const [filterStatus, setFilterStatus] = useState<string>('');
   const [filterAssigned, setFilterAssigned] = useState<string>('');
   const [sortBy, setSortBy] = useState<string>('created_at');
-  const [activeLetter, setActiveLetter] = useState<string>('');
+  const [activeLetters, setActiveLetters] = useState<string[]>([]);
   const [nameGroups, setNameGroups] = useState<Record<string, number>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -118,9 +118,9 @@ export default function CustomerManagement() {
       }
     }
     
-    // 首字母过滤
-    if (activeLetter) {
-      filtered = filtered.filter(c => getFirstLetter(c.name || '') === activeLetter);
+    // 首字母过滤（支持多选）
+    if (activeLetters.length > 0) {
+      filtered = filtered.filter(c => activeLetters.includes(getFirstLetter(c.name || '')));
     }
     
     // 按姓氏排序
@@ -142,7 +142,7 @@ export default function CustomerManagement() {
     });
     
     return groups;
-  }, [customers, searchText, filterStatus, filterAssigned, activeLetter, sortBy]);
+  }, [customers, searchText, filterStatus, filterAssigned, activeLetters, sortBy]);
 
   const handleFileUpload = async (file: File) => {
     const formData = new FormData();
@@ -314,7 +314,14 @@ export default function CustomerManagement() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16, alignItems: 'center' }}>
-        <h2>客户管理</h2>
+        <Space>
+          <h2 style={{ margin: 0 }}>客户管理</h2>
+          {selectedRowKeys.length > 0 && (
+            <Tag color="blue" style={{ fontSize: 14, padding: '4px 8px' }}>
+              已选 {selectedRowKeys.length} 个客户
+            </Tag>
+          )}
+        </Space>
         <Space>
           {selectedRowKeys.length > 0 && (
             <Button 
@@ -376,26 +383,33 @@ export default function CustomerManagement() {
           <Button type="primary" onClick={fetchCustomers}>刷新</Button>
         </Space>
 
-        {/* 姓氏首字母索引 */}
+        {/* 姓氏首字母索引（支持多选） */}
         <Divider style={{ margin: '12px 0' }} />
         <Space wrap>
-          <Text type="secondary">姓氏索引:</Text>
+          <Text type="secondary">姓氏索引（可多选）:</Text>
           <Button 
-            type={activeLetter === '' ? 'primary' : 'default'} 
+            type={activeLetters.length === 0 ? 'primary' : 'default'} 
             size="small"
-            onClick={() => setActiveLetter('')}
+            onClick={() => setActiveLetters([])}
           >
             全部
           </Button>
           {alphabet.map(letter => {
             const count = nameGroups[letter] || 0;
+            const isSelected = activeLetters.includes(letter);
             return (
               <Button
                 key={letter}
-                type={activeLetter === letter ? 'primary' : 'default'}
+                type={isSelected ? 'primary' : 'default'}
                 size="small"
                 disabled={count === 0}
-                onClick={() => setActiveLetter(letter === activeLetter ? '' : letter)}
+                onClick={() => {
+                  if (isSelected) {
+                    setActiveLetters(activeLetters.filter(l => l !== letter));
+                  } else {
+                    setActiveLetters([...activeLetters, letter]);
+                  }
+                }}
               >
                 {letter} {count > 0 && `(${count})`}
               </Button>
