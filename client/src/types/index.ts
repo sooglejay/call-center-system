@@ -28,6 +28,8 @@ export interface Customer {
   call_notes?: string;
   call_time?: string;
   task_id?: number;
+  assigned_to?: number | null;
+  assigned_to_name?: string;
 }
 
 export interface CallRecord {

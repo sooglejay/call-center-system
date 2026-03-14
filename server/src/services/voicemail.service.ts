@@ -1,10 +1,6 @@
-import { Pool } from 'pg';
+import { query } from '../config/database';
 import twilio from 'twilio';
 import { configService } from './config.service';
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
 
 export class VoicemailService {
   private async getTwilioClient() {
@@ -46,7 +42,7 @@ export class VoicemailService {
     voicemailUrl: string;
     recordingDuration?: number;
   }): Promise<any> {
-    const result = await pool.query(
+    const result = await query(
       `INSERT INTO voicemail_records 
        (call_id, customer_id, agent_id, customer_phone, customer_name, voicemail_url, duration)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -62,7 +58,7 @@ export class VoicemailService {
       ]
     );
 
-    console.log('语音信箱记录已保存:', result.rows[0].id);
+    console.log('语音信箱记录已保存:', result.rows[0]?.id);
     return result.rows[0];
   }
 
@@ -70,19 +66,14 @@ export class VoicemailService {
    * 获取语音信箱记录列表
    */
   async getVoicemailRecords(agentId?: number, limit: number = 50): Promise<any[]> {
-    let query = 'SELECT * FROM voicemail_records';
-    const params: any[] = [];
+    const result = await query('SELECT * FROM voicemail_records ORDER BY created_at DESC');
+    let data = result.rows;
     
     if (agentId) {
-      query += ' WHERE agent_id = $1';
-      params.push(agentId);
+      data = data.filter((v: any) => v.agent_id === agentId);
     }
     
-    query += ' ORDER BY created_at DESC LIMIT $' + (params.length + 1);
-    params.push(limit);
-    
-    const result = await pool.query(query, params);
-    return result.rows;
+    return data.slice(0, limit);
   }
 
   /**
@@ -96,7 +87,7 @@ export class VoicemailService {
     customerName?: string;
     reason?: string;
   }): Promise<any> {
-    const result = await pool.query(
+    const result = await query(
       `INSERT INTO unanswered_records 
        (call_id, customer_id, agent_id, customer_phone, customer_name, reason)
        VALUES ($1, $2, $3, $4, $5, $6)
@@ -111,7 +102,7 @@ export class VoicemailService {
       ]
     );
 
-    console.log('未接通记录已保存:', result.rows[0].id);
+    console.log('未接通记录已保存:', result.rows[0]?.id);
     return result.rows[0];
   }
 
@@ -119,19 +110,14 @@ export class VoicemailService {
    * 获取未接通记录列表
    */
   async getUnansweredRecords(agentId?: number, limit: number = 50): Promise<any[]> {
-    let query = 'SELECT * FROM unanswered_records';
-    const params: any[] = [];
+    const result = await query('SELECT * FROM unanswered_records ORDER BY created_at DESC');
+    let data = result.rows;
     
     if (agentId) {
-      query += ' WHERE agent_id = $1';
-      params.push(agentId);
+      data = data.filter((u: any) => u.agent_id === agentId);
     }
     
-    query += ' ORDER BY created_at DESC LIMIT $' + (params.length + 1);
-    params.push(limit);
-    
-    const result = await pool.query(query, params);
-    return result.rows;
+    return data.slice(0, limit);
   }
 }
 

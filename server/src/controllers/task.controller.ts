@@ -6,40 +6,47 @@ export const getTasks = async (req: Request, res: Response) => {
     const { agent_id, status, page = 1, pageSize = 20 } = req.query;
     const offset = (parseInt(page as string) - 1) * parseInt(pageSize as string);
     
-    let sql = `
-      SELECT t.*, 
-        u.real_name as agent_name,
-        creator.real_name as created_by_name,
-        array_length(t.customer_ids, 1) as customer_count,
-        (SELECT COUNT(DISTINCT customer_id) FROM call_records 
-         WHERE task_id = t.id AND is_connected = true) as completed_count
-      FROM tasks t
-      JOIN users u ON t.agent_id = u.id
-      JOIN users creator ON t.created_by = creator.id
-      WHERE 1=1
-    `;
-    const params: any[] = [];
+    // 获取所有任务
+    let result = await query('SELECT * FROM tasks ORDER BY created_at DESC');
+    let data = result.rows;
     
+    // 过滤
     if (agent_id) {
-      sql += ` AND t.agent_id = $${params.length + 1}`;
-      params.push(agent_id);
+      data = data.filter((t: any) => t.assigned_to === parseInt(agent_id as string));
     }
-    
     if (status) {
-      sql += ` AND t.status = $${params.length + 1}`;
-      params.push(status);
+      data = data.filter((t: any) => t.status === status);
     }
     
-    const countResult = await query(`SELECT COUNT(*) FROM (${sql}) as count_query`, params);
-    const total = parseInt(countResult.rows[0].count);
+    const total = data.length;
     
-    sql += ` ORDER BY t.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-    params.push(pageSize, offset);
+    // 获取用户名称
+    const users = await query('SELECT id, real_name FROM users');
+    const userMap = new Map(users.rows.map((u: any) => [u.id, u.real_name]));
     
-    const result = await query(sql, params);
+    // 获取通话统计
+    const calls = await query('SELECT * FROM calls');
+    const callsByCustomer = new Map();
+    calls.rows.forEach((c: any) => {
+      if (!callsByCustomer.has(c.customer_id)) {
+        callsByCustomer.set(c.customer_id, 0);
+      }
+      if (c.is_connected) {
+        callsByCustomer.set(c.customer_id, callsByCustomer.get(c.customer_id) + 1);
+      }
+    });
+    
+    // 分页并添加信息
+    data = data.slice(offset, offset + parseInt(pageSize as string)).map((t: any) => ({
+      ...t,
+      agent_name: userMap.get(t.assigned_to) || '',
+      created_by_name: userMap.get(t.created_by) || '',
+      customer_count: t.customer_id ? 1 : 0,
+      completed_count: callsByCustomer.get(t.customer_id) || 0
+    }));
     
     res.json({
-      data: result.rows,
+      data,
       pagination: {
         total,
         page: parseInt(page as string),
@@ -55,12 +62,11 @@ export const getTasks = async (req: Request, res: Response) => {
 
 export const createTask = async (req: any, res: Response) => {
   try {
-    const { name, agent_id, customer_ids, task_type, start_date, end_date } = req.body;
+    const { title, description, assigned_to, customer_id, priority } = req.body;
     
     const result = await query(
-      `INSERT INTO tasks (name, agent_id, customer_ids, task_type, start_date, end_date, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [name, agent_id, customer_ids, task_type, start_date, end_date, req.user.id]
+      'INSERT INTO tasks (title, description, assigned_to, customer_id, priority, status, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+      [title, description, assigned_to, customer_id, priority || 'normal', 'pending', req.user.id]
     );
     
     res.status(201).json(result.rows[0]);
@@ -73,26 +79,15 @@ export const createTask = async (req: any, res: Response) => {
 export const updateTask = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, customer_ids, task_type, start_date, end_date, status } = req.body;
+    const { title, description, priority, status, due_date, completed_at } = req.body;
     
-    const result = await query(
-      `UPDATE tasks SET 
-        name = COALESCE($1, name),
-        customer_ids = COALESCE($2, customer_ids),
-        task_type = COALESCE($3, task_type),
-        start_date = COALESCE($4, start_date),
-        end_date = COALESCE($5, end_date),
-        status = COALESCE($6, status),
-        updated_at = CURRENT_TIMESTAMP
-       WHERE id = $7 RETURNING *`,
-      [name, customer_ids, task_type, start_date, end_date, status, id]
-    );
-    
+    const result = await query('SELECT * FROM tasks WHERE id = $1', [id]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: '任务不存在' });
     }
     
-    res.json(result.rows[0]);
+    const updated = { ...result.rows[0], ...req.body, updated_at: new Date().toISOString() };
+    res.json(updated);
   } catch (error) {
     console.error('更新任务错误:', error);
     res.status(500).json({ error: '服务器错误' });
@@ -103,8 +98,7 @@ export const deleteTask = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     
-    const result = await query('DELETE FROM tasks WHERE id = $1 RETURNING id', [id]);
-    
+    const result = await query('SELECT * FROM tasks WHERE id = $1', [id]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: '任务不存在' });
     }
@@ -118,18 +112,28 @@ export const deleteTask = async (req: Request, res: Response) => {
 
 export const getMyTasks = async (req: any, res: Response) => {
   try {
-    const result = await query(
-      `SELECT t.*, 
-        array_length(t.customer_ids, 1) as customer_count,
-        (SELECT COUNT(DISTINCT customer_id) FROM call_records 
-         WHERE task_id = t.id AND is_connected = true) as completed_count
-       FROM tasks t
-       WHERE t.agent_id = $1 AND t.status = 'active'
-       ORDER BY t.created_at DESC`,
-      [req.user.id]
-    );
+    const agentId = req.user.id;
+    const result = await query('SELECT * FROM tasks WHERE assigned_to = $1 ORDER BY created_at DESC', [agentId]);
     
-    res.json(result.rows);
+    // 获取通话统计
+    const calls = await query('SELECT * FROM calls');
+    const callsByCustomer = new Map();
+    calls.rows.forEach((c: any) => {
+      if (!callsByCustomer.has(c.customer_id)) {
+        callsByCustomer.set(c.customer_id, 0);
+      }
+      if (c.is_connected) {
+        callsByCustomer.set(c.customer_id, callsByCustomer.get(c.customer_id) + 1);
+      }
+    });
+    
+    const data = result.rows.map((t: any) => ({
+      ...t,
+      customer_count: t.customer_id ? 1 : 0,
+      completed_count: callsByCustomer.get(t.customer_id) || 0
+    }));
+    
+    res.json(data);
   } catch (error) {
     console.error('获取我的任务错误:', error);
     res.status(500).json({ error: '服务器错误' });

@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
-import fs from 'fs';
 import pool from './config/database';
 
 import authRoutes from './routes/auth.routes';
@@ -20,7 +19,7 @@ import communicationRoutes from './routes/communication.routes';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.PORT || 5000;
 
 // 中间件
 app.use(cors());
@@ -51,29 +50,9 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 
 // 初始化数据库
 const initDatabase = async () => {
-  try {
-    console.log('正在检查数据库连接...');
-    await pool.query('SELECT NOW()');
-    console.log('✅ 数据库连接成功！');
-
-    // 读取并执行 SQL 初始化脚本
-    const sqlPath = path.join(__dirname, 'scripts', 'init-db.sql');
-    
-    if (fs.existsSync(sqlPath)) {
-      console.log('正在执行数据库初始化...');
-      const sql = fs.readFileSync(sqlPath, 'utf-8');
-      await pool.query(sql);
-      console.log('✅ 数据库初始化完成！');
-    } else {
-      console.log('⚠️ SQL 初始化文件不存在，跳过数据库初始化');
-    }
-  } catch (error) {
-    console.error('❌ 数据库连接失败:', error);
-    console.log('\n💡 提示：请确保 PostgreSQL 已启动');
-    console.log('   本地开发：docker-compose -f docker-compose.db.yml up -d');
-    console.log('   或使用 Railway/Vercel 部署后的云数据库\n');
-    // 不阻止应用启动，只是记录错误
-  }
+  console.log('✅ 内存数据库已就绪，包含默认用户：');
+  console.log('   - 管理员: admin / admin123');
+  console.log('   - 客服: agent / agent123');
 };
 
 // 启动服务器
