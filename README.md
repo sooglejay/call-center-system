@@ -13,24 +13,41 @@
 
 ## 快速开始 🚀
 
+本项目采用前后端分离架构，需要分别启动后端和前端服务。
+
+### 1. 克隆项目
+
 ```bash
-# 1. 克隆项目
 git clone <仓库地址>
 cd call-center-system
-
-# 2. 安装依赖
-cd server && pnpm install
-cd ../client && pnpm install
-
-# 3. 初始化测试数据
-cd ../server
-pnpm db:seed
-
-# 4. 启动服务
-pnpm dev              # 后端 http://localhost:3001
-# 另开终端
-cd client && pnpm dev # 前端 http://localhost:5173
 ```
+
+### 2. 启动后端服务
+
+```bash
+cd server
+pnpm install          # 安装后端依赖
+pnpm db:seed          # 初始化数据库和测试数据
+pnpm dev              # 启动后端服务 http://localhost:3001
+```
+
+后端服务启动后，会显示：
+- API 地址: http://localhost:3001/api
+- 健康检查: http://localhost:3001/api/system/health
+
+### 3. 启动前端服务
+
+**另开一个新的终端窗口**，执行：
+
+```bash
+cd client
+pnpm install          # 安装前端依赖
+pnpm dev              # 启动前端服务 http://localhost:5173
+```
+
+### 4. 访问系统
+
+打开浏览器访问 http://localhost:5173
 
 **详细配置指南**: [SETUP.md](./SETUP.md)
 
