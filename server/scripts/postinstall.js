@@ -1,6 +1,6 @@
 /**
  * 安装后自动编译 better-sqlite3 并初始化数据库
- * 在 macOS/Windows 上会自动执行编译和初始化
+ * 支持 macOS / Windows / Linux
  */
 
 const { execSync } = require('child_process');
@@ -9,42 +9,84 @@ const path = require('path');
 
 const platform = process.platform;
 const rootDir = path.join(__dirname, '..');
+const dataDir = path.join(rootDir, 'data');
+
+// 确保数据目录存在
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
 
 // 检查数据库是否已存在且已初始化
 function checkDatabaseExists() {
-  const dbPath = path.join(rootDir, 'data/database.sqlite');
+  const dbPath = path.join(dataDir, 'database.sqlite');
   if (!fs.existsSync(dbPath)) {
     return false;
   }
-  // 检查文件大小，如果太小可能还没初始化
   const stats = fs.statSync(dbPath);
-  return stats.size > 10000; // 大于 10KB 认为已初始化
+  return stats.size > 10000;
+}
+
+// 查找 better-sqlite3 路径
+function findBetterSqlite3Path() {
+  const possiblePaths = [
+    path.join(rootDir, 'node_modules/better-sqlite3'),
+    path.join(rootDir, '../node_modules/better-sqlite3'),
+    path.join(rootDir, '../../node_modules/better-sqlite3'),
+  ];
+  
+  // 尝试在 pnpm 的目录结构中查找
+  const nodeModulesPath = path.join(rootDir, 'node_modules');
+  if (fs.existsSync(nodeModulesPath)) {
+    const entries = fs.readdirSync(nodeModulesPath);
+    for (const entry of entries) {
+      if (entry.startsWith('.pnpm')) {
+        const pnpmPath = path.join(nodeModulesPath, entry, 'better-sqlite3@');
+        if (fs.existsSync(pnpmPath)) {
+          const versions = fs.readdirSync(pnpmPath);
+          if (versions.length > 0) {
+            possiblePaths.push(path.join(pnpmPath, versions[0], 'node_modules/better-sqlite3'));
+          }
+        }
+      }
+    }
+  }
+
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) {
+      return p;
+    }
+  }
+  return null;
 }
 
 // 编译 better-sqlite3
 function buildBetterSqlite3() {
-  // 只在 macOS 和 Windows 上自动编译
-  if (platform !== 'darwin' && platform !== 'win32') {
-    console.log('🐧 Linux 系统，跳过 better-sqlite3 自动编译');
+  const sqlite3Path = findBetterSqlite3Path();
+  
+  if (!sqlite3Path) {
+    console.log('⚠️  未找到 better-sqlite3，可能未安装');
     return true;
   }
-
-  const sqlite3Path = path.join(
-    rootDir,
-    'node_modules/.pnpm/better-sqlite3@12.8.0/node_modules/better-sqlite3'
-  );
 
   const bindingPath = path.join(sqlite3Path, 'build/Release/better_sqlite3.node');
 
   // 检查是否已编译
   if (fs.existsSync(bindingPath)) {
-    console.log('✅ better-sqlite3 已编译，跳过');
+    console.log('✅ better-sqlite3 已编译');
     return true;
   }
 
-  console.log('🔧 检测到需要编译 better-sqlite3...');
+  console.log('🔧 正在编译 better-sqlite3...');
 
   try {
+    // 检查 Python 是否可用
+    try {
+      execSync('python3 --version || python --version', { stdio: 'ignore' });
+    } catch {
+      console.log('⚠️  未检测到 Python，跳过编译（Linux 通常不需要）');
+      return true;
+    }
+
     // 检查 node-gyp 是否可用
     try {
       execSync('node-gyp --version', { stdio: 'ignore' });
@@ -53,24 +95,23 @@ function buildBetterSqlite3() {
       execSync('npm install -g node-gyp', { stdio: 'inherit' });
     }
 
-    // 进入 better-sqlite3 目录
     process.chdir(sqlite3Path);
 
-    console.log('🧹 清理旧编译文件...');
-    execSync('node-gyp clean', { stdio: 'ignore' });
+    console.log('🧹 清理...');
+    try { execSync('node-gyp clean', { stdio: 'ignore' }); } catch {}
 
-    console.log('⚙️  配置编译环境...');
+    console.log('⚙️  配置...');
     execSync('node-gyp configure', { stdio: 'ignore' });
 
-    console.log('🔨 编译 better-sqlite3（这可能需要几分钟）...');
+    console.log('🔨 编译（可能需要几分钟）...');
     execSync('node-gyp build', { stdio: 'inherit' });
 
-    console.log('✅ better-sqlite3 编译完成！');
+    console.log('✅ better-sqlite3 编译完成');
     return true;
   } catch (error) {
-    console.error('❌ better-sqlite3 编译失败，请手动执行：');
-    console.error(`   cd ${sqlite3Path}`);
-    console.error('   node-gyp clean && node-gyp configure && node-gyp build');
+    console.error('❌ 编译失败，请手动执行：');
+    console.error(`   cd "${sqlite3Path}"`);
+    console.error('   node-gyp rebuild');
     return false;
   }
 }
@@ -78,29 +119,36 @@ function buildBetterSqlite3() {
 // 初始化数据库
 function seedDatabase() {
   if (checkDatabaseExists()) {
-    console.log('✅ 数据库已存在，跳过初始化');
-    return;
+    console.log('✅ 数据库已存在');
+    return true;
   }
 
-  console.log('🌱 初始化数据库并生成测试数据...');
+  console.log('🌱 初始化数据库...');
 
   try {
     process.chdir(rootDir);
-    execSync('pnpm db:seed', { stdio: 'inherit' });
-    console.log('✅ 数据库初始化完成！');
+    
+    // 先执行数据库初始化
+    try {
+      execSync('npx tsx src/scripts/init-db.ts', { stdio: 'inherit' });
+    } catch {}
+    
+    // 再执行种子数据
+    execSync('npx tsx src/scripts/seed.ts --mini', { stdio: 'inherit' });
+    console.log('✅ 数据库初始化完成');
+    return true;
   } catch (error) {
-    console.error('❌ 数据库初始化失败，请手动执行：');
-    console.error('   pnpm db:seed');
+    console.error('❌ 数据库初始化失败');
+    return false;
   }
 }
 
 // 主流程
-console.log('🚀 执行 postinstall 脚本...\n');
+console.log('🚀 初始化中...\n');
 
-const buildSuccess = buildBetterSqlite3();
-if (buildSuccess) {
-  seedDatabase();
-}
+buildBetterSqlite3();
+seedDatabase();
 
-console.log('\n✨ postinstall 完成！');
-console.log('   启动服务: pnpm dev');
+console.log('\n✨ 准备就绪！');
+console.log('   启动: pnpm dev');
+console.log('   账号: admin/admin123 或 agent/agent123');
