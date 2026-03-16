@@ -234,28 +234,16 @@ FROM node:20-alpine AS production
 WORKDIR /app
 RUN apk add --no-cache python3 make g++ sqlite sqlite-dev
 RUN npm install -g pnpm
-COPY package.json pnpm-lock.yaml* tsconfig.json ./
-RUN pnpm install --frozen-lockfile
-COPY src ./src
+COPY package.json pnpm-lock.yaml* ./
+RUN pnpm install --frozen-lockfile --prod
 COPY --from=builder /app/dist ./dist
 RUN mkdir -p data uploads && chmod 777 data uploads
 RUN echo "NODE_ENV=production\nPORT=5001\nDB_TYPE=sqlite\nSQLITE_PATH=/app/data/database.sqlite" > .env
 RUN pnpm rebuild better-sqlite3
-
-# 创建启动脚本
-RUN echo '#!/bin/sh' > /app/docker-entrypoint.sh && \
-    echo 'set -e' >> /app/docker-entrypoint.sh && \
-    echo 'if [ ! -f /app/data/database.sqlite ]; then' >> /app/docker-entrypoint.sh && \
-    echo '    echo "初始化数据库..."' >> /app/docker-entrypoint.sh && \
-    echo '    pnpm db:seed' >> /app/docker-entrypoint.sh && \
-    echo 'fi' >> /app/docker-entrypoint.sh && \
-    echo 'exec pnpm start' >> /app/docker-entrypoint.sh && \
-    chmod +x /app/docker-entrypoint.sh
-
 EXPOSE 5001
-HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget --quiet --tries=1 --spider http://localhost:5001/api/system/health || exit 1
-CMD ["/app/docker-entrypoint.sh"]
+CMD ["node", "dist/app.js"]
 DOCKERFILE
 
 # 创建 Dockerfile - 前端

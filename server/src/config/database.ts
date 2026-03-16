@@ -9,28 +9,11 @@ dotenv.config();
 // 数据库类型选择
 const DB_TYPE = process.env.DB_TYPE || 'sqlite'; // 'sqlite' | 'postgres' | 'memory'
 
-// ==================== SQLite 实现 ====================
-const initSQLite = () => {
-  const dbPath = process.env.SQLITE_PATH || path.join(__dirname, '../../data/database.sqlite');
-  
-  // 确保数据目录存在
-  const dbDir = path.dirname(dbPath);
-  if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true });
-  }
+// SQLite 数据库实例
+let sqliteDb: Database.Database | null = null;
 
-  const db = new Database(dbPath);
-
-  // 启用外键约束
-  db.pragma('foreign_keys = ON');
-  
-  // 在 macOS 上禁用 WAL 模式以避免 I/O 错误
-  if (process.platform !== 'darwin') {
-    db.pragma('journal_mode = WAL');
-  }
-
-  // 初始化数据库表
-  const initSql = `
+// 创建数据库表的 SQL（不包含默认数据）
+const createTablesSQL = `
 -- 用户表
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -163,16 +146,10 @@ CREATE TABLE IF NOT EXISTS unanswered_records (
   reason TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+`;
 
--- 插入默认管理员用户 (密码: admin123)
-INSERT OR IGNORE INTO users (username, password, role, real_name, status) 
-VALUES ('admin', 'admin123', 'admin', '系统管理员', 'active');
-
--- 插入默认客服用户 (密码: agent123)
-INSERT OR IGNORE INTO users (username, password, role, real_name, status) 
-VALUES ('agent', 'agent123', 'agent', '客服专员', 'active');
-
--- 插入默认系统配置
+// 默认系统配置
+const defaultConfigSQL = `
 INSERT OR IGNORE INTO system_configs (config_key, config_value, description) VALUES
 ('twilio_account_sid', '', 'Twilio Account SID'),
 ('twilio_auth_token', '', 'Twilio Auth Token'),
@@ -184,15 +161,43 @@ INSERT OR IGNORE INTO system_configs (config_key, config_value, description) VAL
 ('voicemail_greeting', '您好，我现在无法接听您的电话，请在听到提示音后留言。', '语音信箱问候语');
 `;
 
-  try {
-    db.exec(initSql);
-    console.log('✅ SQLite 数据库初始化完成');
-    console.log(`   数据库路径: ${dbPath}`);
-  } catch (error) {
-    console.error('❌ 数据库初始化失败:', error);
+// ==================== SQLite 实现 ====================
+const initSQLite = (): Database.Database => {
+  const dbPath = process.env.SQLITE_PATH || path.join(__dirname, '../../data/database.sqlite');
+  
+  // 确保数据目录存在
+  const dbDir = path.dirname(dbPath);
+  if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+  }
+
+  const db = new Database(dbPath);
+
+  // 启用外键约束
+  db.pragma('foreign_keys = ON');
+  
+  // 在 macOS 上禁用 WAL 模式以避免 I/O 错误
+  if (process.platform !== 'darwin') {
+    db.pragma('journal_mode = WAL');
   }
 
   return db;
+};
+
+// 初始化数据库表结构（不含默认用户）
+const initDatabase = async (): Promise<void> => {
+  if (!sqliteDb) {
+    sqliteDb = initSQLite();
+  }
+  
+  try {
+    sqliteDb.exec(createTablesSQL);
+    sqliteDb.exec(defaultConfigSQL);
+    console.log('✅ 数据库表结构初始化完成');
+  } catch (error) {
+    console.error('❌ 数据库初始化失败:', error);
+    throw error;
+  }
 };
 
 // 兼容 pg 的 query 接口
@@ -225,12 +230,6 @@ const createSQLiteQuery = (db: Database.Database) => {
 };
 
 // ==================== 内存数据库实现 ====================
-const daysAgo = (days: number) => {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString();
-};
-
 class MemoryDB {
   private data: any = {
     users: [],
@@ -245,7 +244,6 @@ class MemoryDB {
   };
 
   async query(text: string, params?: any[]): Promise<{ rows: any[]; rowCount: number }> {
-    // 简化实现，仅用于测试
     return { rows: [], rowCount: 0 };
   }
 }
@@ -275,11 +273,19 @@ if (DB_TYPE === 'postgres' || usePostgres) {
   console.log('✅ 使用内存数据库（演示模式）');
 } else {
   // 默认使用 SQLite
-  const sqliteDb = initSQLite();
+  sqliteDb = initSQLite();
   pool = sqliteDb;
   queryFn = createSQLiteQuery(sqliteDb);
-  console.log('✅ 使用 SQLite 数据库（默认）');
+  
+  // 自动初始化表结构
+  try {
+    sqliteDb.exec(createTablesSQL);
+    console.log('✅ SQLite 数据库已就绪');
+  } catch (error) {
+    console.error('❌ SQLite 初始化失败:', error);
+  }
 }
 
 export default pool;
 export const query = queryFn;
+export { initDatabase };

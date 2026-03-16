@@ -1,11 +1,64 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import { query } from '../config/database';
+import { query, initDatabase } from '../config/database';
 import { generateToken } from '../middleware/auth';
+
+// 默认管理员账号配置
+const DEFAULT_ADMIN = {
+  username: 'admin',
+  password: 'admin123',
+  role: 'admin',
+  real_name: '系统管理员',
+  status: 'active'
+};
+
+// 检查是否需要初始化（数据库中没有用户）
+const checkNeedInit = async (): Promise<boolean> => {
+  try {
+    const result = await query('SELECT COUNT(*) as count FROM users', []);
+    return (result.rows[0]?.count || 0) === 0;
+  } catch (error) {
+    // 如果表不存在，需要初始化
+    return true;
+  }
+};
+
+// 初始化数据库和管理员账号
+const initializeDatabase = async (): Promise<void> => {
+  console.log('🔄 检测到首次使用，正在初始化数据库...');
+  
+  // 确保数据库表结构已创建
+  await initDatabase();
+  
+  // 创建默认管理员账号
+  await query(
+    `INSERT INTO users (username, password, role, real_name, status, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, datetime('now'), datetime('now'))`,
+    [DEFAULT_ADMIN.username, DEFAULT_ADMIN.password, DEFAULT_ADMIN.role, DEFAULT_ADMIN.real_name, DEFAULT_ADMIN.status]
+  );
+  
+  console.log('✅ 数据库初始化完成');
+  console.log(`   默认管理员: ${DEFAULT_ADMIN.username} / ${DEFAULT_ADMIN.password}`);
+};
 
 export const login = async (req: Request, res: Response) => {
   try {
     const { username, password } = req.body;
+    
+    // 检查是否需要初始化
+    const needInit = await checkNeedInit();
+    if (needInit) {
+      // 只有使用默认管理员账号登录时才初始化
+      if (username === DEFAULT_ADMIN.username && password === DEFAULT_ADMIN.password) {
+        await initializeDatabase();
+      } else {
+        return res.status(401).json({ 
+          error: '系统尚未初始化，请使用默认管理员账号登录',
+          needInit: true,
+          hint: '默认账号: admin / admin123'
+        });
+      }
+    }
     
     const result = await query(
       'SELECT * FROM users WHERE username = $1 AND status = $2',
@@ -44,6 +97,20 @@ export const login = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('登录错误:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+};
+
+// 检查系统是否已初始化
+export const checkInit = async (req: Request, res: Response) => {
+  try {
+    const needInit = await checkNeedInit();
+    res.json({ 
+      initialized: !needInit,
+      hint: needInit ? '请使用 admin / admin123 首次登录' : undefined
+    });
+  } catch (error) {
+    console.error('检查初始化状态错误:', error);
     res.status(500).json({ error: '服务器错误' });
   }
 };
