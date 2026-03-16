@@ -1,11 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Row, Col, Card, Statistic, Table, DatePicker } from 'antd';
+import { Row, Col, Card, Statistic, Table } from 'antd';
 import { UserOutlined, PhoneOutlined, CheckCircleOutlined, TeamOutlined } from '@ant-design/icons';
 import { statsApi } from '../../services/api';
 import type { DashboardStats } from '../../services/api';
-import dayjs from 'dayjs';
-
-const { RangePicker } = DatePicker;
 
 export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);

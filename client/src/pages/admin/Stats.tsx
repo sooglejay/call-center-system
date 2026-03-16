@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Card, DatePicker, Table, Statistic, Row, Col } from 'antd';
 import { statsApi } from '../../services/api';
-import type { AgentRanking } from '../../services/api';
 import dayjs from 'dayjs';
 
 const { RangePicker } = DatePicker;

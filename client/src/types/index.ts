@@ -14,12 +14,18 @@ export interface Customer {
   id: number;
   phone: string;
   name?: string;
+  email?: string;
+  company?: string;
+  address?: string;
   remark?: string;
   source?: string;
+  status?: string;
+  priority?: number;
   imported_by?: number;
   imported_by_name?: string;
   imported_at?: string;
   created_at: string;
+  updated_at?: string;
   is_duplicate?: boolean;
   call_status?: string;
   is_connected?: boolean;
@@ -57,13 +63,17 @@ export interface CallRecord {
 export interface Task {
   id: number;
   name: string;
+  title?: string;
+  description?: string;
   agent_id: number;
   agent_name?: string;
   customer_ids: number[];
   customer_count?: number;
   completed_count?: number;
   task_type: 'daily' | 'weekly';
-  status: 'active' | 'completed' | 'cancelled';
+  status: 'active' | 'completed' | 'cancelled' | 'pending' | 'in_progress';
+  priority?: 'low' | 'normal' | 'high' | 'urgent';
+  due_date?: string;
   start_date: string;
   end_date: string;
   created_by?: number;

@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { Table, Button, Tag, Input, Select, Form, Modal, message, Badge, Space } from 'antd';
-import { PhoneOutlined, PlayCircleOutlined, PauseCircleOutlined, AudioOutlined, EditOutlined } from '@ant-design/icons';
-import { customerApi, callApi, twilioApi } from '../../services/api';
+import { PhoneOutlined, PlayCircleOutlined, PauseCircleOutlined, EditOutlined } from '@ant-design/icons';
+import { customerApi, callApi } from '../../services/api';
 import type { Customer, CallRecord } from '../../services/api';
 import { useAutoDialStore, useAgentConfigStore } from '../../stores';
 
@@ -17,7 +17,7 @@ export default function CallList() {
   const [editingRecord, setEditingRecord] = useState<CallRecord | null>(null);
   const [noteForm] = Form.useForm();
   
-  const { isAutoDialing, setAutoDialing, currentCustomer, setCurrentCustomer, dialStatus, setDialStatus } = useAutoDialStore();
+  const { isAutoDialing, setAutoDialing, setCurrentCustomer, dialStatus, setDialStatus } = useAutoDialStore();
   const { config } = useAgentConfigStore();
 
   useEffect(() => {
@@ -68,7 +68,7 @@ export default function CallList() {
 
     try {
       // 创建通话记录
-      const callResponse = await callApi.createCall({
+      await callApi.createCall({
         customer_id: customer.id,
         phone: customer.phone,
         task_id: customer.task_id
@@ -143,7 +143,7 @@ export default function CallList() {
       title: '状态', 
       dataIndex: 'call_status', 
       key: 'status',
-      render: (status: string, record: Customer) => {
+      render: (status: string) => {
         if (!status) return <Tag>待拨打</Tag>;
         const colors: any = {
           completed: 'green',

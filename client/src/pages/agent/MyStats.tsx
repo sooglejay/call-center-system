@@ -1,15 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Card, Statistic, Row, Col, Progress, Table, DatePicker } from 'antd';
+import { Card, Statistic, Row, Col, Progress, DatePicker } from 'antd';
 import { PhoneOutlined, CheckCircleOutlined, ClockCircleOutlined, TrophyOutlined } from '@ant-design/icons';
 import { statsApi } from '../../services/api';
-import type { AgentRanking } from '../../services/api';
 import dayjs from 'dayjs';
 
 const { RangePicker } = DatePicker;
 
 export default function MyStats() {
   const [stats, setStats] = useState<any>(null);
-  const [ranking, setRanking] = useState<AgentRanking[]>([]);
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([
     dayjs().subtract(30, 'days'),
     dayjs()
@@ -30,13 +28,6 @@ export default function MyStats() {
       console.error('获取统计数据失败');
     }
   };
-
-  const columns = [
-    { title: '排名', key: 'rank', render: (_: any, __: any, index: number) => index + 1 },
-    { title: '客服姓名', dataIndex: 'agent_name', key: 'agent_name' },
-    { title: '接通数', dataIndex: 'connected_calls', key: 'connected_calls' },
-    { title: '接通率', dataIndex: 'connection_rate', key: 'connection_rate', render: (rate: number) => `${rate}%` },
-  ];
 
   return (
     <div>
@@ -97,7 +88,7 @@ export default function MyStats() {
               <Progress
                 type="circle"
                 percent={Math.round(((stats?.connected_calls || 0) / 100) * 100)}
-                format={(percent) => (
+                format={() => (
                   <div>
                     <div style={{ fontSize: 24, fontWeight: 'bold' }}>{stats?.connected_calls || 0}</div>
                     <div style={{ fontSize: 12, color: '#999' }}>/ 100 目标</div>

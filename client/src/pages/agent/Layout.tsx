@@ -9,7 +9,6 @@ import {
   LogoutOutlined,
   DownOutlined,
   CustomerServiceOutlined,
-  MessageOutlined,
   AudioOutlined
 } from '@ant-design/icons';
 import { useAuthStore } from '../../stores';

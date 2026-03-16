@@ -1,6 +1,6 @@
-import { useEffect, useState, useRef, useMemo } from 'react';
-import { Table, Button, Modal, Upload, message, Tabs, Select, Form, Input, Badge, Space, Tag, Radio, Divider, Typography, Checkbox, Alert, Card, Row, Col } from 'antd';
-import { UploadOutlined, ImportOutlined, CameraOutlined, UserAddOutlined, TeamOutlined, FileExcelOutlined, InfoCircleOutlined, DownloadOutlined } from '@ant-design/icons';
+import { useEffect, useState, useMemo } from 'react';
+import { Table, Button, Modal, Upload, message, Tabs, Select, Form, Input, Badge, Space, Tag, Radio, Divider, Typography, Alert, Card, Row, Col } from 'antd';
+import { UploadOutlined, CameraOutlined, UserAddOutlined, TeamOutlined, InfoCircleOutlined, DownloadOutlined } from '@ant-design/icons';
 import { customerApi, configApi, userApi } from '../../services/api';
 import type { Customer, User } from '../../services/api';
 import * as XLSX from 'xlsx';
@@ -16,7 +16,7 @@ const getFirstLetter = (name: string): string => {
   if (/[\u4e00-\u9fa5]/.test(firstChar)) {
     const pinyinMap: Record<string, string> = {
       '阿': 'A', '艾': 'A', '安': 'A', '白': 'B', '班': 'B', '包': 'B', '鲍': 'B', '毕': 'B', '边': 'B', '卞': 'B',
-      '蔡': 'C', '曹': 'C', '岑': 'C', '曾': 'C', '常': 'C', '陈': 'C', '程': 'C', '池': 'C', '褚': 'C', '楚': 'C', '崔': 'C',
+      '蔡': 'C', '曹': 'C', '岑': 'C', '常': 'C', '陈': 'C', '程': 'C', '池': 'C', '褚': 'C', '楚': 'C', '崔': 'C',
       '戴': 'D', '邓': 'D', '丁': 'D', '董': 'D', '杜': 'D', '段': 'D',
       '樊': 'F', '范': 'F', '方': 'F', '费': 'F', '冯': 'F', '符': 'F', '傅': 'F', '富': 'F',
       '高': 'G', '葛': 'G', '耿': 'G', '龚': 'G', '顾': 'G', '管': 'G', '郭': 'G',
@@ -62,7 +62,6 @@ export default function CustomerManagement() {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [currentCustomer, setCurrentCustomer] = useState<Customer | null>(null);
   const [editForm] = Form.useForm();
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchCustomers();
@@ -161,21 +160,6 @@ export default function CustomerManagement() {
       const otherSelectedKeys = selectedRowKeys.filter(k => !groupIds.includes(k as number));
       setSelectedRowKeys(otherSelectedKeys);
     }
-  };
-
-  const handleFileUpload = async (file: File) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    try {
-      const response = await configApi.uploadFile(formData);
-      setImportedData(response.data.data);
-      setImportModalVisible(true);
-      message.success(`成功解析 ${response.data.data.length} 条记录`);
-    } catch (error) {
-      message.error('文件解析失败');
-    }
-    return false;
   };
 
   // 下载导入模板
@@ -308,7 +292,7 @@ export default function CustomerManagement() {
       render: (name: string, record: Customer) => (
         <Space direction="vertical" size={0}>
           <Text strong>{name || '未命名'}</Text>
-          <Tag color={statusColors[record.status || 'pending']} size="small">
+          <Tag color={statusColors[record.status || 'pending']}>
             {statusLabels[record.status || 'pending']}
           </Tag>
         </Space>
@@ -323,7 +307,7 @@ export default function CustomerManagement() {
       title: '关联客服', 
       dataIndex: 'assigned_to_name', 
       key: 'assigned_to_name',
-      render: (name: string, record: Customer) => (
+      render: (name: string) => (
         name && name !== '未分配' ? (
           <Tag color="blue" icon={<TeamOutlined />}>
             {name}
@@ -524,7 +508,7 @@ export default function CustomerManagement() {
                       ),
                       onChange: (keys) => handleGroupSelectionChange(
                         groupCustomers, 
-                        keys, 
+                        keys as number[], 
                         keys.length > 0
                       ),
                       onSelect: (record, selected) => {
@@ -534,7 +518,7 @@ export default function CustomerManagement() {
                           setSelectedRowKeys(selectedRowKeys.filter(k => k !== record.id));
                         }
                       },
-                      onSelectAll: (selected, selectedRows, changeRows) => {
+                      onSelectAll: (selected, _selectedRows, changeRows) => {
                         const changeIds = changeRows.map(r => r.id);
                         if (selected) {
                           setSelectedRowKeys([...selectedRowKeys, ...changeIds]);
@@ -679,7 +663,7 @@ export default function CustomerManagement() {
             { title: '备注', dataIndex: 'remark', key: 'remark' },
           ]}
           pagination={{ pageSize: 5 }}
-          rowKey={(record, index) => index?.toString() || ''}
+          rowKey={(_, index) => index?.toString() || ''}
         />
       </Modal>
 

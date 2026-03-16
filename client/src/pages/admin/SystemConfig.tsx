@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Card, Form, Input, Button, message, Alert, Switch, Divider, Typography } from 'antd';
+import { Card, Form, Input, Button, message, Alert, Switch, Typography } from 'antd';
 import { configApi } from '../../services/api';
 
 const { TextArea } = Input;
 const { Text } = Typography;
 
 export default function SystemConfig() {
-  const [configs, setConfigs] = useState<any>({});
+  const [, setConfigs] = useState<any>({});
   const [form] = Form.useForm();
 
   useEffect(() => {
@@ -96,9 +96,9 @@ export default function SystemConfig() {
             <TextArea 
               rows={3} 
               placeholder="请输入短信模板"
-              addonAfter={<Button type="link" onClick={() => handleUpdateConfig('sms_template_unanswered', form.getFieldValue('sms_template_unanswered'))}>保存</Button>}
             />
           </Form.Item>
+          <Button type="primary" onClick={() => handleUpdateConfig('sms_template_unanswered', form.getFieldValue('sms_template_unanswered'))}>保存短信模板</Button>
         </Card>
 
         <Card title="语音信箱配置">
@@ -117,9 +117,9 @@ export default function SystemConfig() {
             <TextArea 
               rows={3} 
               placeholder="请输入语音信箱问候语"
-              addonAfter={<Button type="link" onClick={() => handleUpdateConfig('voicemail_greeting', form.getFieldValue('voicemail_greeting'))}>保存</Button>}
             />
           </Form.Item>
+          <Button type="primary" onClick={() => handleUpdateConfig('voicemail_greeting', form.getFieldValue('voicemail_greeting'))}>保存问候语</Button>
         </Card>
       </Form>
     </div>

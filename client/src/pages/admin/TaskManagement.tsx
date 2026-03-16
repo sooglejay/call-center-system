@@ -5,7 +5,6 @@ import { taskApi, userApi, customerApi } from '../../services/api';
 import type { Task, User, Customer } from '../../services/api';
 import dayjs from 'dayjs';
 
-const { RangePicker } = DatePicker;
 const { Text } = Typography;
 const { TabPane } = Tabs;
 
@@ -16,7 +15,7 @@ const getFirstLetter = (name: string): string => {
   if (/[\u4e00-\u9fa5]/.test(firstChar)) {
     const pinyinMap: Record<string, string> = {
       '阿': 'A', '艾': 'A', '安': 'A', '白': 'B', '班': 'B', '包': 'B', '鲍': 'B', '毕': 'B', '边': 'B', '卞': 'B',
-      '蔡': 'C', '曹': 'C', '岑': 'C', '曾': 'C', '常': 'C', '陈': 'C', '程': 'C', '池': 'C', '褚': 'C', '楚': 'C', '崔': 'C',
+      '蔡': 'C', '曹': 'C', '岑': 'C', '常': 'C', '陈': 'C', '程': 'C', '池': 'C', '褚': 'C', '楚': 'C', '崔': 'C',
       '戴': 'D', '邓': 'D', '丁': 'D', '董': 'D', '杜': 'D', '段': 'D',
       '樊': 'F', '范': 'F', '方': 'F', '费': 'F', '冯': 'F', '符': 'F', '傅': 'F', '富': 'F',
       '高': 'G', '葛': 'G', '耿': 'G', '龚': 'G', '顾': 'G', '管': 'G', '郭': 'G',
@@ -309,7 +308,7 @@ export default function TaskManagement() {
                       <Space>
                         <Badge count={item.letter} style={{ backgroundColor: '#1890ff', fontSize: 10 }} />
                         <span>{item.title}</span>
-                        <Tag size="small" color={item.description === '未分配' ? 'default' : 'blue'}>
+                        <Tag color={item.description === '未分配' ? 'default' : 'blue'}>
                           {item.description}
                         </Tag>
                       </Space>
@@ -391,7 +390,7 @@ export default function TaskManagement() {
                         {customers
                           .filter(c => selectedLetters.includes(getFirstLetter(c.name || '')))
                           .map(c => (
-                            <Tag key={c.id} size="small" icon={<TeamOutlined />}>
+                            <Tag key={c.id} icon={<TeamOutlined />}>
                               {c.name || '未命名'} ({c.phone})
                             </Tag>
                           ))}
