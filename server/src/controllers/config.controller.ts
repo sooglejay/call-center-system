@@ -15,15 +15,34 @@ export const updateConfig = async (req: any, res: Response) => {
   try {
     const { config_key, config_value } = req.body;
     
+    if (!config_key) {
+      return res.status(400).json({ error: 'config_key 是必填项' });
+    }
+    
+    // 先检查是否存在
+    const existing = await query(
+      'SELECT * FROM system_configs WHERE config_key = $1',
+      [config_key]
+    );
+    
+    if (existing.rows.length > 0) {
+      // 更新已存在的配置
+      await query(
+        'UPDATE system_configs SET config_value = $1, updated_at = CURRENT_TIMESTAMP WHERE config_key = $2',
+        [config_value || '', config_key]
+      );
+    } else {
+      // 插入新配置
+      await query(
+        'INSERT INTO system_configs (config_key, config_value) VALUES ($1, $2)',
+        [config_key, config_value || '']
+      );
+    }
+    
+    // 返回更新后的配置
     const result = await query(
-      `INSERT INTO system_configs (config_key, config_value, updated_by)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (config_key) DO UPDATE SET
-       config_value = EXCLUDED.config_value,
-       updated_by = EXCLUDED.updated_by,
-       updated_at = CURRENT_TIMESTAMP
-       RETURNING *`,
-      [config_key, config_value, req.user.id]
+      'SELECT * FROM system_configs WHERE config_key = $1',
+      [config_key]
     );
     
     res.json(result.rows[0]);
