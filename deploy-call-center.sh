@@ -7,8 +7,8 @@
 #   ./deploy-call-center.sh [选项]
 #
 # 选项:
-#   -p, --http-port <端口>    HTTP 端口 (默认: 80)
-#   -a, --api-port <端口>     API 端口 (默认: 5001)
+#   -p, --http-port <端口>    HTTP 端口 (默认: 8080)
+#   -a, --api-port <端口>     API 端口 (默认: 8081)
 #   -d, --domain <域名>       访问域名 (默认: localhost)
 #   -h, --help                显示帮助信息
 #
@@ -51,8 +51,8 @@ show_help() {
     echo "用法: $0 [选项]"
     echo ""
     echo "选项:"
-    echo "  -p, --http-port <端口>    HTTP 端口 (默认: 80)"
-    echo "  -a, --api-port <端口>     API 端口 (默认: 5001)"
+    echo "  -p, --http-port <端口>    HTTP 端口 (默认: 8080)"
+    echo "  -a, --api-port <端口>     API 端口 (默认: 8081)"
     echo "  -d, --domain <域名>       访问域名 (默认: localhost)"
     echo "  -h, --help                显示帮助信息"
     echo ""
@@ -123,8 +123,8 @@ fi
 PROJECT_NAME="call-center-system"
 PROJECT_DIR="/opt/${PROJECT_NAME}"
 DOMAIN="localhost"
-HTTP_PORT="80"
-API_PORT="5001"
+HTTP_PORT="8080"
+API_PORT="8081"
 
 # 解析命令行参数
 parse_args "$@"

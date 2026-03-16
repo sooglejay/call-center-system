@@ -16,8 +16,8 @@ print_success() { echo -e "${GREEN}[✓]${NC} $1"; }
 print_warning() { echo -e "${YELLOW}[!]${NC} $1"; }
 print_error() { echo -e "${RED}[✗]${NC} $1"; }
 
-HTTP_PORT="${1:-80}"
-API_PORT="${2:-5001}"
+HTTP_PORT="${1:-8080}"
+API_PORT="${2:-8081}"
 
 echo "=================================================="
 echo "       客服外呼系统 - 部署环境检测"

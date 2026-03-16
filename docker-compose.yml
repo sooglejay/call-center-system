@@ -34,7 +34,7 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/callcenter
       JWT_SECRET: your-secret-key-change-in-production
     ports:
-      - "5001:5001"
+      - "8081:5001"
     depends_on:
       postgres:
         condition: service_healthy
@@ -54,9 +54,9 @@ services:
     container_name: call-center-web
     restart: unless-stopped
     environment:
-      VITE_API_URL: http://localhost:5001/api
+      VITE_API_URL: http://localhost:8081/api
     ports:
-      - "80:80"
+      - "8080:80"
     depends_on:
       - server
 
