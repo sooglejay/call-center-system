@@ -9,7 +9,7 @@ export default defineConfig({
     host: '0.0.0.0',
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',  // 后端服务地址
+        target: 'http://localhost:5001',  // 后端服务地址
         changeOrigin: true,
         secure: false
       }
