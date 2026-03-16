@@ -61,12 +61,19 @@ export const getAgentConfig = async (req: any, res: Response) => {
     
     if (result.rows.length === 0) {
       // 创建默认配置
-      const defaultConfig = await query(
+      await query(
         `INSERT INTO agent_configs (agent_id, dial_strategy, dial_delay, remove_duplicates)
-         VALUES ($1, $2, $3, $4) RETURNING *`,
+         VALUES ($1, $2, $3, $4)`,
         [req.user.id, 'newest', 3, false]
       );
-      return res.json(defaultConfig.rows[0]);
+      
+      // 返回默认配置
+      return res.json({
+        agent_id: req.user.id,
+        dial_strategy: 'newest',
+        dial_delay: 3,
+        remove_duplicates: false
+      });
     }
     
     res.json(result.rows[0]);
@@ -80,16 +87,36 @@ export const updateAgentConfig = async (req: any, res: Response) => {
   try {
     const { dial_strategy, dial_delay, remove_duplicates } = req.body;
     
+    // 检查是否存在配置
+    const existing = await query(
+      'SELECT * FROM agent_configs WHERE agent_id = $1',
+      [req.user.id]
+    );
+    
+    if (existing.rows.length > 0) {
+      // 更新已存在的配置
+      await query(
+        `UPDATE agent_configs SET 
+         dial_strategy = $1, 
+         dial_delay = $2, 
+         remove_duplicates = $3,
+         updated_at = CURRENT_TIMESTAMP 
+         WHERE agent_id = $4`,
+        [dial_strategy, dial_delay, remove_duplicates, req.user.id]
+      );
+    } else {
+      // 插入新配置
+      await query(
+        `INSERT INTO agent_configs (agent_id, dial_strategy, dial_delay, remove_duplicates)
+         VALUES ($1, $2, $3, $4)`,
+        [req.user.id, dial_strategy, dial_delay, remove_duplicates]
+      );
+    }
+    
+    // 返回更新后的配置
     const result = await query(
-      `INSERT INTO agent_configs (agent_id, dial_strategy, dial_delay, remove_duplicates)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (agent_id) DO UPDATE SET
-       dial_strategy = EXCLUDED.dial_strategy,
-       dial_delay = EXCLUDED.dial_delay,
-       remove_duplicates = EXCLUDED.remove_duplicates,
-       updated_at = CURRENT_TIMESTAMP
-       RETURNING *`,
-      [req.user.id, dial_strategy, dial_delay, remove_duplicates]
+      'SELECT * FROM agent_configs WHERE agent_id = $1',
+      [req.user.id]
     );
     
     res.json(result.rows[0]);

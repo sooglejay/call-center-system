@@ -19,7 +19,8 @@ export const getUsers = async (req: Request, res: Response) => {
     }
     
     if (search) {
-      sql += ` AND (username ILIKE $${params.length + 1} OR real_name ILIKE $${params.length + 1})`;
+      // SQLite 使用 LIKE（默认大小写不敏感）
+      sql += ` AND (username LIKE $${params.length + 1} OR real_name LIKE $${params.length + 1})`;
       params.push(`%${search}%`);
     }
     
@@ -43,10 +44,15 @@ export const createUser = async (req: Request, res: Response) => {
     }
     
     // 明文存储密码（开发便利）
-    const result = await query(
+    await query(
       `INSERT INTO users (username, password, real_name, role, phone, email)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, username, real_name, role, phone, email, status, created_at`,
+       VALUES ($1, $2, $3, $4, $5, $6)`,
       [username, password, real_name, role, phone, email]
+    );
+    
+    // 获取插入的用户
+    const result = await query(
+      'SELECT id, username, real_name, role, phone, email, status, created_at FROM users WHERE id = (SELECT MAX(id) FROM users)'
     );
     
     // 为客服创建默认配置
@@ -69,10 +75,16 @@ export const updateUser = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { real_name, phone, email, status } = req.body;
     
-    const result = await query(
+    await query(
       `UPDATE users SET real_name = $1, phone = $2, email = $3, status = $4, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $5 RETURNING id, username, real_name, role, phone, email, status, created_at`,
+       WHERE id = $5`,
       [real_name, phone, email, status, id]
+    );
+    
+    // 查询更新后的用户
+    const result = await query(
+      'SELECT id, username, real_name, role, phone, email, status, created_at FROM users WHERE id = $1',
+      [id]
     );
     
     if (result.rows.length === 0) {
@@ -90,12 +102,14 @@ export const deleteUser = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     
-    await query('DELETE FROM agent_configs WHERE agent_id = $1', [id]);
-    const result = await query('DELETE FROM users WHERE id = $1 RETURNING id', [id]);
-    
-    if (result.rows.length === 0) {
+    // 先检查用户是否存在
+    const existingUser = await query('SELECT id FROM users WHERE id = $1', [id]);
+    if (existingUser.rows.length === 0) {
       return res.status(404).json({ error: '用户不存在' });
     }
+    
+    await query('DELETE FROM agent_configs WHERE agent_id = $1', [id]);
+    await query('DELETE FROM users WHERE id = $1', [id]);
     
     res.json({ message: '用户删除成功' });
   } catch (error) {

@@ -137,10 +137,16 @@ export const updateProfile = async (req: any, res: Response) => {
   try {
     const { real_name, phone, email, avatar_url } = req.body;
     
-    const result = await query(
+    await query(
       `UPDATE users SET real_name = $1, phone = $2, email = $3, avatar_url = $4, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $5 RETURNING id, username, real_name, role, phone, email, avatar_url`,
+       WHERE id = $5`,
       [real_name, phone, email, avatar_url, req.user.id]
+    );
+    
+    // 查询更新后的用户信息
+    const result = await query(
+      'SELECT id, username, real_name, role, phone, email, avatar_url FROM users WHERE id = $1',
+      [req.user.id]
     );
     
     res.json(result.rows[0]);
