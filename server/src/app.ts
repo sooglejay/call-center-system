@@ -19,7 +19,7 @@ import communicationRoutes from './routes/communication.routes';
 dotenv.config();
 
 const app: express.Application = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 8081;
 
 // 中间件
 app.use(cors());
