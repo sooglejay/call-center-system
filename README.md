@@ -28,12 +28,12 @@ cd call-center-system
 cd server
 pnpm install          # 安装后端依赖
 pnpm db:seed          # 初始化数据库和测试数据
-pnpm dev              # 启动后端服务 http://localhost:3001
+pnpm dev              # 启动后端服务 http://localhost:8081
 ```
 
 后端服务启动后，会显示：
-- API 地址: http://localhost:3001/api
-- 健康检查: http://localhost:3001/api/system/health
+- API 地址: http://localhost:8081/api
+- 健康检查: http://localhost:8081/api/system/health
 
 ### 3. 启动前端服务
 
@@ -42,12 +42,12 @@ pnpm dev              # 启动后端服务 http://localhost:3001
 ```bash
 cd client
 pnpm install          # 安装前端依赖
-pnpm dev              # 启动前端服务 http://localhost:5173
+pnpm dev              # 启动前端服务 http://localhost:8080
 ```
 
 ### 4. 访问系统
 
-打开浏览器访问 http://localhost:5173
+打开浏览器访问 http://localhost:8080
 
 **详细配置指南**: [SETUP.md](./SETUP.md)
 
@@ -229,7 +229,7 @@ SQLITE_PATH=./data/database.sqlite  # SQLite 文件路径
 JWT_SECRET=your-secret-key
 
 # 服务端口
-PORT=3001
+PORT=8081
 
 # Twilio 配置（可选）
 TWILIO_ACCOUNT_SID=
@@ -241,7 +241,7 @@ TWILO_CALLBACK_URL=
 ### 前端 (.env)
 
 ```env
-VITE_API_URL=http://localhost:3001
+VITE_API_URL=http://localhost:8081
 ```
 
 ## 生产部署

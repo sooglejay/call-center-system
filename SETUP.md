@@ -20,14 +20,14 @@ npm install -g pnpm
 cd server
 pnpm install          # 安装后端依赖
 pnpm db:seed          # 初始化数据库和测试数据
-pnpm dev              # 启动后端服务 http://localhost:3001
+pnpm dev              # 启动后端服务 http://localhost:8081
 ```
 
 后端启动成功后，会显示：
 ```
-服务器运行在端口 3001
-API地址: http://localhost:3001/api
-健康检查: http://localhost:3001/api/system/health
+服务器运行在端口 8081
+API地址: http://localhost:8081/api
+健康检查: http://localhost:8081/api/system/health
 ```
 
 **保持此终端窗口运行**，后端服务需要持续运行。
@@ -39,20 +39,20 @@ API地址: http://localhost:3001/api
 ```bash
 cd client
 pnpm install          # 安装前端依赖
-pnpm dev              # 启动前端服务 http://localhost:5173
+pnpm dev              # 启动前端服务 http://localhost:8080
 ```
 
 前端启动成功后，会显示：
 ```
   VITE v5.x.x  ready in xxx ms
 
-  ➜  Local:   http://localhost:5173/
-  ➜  Network: http://192.168.x.x:5173/
+  ➜  Local:   http://localhost:8080/
+  ➜  Network: http://192.168.x.x:8080/
 ```
 
 ### 3. 登录系统
 
-打开浏览器访问 http://localhost:5173，使用以下账号登录：
+打开浏览器访问 http://localhost:8080，使用以下账号登录：
 
 | 角色 | 用户名 | 密码 |
 |------|--------|------|
@@ -144,10 +144,10 @@ pnpm db:seed
 
 ```bash
 # server/.env
-PORT=3002
+PORT=8081
 
 # client/.env.development
-VITE_API_URL=http://localhost:3002/api
+VITE_API_URL=http://localhost:8081/api
 ```
 
 ### 3. 数据库权限错误
@@ -170,7 +170,7 @@ pnpm db:seed
 ### 5. 登录失败
 
 确保：
-1. 后端服务已启动（http://localhost:3001/api/system/health 可访问）
+1. 后端服务已启动（http://localhost:8081/api/system/health 可访问）
 2. 数据库已初始化（运行过 `pnpm db:seed`）
 3. 使用的是正确的默认账号密码
 
