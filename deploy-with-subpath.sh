@@ -170,8 +170,8 @@ check_port() {
     fi
 }
 
-check_port $HTTP_PORT "前端服务"
-check_port $API_PORT "后端 API 服务"
+check_port "$HTTP_PORT" "前端服务"
+check_port "$API_PORT" "后端 API 服务"
 
 # 检查 Docker
 if ! command -v docker &> /dev/null; then
@@ -185,13 +185,13 @@ if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/
 fi
 
 # 创建项目目录
-mkdir -p ${PROJECT_DIR}/{client,server,data,logs}
+mkdir -p "${PROJECT_DIR}"/{client,server,data,logs}
 
 # 检查并复制项目代码
 if [ -f "${SCRIPT_DIR}/server/package.json" ] && [ -f "${SCRIPT_DIR}/client/package.json" ]; then
     print_info "复制项目代码..."
-    cp -r ${SCRIPT_DIR}/server/* ${PROJECT_DIR}/server/ 2>/dev/null || true
-    cp -r ${SCRIPT_DIR}/client/* ${PROJECT_DIR}/client/ 2>/dev/null || true
+    cp -r "${SCRIPT_DIR}"/server/* "${PROJECT_DIR}"/server/ 2>/dev/null || true
+    cp -r "${SCRIPT_DIR}"/client/* "${PROJECT_DIR}"/client/ 2>/dev/null || true
     print_success "代码复制完成"
 else
     print_error "未检测到项目代码！"
@@ -199,7 +199,7 @@ else
     exit 1
 fi
 
-cd ${PROJECT_DIR}
+cd "${PROJECT_DIR}"
 
 # 创建 Dockerfile - 后端
 cat > server/Dockerfile << 'DOCKERFILE'
@@ -325,13 +325,13 @@ print_info "等待服务启动..."
 sleep 5
 
 # 检查服务状态
-if curl -s http://localhost:${HTTP_PORT} > /dev/null; then
+if curl -s "http://localhost:${HTTP_PORT}" > /dev/null; then
     print_success "前端服务运行正常 (端口 ${HTTP_PORT})"
 else
     print_warning "前端服务可能仍在启动中..."
 fi
 
-if curl -s http://localhost:${API_PORT}/health > /dev/null 2>&1; then
+if curl -s "http://localhost:${API_PORT}/health" > /dev/null 2>&1; then
     print_success "API 服务运行正常 (端口 ${API_PORT})"
 else
     print_warning "API 服务可能仍在启动中..."
