@@ -63,11 +63,16 @@ export const createCallRecord = async (req: any, res: Response) => {
     const { customer_id, phone, task_id } = req.body;
     
     const result = await query(
-      'INSERT INTO calls (customer_id, agent_id, customer_phone, status, is_connected) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      'INSERT INTO calls (customer_id, agent_id, customer_phone, status, is_connected) VALUES ($1, $2, $3, $4, $5)',
       [customer_id, req.user.id, phone, 'calling', false]
     );
     
-    res.status(201).json(result.rows[0]);
+    // 获取插入的记录
+    const newCall = await query(
+      'SELECT * FROM calls WHERE id = (SELECT MAX(id) FROM calls)'
+    );
+    
+    res.status(201).json(newCall.rows[0]);
   } catch (error) {
     console.error('创建通话记录错误:', error);
     res.status(500).json({ error: '服务器错误' });
@@ -191,12 +196,17 @@ export const createRecord = async (req: any, res: Response) => {
     }
     const customer = customers.rows[0];
     
-    const result = await query(
-      'INSERT INTO calls (customer_id, agent_id, customer_phone, customer_name, status, is_connected) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+    await query(
+      'INSERT INTO calls (customer_id, agent_id, customer_phone, customer_name, status, is_connected) VALUES ($1, $2, $3, $4, $5, $6)',
       [customer_id, req.user.id, customer.phone, customer.name, status || 'pending', false]
     );
     
-    res.status(201).json(result.rows[0]);
+    // 获取插入的记录
+    const newCall = await query(
+      'SELECT * FROM calls WHERE id = (SELECT MAX(id) FROM calls)'
+    );
+    
+    res.status(201).json(newCall.rows[0]);
   } catch (error) {
     console.error('创建记录错误:', error);
     res.status(500).json({ error: '服务器错误' });

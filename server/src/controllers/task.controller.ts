@@ -64,12 +64,17 @@ export const createTask = async (req: any, res: Response) => {
   try {
     const { title, description, assigned_to, customer_id, priority } = req.body;
     
-    const result = await query(
-      'INSERT INTO tasks (title, description, assigned_to, customer_id, priority, status, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+    await query(
+      'INSERT INTO tasks (title, description, assigned_to, customer_id, priority, status, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7)',
       [title, description, assigned_to, customer_id, priority || 'normal', 'pending', req.user.id]
     );
     
-    res.status(201).json(result.rows[0]);
+    // 获取插入的记录
+    const newTask = await query(
+      'SELECT * FROM tasks WHERE id = (SELECT MAX(id) FROM tasks)'
+    );
+    
+    res.status(201).json(newTask.rows[0]);
   } catch (error) {
     console.error('创建任务错误:', error);
     res.status(500).json({ error: '服务器错误' });
