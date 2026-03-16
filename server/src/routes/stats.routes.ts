@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { getStats, getMyStats, getDashboardStats } from '../controllers/stats.controller';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
 
-const router = Router();
+const router: Router = Router();
 
 router.use(authMiddleware);
 

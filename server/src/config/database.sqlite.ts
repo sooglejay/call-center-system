@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import Database, { Database as DatabaseType } from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 
@@ -10,7 +10,7 @@ if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
 }
 
-const db = new Database(dbPath);
+const db: DatabaseType = new Database(dbPath);
 
 // 启用外键约束
 // 启用外键约束

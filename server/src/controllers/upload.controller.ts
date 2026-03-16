@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Request, Response, RequestHandler } from 'express';
 import multer from 'multer';
 import xlsx from 'xlsx';
 import csv from 'csv-parser';
@@ -7,7 +7,7 @@ import path from 'path';
 
 const upload = multer({ dest: 'uploads/' });
 
-export const uploadMiddleware = upload.single('file');
+export const uploadMiddleware: RequestHandler = upload.single('file');
 
 export const uploadFile = async (req: Request, res: Response) => {
   try {

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { communicationController } from '../controllers/communication.controller';
 import { authMiddleware } from '../middleware/auth';
 
-const router = Router();
+const router: Router = Router();
 
 // 所有路由都需要认证
 router.use(authMiddleware);

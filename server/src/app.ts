@@ -18,7 +18,7 @@ import communicationRoutes from './routes/communication.routes';
 
 dotenv.config();
 
-const app = express();
+const app: express.Application = express();
 const PORT = process.env.PORT || 5000;
 
 // 中间件

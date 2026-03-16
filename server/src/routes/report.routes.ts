@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { exportCustomers, getDashboard, getCallTrend } from '../controllers/report.controller';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
 
-const router = Router();
+const router: Router = Router();
 
 router.use(authMiddleware);
 

@@ -12,7 +12,7 @@ import {
   endCall,
 } from '../controllers/twilio.controller';
 
-const router = Router();
+const router: Router = Router();
 
 // Webhook路由 - 不需要认证 (Twilio调用)
 router.post('/voice', handleVoiceWebhook);

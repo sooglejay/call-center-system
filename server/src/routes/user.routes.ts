@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { getUsers, createUser, updateUser, deleteUser, resetPassword, getAgents } from '../controllers/user.controller';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
 
-const router = Router();
+const router: Router = Router();
 
 router.use(authMiddleware);
 

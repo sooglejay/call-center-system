@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { getHealth, getVersion, getSystemInfo } from '../controllers/system.controller';
 import { authMiddleware } from '../middleware/auth';
 
-const router = Router();
+const router: Router = Router();
 
 // 公开接口
 router.get('/health', getHealth);

@@ -3,7 +3,7 @@ import { getConfigs, updateConfig, getAgentConfig, updateAgentConfig } from '../
 import { uploadFile, uploadImage, uploadMiddleware } from '../controllers/upload.controller';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
 
-const router = Router();
+const router: Router = Router();
 
 router.use(authMiddleware);
 

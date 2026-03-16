@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { getCallRecords, createCallRecord, updateCallRecord, updateCallNotes, getNextCall, getCallStatus, createRecord } from '../controllers/call.controller';
 import { authMiddleware } from '../middleware/auth';
 
-const router = Router();
+const router: Router = Router();
 
 router.use(authMiddleware);
 

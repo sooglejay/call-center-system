@@ -26,7 +26,8 @@ describe('认证模块测试', () => {
     });
 
     it('应该拒绝错误密码', () => {
-      const isValid = 'wrongpassword' === TEST_PASSWORD;
+      const wrongPassword: string = 'wrongpassword';
+      const isValid = wrongPassword === TEST_PASSWORD;
       expect(isValid).toBe(false);
     });
   });

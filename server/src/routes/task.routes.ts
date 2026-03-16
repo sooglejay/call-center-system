@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { getTasks, createTask, updateTask, deleteTask, getMyTasks } from '../controllers/task.controller';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
 
-const router = Router();
+const router: Router = Router();
 
 router.use(authMiddleware);
 
