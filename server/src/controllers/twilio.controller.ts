@@ -334,3 +334,323 @@ export const endCall = async (req: Request, res: Response) => {
     res.status(500).json({ error: error.message || '结束通话失败' });
   }
 };
+
+// ==================== Twilio 测试功能 ====================
+
+// 获取 Twilio 配置状态
+export const getTwilioConfig = async (req: Request, res: Response) => {
+  try {
+    const result = await query(
+      'SELECT config_key, config_value FROM system_configs WHERE config_key LIKE $1',
+      ['twilio_%']
+    );
+    
+    const configs: any = {};
+    result.rows.forEach((row: any) => {
+      configs[row.config_key] = row.config_value;
+    });
+    
+    const hasAccountSid = !!configs.twilio_account_sid;
+    const hasAuthToken = !!configs.twilio_auth_token;
+    const hasPhoneNumber = !!configs.twilio_phone_number;
+    
+    res.json({
+      success: true,
+      data: {
+        configured: hasAccountSid && hasAuthToken && hasPhoneNumber,
+        hasAccountSid,
+        hasAuthToken,
+        hasPhoneNumber,
+        hasCallbackUrl: !!configs.twilio_callback_url,
+        phoneNumber: configs.twilio_phone_number ? `${configs.twilio_phone_number.slice(0, 4)}****${configs.twilio_phone_number.slice(-4)}` : null,
+      }
+    });
+  } catch (error: any) {
+    console.error('获取 Twilio 配置错误:', error);
+    res.status(500).json({ error: error.message || '获取配置失败' });
+  }
+};
+
+// 测试 Twilio 连接
+export const testConnection = async (req: Request, res: Response) => {
+  try {
+    // 获取配置
+    const result = await query(
+      'SELECT config_key, config_value FROM system_configs WHERE config_key LIKE $1',
+      ['twilio_%']
+    );
+    
+    const configs: any = {};
+    result.rows.forEach((row: any) => {
+      configs[row.config_key] = row.config_value;
+    });
+    
+    if (!configs.twilio_account_sid || !configs.twilio_auth_token) {
+      return res.json({
+        success: false,
+        error: 'Twilio 账号配置不完整',
+        details: {
+          hasAccountSid: !!configs.twilio_account_sid,
+          hasAuthToken: !!configs.twilio_auth_token,
+        }
+      });
+    }
+    
+    const client = twilio(configs.twilio_account_sid, configs.twilio_auth_token);
+    
+    // 尝试获取账号信息
+    const account = await client.api.accounts(configs.twilio_account_sid).fetch();
+    
+    res.json({
+      success: true,
+      data: {
+        accountSid: account.sid,
+        accountName: account.friendlyName,
+        status: account.status,
+        type: account.type,
+        balance: null, // Twilio API 不直接返回余额，需要用其他方式
+      }
+    });
+  } catch (error: any) {
+    console.error('测试 Twilio 连接错误:', error);
+    res.json({
+      success: false,
+      error: error.message || '连接测试失败',
+      code: error.code,
+    });
+  }
+};
+
+// 发送测试短信
+export const testSms = async (req: any, res: Response) => {
+  try {
+    const { to, message } = req.body;
+    
+    if (!to || !to.trim()) {
+      return res.status(400).json({ error: '请输入接收号码' });
+    }
+    
+    // 获取配置
+    const result = await query(
+      'SELECT config_key, config_value FROM system_configs WHERE config_key LIKE $1',
+      ['twilio_%']
+    );
+    
+    const configs: any = {};
+    result.rows.forEach((row: any) => {
+      configs[row.config_key] = row.config_value;
+    });
+    
+    if (!configs.twilio_account_sid || !configs.twilio_auth_token || !configs.twilio_phone_number) {
+      return res.status(400).json({ error: 'Twilio 配置不完整，请先配置账号信息' });
+    }
+    
+    const client = twilio(configs.twilio_account_sid, configs.twilio_auth_token);
+    
+    const smsMessage = message || '【测试短信】这是一条来自客服系统的测试短信，请勿回复。';
+    
+    const sms = await client.messages.create({
+      body: smsMessage,
+      from: configs.twilio_phone_number,
+      to: to.trim(),
+    });
+    
+    // 记录测试短信
+    await query(
+      `INSERT INTO sms_records (customer_phone, sms_content, twilio_message_sid, sms_status, agent_id, created_at)
+       VALUES ($1, $2, $3, $4, $5, datetime('now'))`,
+      [to, smsMessage, sms.sid, sms.status, req.user?.id]
+    );
+    
+    res.json({
+      success: true,
+      data: {
+        sid: sms.sid,
+        status: sms.status,
+        to: sms.to,
+        from: sms.from,
+        message: '短信发送成功',
+      }
+    });
+  } catch (error: any) {
+    console.error('发送测试短信错误:', error);
+    res.status(500).json({ 
+      error: error.message || '短信发送失败',
+      code: error.code,
+    });
+  }
+};
+
+// 拨打测试电话
+export const testCall = async (req: any, res: Response) => {
+  try {
+    const { to, message } = req.body;
+    
+    if (!to || !to.trim()) {
+      return res.status(400).json({ error: '请输入拨打号码' });
+    }
+    
+    // 获取配置
+    const result = await query(
+      'SELECT config_key, config_value FROM system_configs WHERE config_key LIKE $1',
+      ['twilio_%']
+    );
+    
+    const configs: any = {};
+    result.rows.forEach((row: any) => {
+      configs[row.config_key] = row.config_value;
+    });
+    
+    if (!configs.twilio_account_sid || !configs.twilio_auth_token || !configs.twilio_phone_number) {
+      return res.status(400).json({ error: 'Twilio 配置不完整，请先配置账号信息' });
+    }
+    
+    const client = twilio(configs.twilio_account_sid, configs.twilio_auth_token);
+    
+    // 创建测试通话记录
+    const callRecordResult = await query(
+      `INSERT INTO calls (agent_id, customer_phone, status, started_at)
+       VALUES ($1, $2, 'calling', datetime('now')) RETURNING *`,
+      [req.user?.id, to.trim()]
+    );
+    const callRecord = callRecordResult.rows[0];
+    
+    // 获取回调 URL
+    const baseCallbackUrl = configs.twilio_callback_url || `${req.protocol}://${req.get('host')}/api/twilio`;
+    
+    // 生成 TwiML 用于测试通话
+    const testMessage = message || '您好，这是一通来自客服系统的测试电话。感谢您的接听。';
+    
+    const call = await client.calls.create({
+      to: to.trim(),
+      from: configs.twilio_phone_number,
+      twiml: `<Response><Say voice="alice" language="zh-CN">${testMessage}</Say></Response>`,
+      statusCallback: `${baseCallbackUrl}/status?call_id=${callRecord.id}`,
+      statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed', 'busy', 'no-answer', 'failed'],
+      statusCallbackMethod: 'POST',
+    });
+    
+    // 更新通话记录
+    await query('UPDATE calls SET twilio_call_sid = $1 WHERE id = $2', [call.sid, callRecord.id]);
+    
+    res.json({
+      success: true,
+      data: {
+        sid: call.sid,
+        status: call.status,
+        to: call.to,
+        from: call.from,
+        callRecordId: callRecord.id,
+        message: '电话拨打成功',
+      }
+    });
+  } catch (error: any) {
+    console.error('拨打测试电话错误:', error);
+    res.status(500).json({ 
+      error: error.message || '电话拨打失败',
+      code: error.code,
+    });
+  }
+};
+
+// 获取可用电话号码列表
+export const getAvailablePhoneNumbers = async (req: Request, res: Response) => {
+  try {
+    const result = await query(
+      'SELECT config_key, config_value FROM system_configs WHERE config_key LIKE $1',
+      ['twilio_%']
+    );
+    
+    const configs: any = {};
+    result.rows.forEach((row: any) => {
+      configs[row.config_key] = row.config_value;
+    });
+    
+    if (!configs.twilio_account_sid || !configs.twilio_auth_token) {
+      return res.status(400).json({ error: 'Twilio 配置不完整' });
+    }
+    
+    const client = twilio(configs.twilio_account_sid, configs.twilio_auth_token);
+    
+    // 获取账号下的电话号码
+    const phoneNumbers = await client.incomingPhoneNumbers.list();
+    
+    res.json({
+      success: true,
+      data: phoneNumbers.map((pn: any) => ({
+        sid: pn.sid,
+        phoneNumber: pn.phoneNumber,
+        friendlyName: pn.friendlyName,
+        capabilities: pn.capabilities,
+      }))
+    });
+  } catch (error: any) {
+    console.error('获取电话号码列表错误:', error);
+    res.status(500).json({ error: error.message || '获取电话号码列表失败' });
+  }
+};
+
+// 获取短信发送记录
+export const getSmsRecords = async (req: Request, res: Response) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 20;
+    
+    const result = await query(
+      `SELECT id, customer_phone, sms_content, twilio_message_sid, sms_status, created_at
+       FROM sms_records
+       ORDER BY created_at DESC
+       LIMIT $1`,
+      [limit]
+    );
+    
+    res.json({
+      success: true,
+      data: result.rows
+    });
+  } catch (error: any) {
+    console.error('获取短信记录错误:', error);
+    res.status(500).json({ error: error.message || '获取短信记录失败' });
+  }
+};
+
+// 查询短信状态
+export const checkSmsStatus = async (req: Request, res: Response) => {
+  try {
+    const { messageSid } = req.params;
+    
+    const result = await query(
+      'SELECT config_key, config_value FROM system_configs WHERE config_key LIKE $1',
+      ['twilio_%']
+    );
+    
+    const configs: any = {};
+    result.rows.forEach((row: any) => {
+      configs[row.config_key] = row.config_value;
+    });
+    
+    if (!configs.twilio_account_sid || !configs.twilio_auth_token) {
+      return res.status(400).json({ error: 'Twilio 配置不完整' });
+    }
+    
+    const client = twilio(configs.twilio_account_sid, configs.twilio_auth_token);
+    const message = await client.messages(messageSid).fetch();
+    
+    res.json({
+      success: true,
+      data: {
+        sid: message.sid,
+        status: message.status,
+        to: message.to,
+        from: message.from,
+        body: message.body,
+        errorCode: message.errorCode,
+        errorMessage: message.errorMessage,
+        dateCreated: message.dateCreated,
+        dateSent: message.dateSent,
+      }
+    });
+  } catch (error: any) {
+    console.error('查询短信状态错误:', error);
+    res.status(500).json({ error: error.message || '查询短信状态失败' });
+  }
+};

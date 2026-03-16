@@ -9,7 +9,8 @@ import {
   BarChartOutlined,
   SettingOutlined,
   LogoutOutlined,
-  DownOutlined
+  DownOutlined,
+  PhoneOutlined
 } from '@ant-design/icons';
 import { useAuthStore } from '../../stores';
 
@@ -34,6 +35,7 @@ export default function AdminLayout() {
     { key: '/tasks', icon: <FileTextOutlined />, label: '任务分配' },
     { key: '/stats', icon: <BarChartOutlined />, label: '监控统计' },
     { key: '/config', icon: <SettingOutlined />, label: '系统配置' },
+    { key: '/twilio-test', icon: <PhoneOutlined />, label: 'Twilio测试' },
   ];
 
   const userMenuItems = [

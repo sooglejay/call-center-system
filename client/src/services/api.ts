@@ -94,7 +94,15 @@ export const statsApi = {
 export const twilioApi = {
   makeCall: (data: any) => api.post('/twilio/call', data),
   getCallStatus: (callSid: string) => api.get(`/twilio/call/${callSid}/status`),
-  endCall: (callSid: string) => api.post(`/twilio/call/${callSid}/end`)
+  endCall: (callSid: string) => api.post(`/twilio/call/${callSid}/end`),
+  // 测试功能
+  getConfig: () => api.get('/twilio/config'),
+  testConnection: () => api.get('/twilio/test/connection'),
+  testSms: (to: string, message?: string) => api.post('/twilio/test/sms', { to, message }),
+  testCall: (to: string, message?: string) => api.post('/twilio/test/call', { to, message }),
+  getPhoneNumbers: () => api.get('/twilio/phone-numbers'),
+  getSmsRecords: (limit?: number) => api.get('/twilio/sms/records', { params: { limit } }),
+  checkSmsStatus: (messageSid: string) => api.get(`/twilio/sms/${messageSid}/status`)
 };
 
 // 配置API
