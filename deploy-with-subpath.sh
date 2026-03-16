@@ -234,9 +234,9 @@ FROM node:20-alpine AS production
 WORKDIR /app
 RUN apk add --no-cache python3 make g++ sqlite sqlite-dev
 RUN npm install -g pnpm
-COPY package.json pnpm-lock.yaml* ./
+COPY package.json pnpm-lock.yaml* tsconfig.json ./
 RUN pnpm install --frozen-lockfile
-COPY src/scripts ./src/scripts
+COPY src ./src
 COPY --from=builder /app/dist ./dist
 RUN mkdir -p data uploads
 RUN pnpm rebuild better-sqlite3

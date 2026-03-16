@@ -33,13 +33,13 @@ RUN apk add --no-cache python3 make g++ sqlite sqlite-dev
 RUN npm install -g pnpm
 
 # 复制依赖文件
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml tsconfig.json ./
 
 # 安装所有依赖（包括 tsx 用于 db:seed）
 RUN pnpm install --frozen-lockfile
 
-# 复制源代码（seed 脚本需要）
-COPY src/scripts ./src/scripts
+# 复制源代码（seed 脚本需要完整的 src 目录）
+COPY src ./src
 
 # 从构建阶段复制编译后的代码
 COPY --from=builder /app/dist ./dist
