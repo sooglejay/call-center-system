@@ -218,14 +218,30 @@ cd "${PROJECT_DIR}"
 
 # 创建 Dockerfile - 后端
 cat > server/Dockerfile << 'DOCKERFILE'
-FROM node:20-alpine
-RUN apk add --no-cache python3 make g++ sqlite sqlite-dev
+# 构建阶段
+FROM node:20-alpine AS builder
 WORKDIR /app
+RUN apk add --no-cache python3 make g++ sqlite-dev
+RUN npm install -g pnpm
 COPY package.json pnpm-lock.yaml* ./
-RUN npm install -g pnpm && pnpm install
+RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm run build
+
+# 生产阶段
+FROM node:20-alpine AS production
+WORKDIR /app
+RUN apk add --no-cache python3 make g++ sqlite sqlite-dev
+RUN npm install -g pnpm
+COPY package.json pnpm-lock.yaml* ./
+RUN pnpm install --frozen-lockfile
+COPY src/scripts ./src/scripts
+COPY --from=builder /app/dist ./dist
+RUN mkdir -p data uploads
+RUN pnpm rebuild better-sqlite3
 EXPOSE 5001
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --quiet --tries=1 --spider http://localhost:5001/api/system/health || exit 1
 CMD ["sh", "-c", "pnpm db:seed && pnpm start"]
 DOCKERFILE
 
