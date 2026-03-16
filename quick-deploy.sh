@@ -7,8 +7,8 @@
 #   ./quick-deploy.sh [选项]
 #
 # 选项:
-#   -p, --http-port <端口>    HTTP 端口 (默认: 80)
-#   -a, --api-port <端口>     API 端口 (默认: 5001)
+#   -p, --http-port <端口>    HTTP 端口 (默认: 8080)
+#   -a, --api-port <端口>     API 端口 (默认: 8081)
 #   -h, --help                显示帮助信息
 #
 # 示例:
@@ -38,8 +38,8 @@ show_help() {
     echo "用法: $0 [选项]"
     echo ""
     echo "选项:"
-    echo "  -p, --http-port <端口>    HTTP 端口 (默认: 80)"
-    echo "  -a, --api-port <端口>     API 端口 (默认: 5001)"
+    echo "  -p, --http-port <端口>    HTTP 端口 (默认: 8080)"
+    echo "  -a, --api-port <端口>     API 端口 (默认: 8081)"
     echo "  -h, --help                显示帮助信息"
     echo ""
     echo "示例:"
@@ -96,8 +96,8 @@ check_port() {
 }
 
 # 默认配置
-HTTP_PORT="80"
-API_PORT="5001"
+HTTP_PORT="8080"
+API_PORT="8081"
 
 # 解析命令行参数
 parse_args "$@"
