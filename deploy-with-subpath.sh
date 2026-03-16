@@ -152,27 +152,6 @@ echo ""
 # ============================================
 print_step "步骤 1/3: Docker 容器部署"
 
-# 检查端口占用
-check_port() {
-    local port=$1
-    local name=$2
-    if command -v ss &> /dev/null; then
-        if ss -tuln | grep -q ":$port "; then
-            print_error "端口 $port 已被占用，无法启动 $name"
-            print_info "请使用 -p 或 -a 参数指定其他端口"
-            exit 1
-        fi
-    elif command -v netstat &> /dev/null; then
-        if netstat -tuln 2>/dev/null | grep -q ":$port "; then
-            print_error "端口 $port 已被占用，无法启动 $name"
-            exit 1
-        fi
-    fi
-}
-
-check_port "$HTTP_PORT" "前端服务"
-check_port "$API_PORT" "后端 API 服务"
-
 # 检查 Docker
 if ! command -v docker &> /dev/null; then
     print_error "Docker 未安装！请先安装 Docker"
@@ -183,6 +162,28 @@ if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/
     print_error "Docker Compose 未安装！"
     exit 1
 fi
+
+# 判断使用 docker-compose 还是 docker compose
+if command -v docker-compose &> /dev/null; then
+    COMPOSE_CMD="docker-compose"
+else
+    COMPOSE_CMD="docker compose"
+fi
+
+# 停止并清理旧容器
+print_info "停止旧容器..."
+if [ -f "${PROJECT_DIR}/docker-compose.yml" ]; then
+    cd "${PROJECT_DIR}"
+    $COMPOSE_CMD down --remove-orphans 2>/dev/null || true
+else
+    # 尝试停止可能存在的容器
+    docker stop callcenter-backend callcenter-frontend 2>/dev/null || true
+    docker rm callcenter-backend callcenter-frontend 2>/dev/null || true
+fi
+
+# 清理 Docker 构建缓存
+print_info "清理构建缓存..."
+docker builder prune -f 2>/dev/null || true
 
 # 拉取最新代码（如果在 git 仓库中）
 if [ -d "${SCRIPT_DIR}/.git" ]; then
@@ -335,18 +336,6 @@ API_PORT=${API_PORT}
 ENV
 
 print_info "构建 Docker 镜像（首次可能需要几分钟）..."
-
-# 判断使用 docker-compose 还是 docker compose
-if command -v docker-compose &> /dev/null; then
-    COMPOSE_CMD="docker-compose"
-else
-    COMPOSE_CMD="docker compose"
-fi
-
-# 停止并清理旧容器
-print_info "清理旧容器和构建缓存..."
-$COMPOSE_CMD down --remove-orphans 2>/dev/null || true
-docker builder prune -f 2>/dev/null || true
 
 # 强制重新构建（不使用缓存）
 $COMPOSE_CMD build --no-cache
