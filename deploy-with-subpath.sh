@@ -184,14 +184,29 @@ if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/
     exit 1
 fi
 
+# 拉取最新代码（如果在 git 仓库中）
+if [ -d "${SCRIPT_DIR}/.git" ]; then
+    print_info "拉取最新代码..."
+    cd "${SCRIPT_DIR}"
+    git fetch origin 2>/dev/null || true
+    git reset --hard origin/main 2>/dev/null || git pull origin main 2>/dev/null || true
+    print_success "代码已更新到最新版本"
+fi
+
 # 创建项目目录
 mkdir -p "${PROJECT_DIR}"/{client,server,data,logs}
 
 # 检查并复制项目代码
 if [ -f "${SCRIPT_DIR}/server/package.json" ] && [ -f "${SCRIPT_DIR}/client/package.json" ]; then
+    print_info "清理旧代码..."
+    rm -rf "${PROJECT_DIR}/server/"* "${PROJECT_DIR}/client/"* 2>/dev/null || true
+    rm -rf "${PROJECT_DIR}/server/".[!.]* "${PROJECT_DIR}/client/".[!.]* 2>/dev/null || true
+    
     print_info "复制项目代码..."
     cp -r "${SCRIPT_DIR}"/server/* "${PROJECT_DIR}"/server/ 2>/dev/null || true
+    cp -r "${SCRIPT_DIR}"/server/.[!.]* "${PROJECT_DIR}"/server/ 2>/dev/null || true
     cp -r "${SCRIPT_DIR}"/client/* "${PROJECT_DIR}"/client/ 2>/dev/null || true
+    cp -r "${SCRIPT_DIR}"/client/.[!.]* "${PROJECT_DIR}"/client/ 2>/dev/null || true
     print_success "代码复制完成"
 else
     print_error "未检测到项目代码！"
@@ -263,8 +278,6 @@ NGINX
 
 # 创建 docker-compose.yml
 cat > docker-compose.yml << COMPOSE
-version: '3.8'
-
 services:
   backend:
     build: ./server
@@ -314,7 +327,12 @@ else
     COMPOSE_CMD="docker compose"
 fi
 
-$COMPOSE_CMD down 2>/dev/null || true
+# 停止并清理旧容器
+print_info "清理旧容器和构建缓存..."
+$COMPOSE_CMD down --remove-orphans 2>/dev/null || true
+docker builder prune -f 2>/dev/null || true
+
+# 强制重新构建（不使用缓存）
 $COMPOSE_CMD build --no-cache
 $COMPOSE_CMD up -d
 
