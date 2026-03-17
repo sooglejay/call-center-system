@@ -180,7 +180,7 @@ CONFIG_BLOCK="
     
     # API 接口 - 所有 /$SUBPATH/api/ 路径
     location /$SUBPATH/api/ {
-        proxy_pass http://localhost:$API_PORT/;
+        proxy_pass http://localhost:$FRONTEND_PORT/api/;
         proxy_http_version 1.1;
         
         proxy_set_header Host \$host;

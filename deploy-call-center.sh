@@ -355,7 +355,7 @@ server {
 
     # API 代理
     location /api/ {
-        proxy_pass http://server:5001/;
+        proxy_pass http://server:5001/api/;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection 'upgrade';

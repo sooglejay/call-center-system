@@ -274,7 +274,7 @@ server {
     }
 
     location /api/ {
-        proxy_pass http://backend:5001/;
+        proxy_pass http://backend:5001/api/;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -437,7 +437,7 @@ if [ "$SKIP_NGINX" = false ] && [ -n "$CONFIG_FILE" ]; then
     
     # API 接口
     location /$SUBPATH/api/ {
-        proxy_pass http://localhost:$API_PORT/;
+        proxy_pass http://localhost:$HTTP_PORT/api/;
         proxy_http_version 1.1;
         
         proxy_set_header Host \$host;
