@@ -3,9 +3,6 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# 安装编译工具（better-sqlite3 需要）
-RUN apk add --no-cache python3 make g++ sqlite-dev
-
 # 安装 pnpm
 RUN npm install -g pnpm
 
@@ -26,14 +23,14 @@ FROM node:20-alpine AS production
 
 WORKDIR /app
 
-# 安装运行时依赖和编译工具
-RUN apk add --no-cache python3 make g++ sqlite sqlite-dev
+# 安装 pnpm
+RUN npm install -g pnpm
 
-# 复制 package.json
-COPY package.json ./
+# 复制依赖文件
+COPY package.json pnpm-lock.yaml ./
 
-# 使用 npm 安装生产依赖（会自动编译原生模块）
-RUN npm install --omit=dev
+# 仅安装生产依赖（sql.js 是纯 JS，无需编译）
+RUN pnpm install --frozen-lockfile --prod
 
 # 从构建阶段复制编译后的代码
 COPY --from=builder /app/dist ./dist
