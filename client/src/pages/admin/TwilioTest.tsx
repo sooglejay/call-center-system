@@ -56,7 +56,9 @@ export default function TwilioTest() {
   const loadConfig = async () => {
     try {
       const response = await twilioApi.getConfig();
-      setConfig(response.data);
+      // 后端返回 { success: true, data: {...} }，实际配置在 response.data.data 中
+      const configData = response.data.data || response.data;
+      setConfig(configData);
     } catch (error) {
       message.error('获取配置失败');
     }
@@ -65,7 +67,9 @@ export default function TwilioTest() {
   const loadSmsRecords = async () => {
     try {
       const response = await twilioApi.getSmsRecords(20);
-      setSmsRecords(response.data || []);
+      // 后端返回 { success: true, data: [...] }
+      const records = response.data.data || response.data || [];
+      setSmsRecords(records);
     } catch (error) {
       console.error('获取短信记录失败', error);
     }
@@ -76,7 +80,8 @@ export default function TwilioTest() {
     setConnectionResult(null);
     try {
       const response = await twilioApi.testConnection();
-      setConnectionResult({ success: true, data: response.data });
+      const data = response.data.data || response.data;
+      setConnectionResult({ success: true, data });
     } catch (error: any) {
       setConnectionResult({
         success: false,
@@ -92,7 +97,8 @@ export default function TwilioTest() {
     setTestingSms(true);
     try {
       const response = await twilioApi.testSms(values.to, values.message);
-      message.success(`短信发送成功！SID: ${response.data.sid}`);
+      const data = response.data.data || response.data;
+      message.success(`短信发送成功！SID: ${data.sid}`);
       smsForm.resetFields();
       loadSmsRecords();
     } catch (error: any) {
@@ -106,7 +112,8 @@ export default function TwilioTest() {
     setTestingCall(true);
     try {
       const response = await twilioApi.testCall(values.to, values.message);
-      message.success(`电话拨打成功！SID: ${response.data.sid}`);
+      const data = response.data.data || response.data;
+      message.success(`电话拨打成功！SID: ${data.sid}`);
       callForm.resetFields();
     } catch (error: any) {
       message.error(error.response?.data?.error || '电话拨打失败');
