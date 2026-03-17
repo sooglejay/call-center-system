@@ -7,7 +7,7 @@ export default defineConfig({
   // 支持子路径部署，通过环境变量配置
   base: process.env.VITE_BASE_PATH || '/',
   server: {
-    port: 8080,
+    port: 5000,
     host: '0.0.0.0',
     proxy: {
       '/api': {

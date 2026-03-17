@@ -26,7 +26,11 @@ services:
 
   # 前端 Web 服务
   frontend:
-    build: ./client
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        VITE_BASE_PATH: ${VITE_BASE_PATH:-/}
     container_name: callcenter-frontend
     restart: always
     ports:

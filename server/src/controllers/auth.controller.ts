@@ -30,12 +30,20 @@ const initializeDatabase = async (): Promise<void> => {
   // 确保数据库表结构已创建
   await initDatabase();
   
-  // 创建默认管理员账号
-  await query(
-    `INSERT INTO users (username, password, role, real_name, status, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, datetime('now'), datetime('now'))`,
-    [DEFAULT_ADMIN.username, DEFAULT_ADMIN.password, DEFAULT_ADMIN.role, DEFAULT_ADMIN.real_name, DEFAULT_ADMIN.status]
-  );
+  // 检查默认管理员是否已存在
+  const existingAdmin = await query('SELECT id FROM users WHERE username = $1', [DEFAULT_ADMIN.username]);
+  
+  if (existingAdmin.rows.length === 0) {
+    // 创建默认管理员账号
+    await query(
+      `INSERT INTO users (username, password, role, real_name, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, datetime('now'), datetime('now'))`,
+      [DEFAULT_ADMIN.username, DEFAULT_ADMIN.password, DEFAULT_ADMIN.role, DEFAULT_ADMIN.real_name, DEFAULT_ADMIN.status]
+    );
+    console.log('✅ 默认管理员账号已创建');
+  } else {
+    console.log('✅ 默认管理员账号已存在');
+  }
   
   console.log('✅ 数据库初始化完成');
   console.log(`   默认管理员: ${DEFAULT_ADMIN.username} / ${DEFAULT_ADMIN.password}`);

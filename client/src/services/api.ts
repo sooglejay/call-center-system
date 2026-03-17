@@ -34,7 +34,9 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      window.location.href = '/login';
+      // 支持子路径部署
+      const basePath = import.meta.env.VITE_BASE_PATH || '';
+      window.location.href = `${basePath}/login`;
     }
     return Promise.reject(error);
   }
