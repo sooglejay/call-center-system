@@ -14,22 +14,10 @@ import CallList from './pages/agent/CallList';
 import CommunicationRecords from './pages/agent/CommunicationRecords';
 import MyStats from './pages/agent/MyStats';
 import Settings from './pages/agent/Settings';
-import type { User } from './types';
-
-// 从 localStorage 获取认证状态
-const getAuth = (): { isAuthenticated: boolean; user: User | null } => {
-  const token = localStorage.getItem('token');
-  const userStr = localStorage.getItem('user');
-  try {
-    const user = userStr ? JSON.parse(userStr) : null;
-    return { isAuthenticated: !!token, user };
-  } catch {
-    return { isAuthenticated: false, user: null };
-  }
-};
+import PrivateRoute, { getAuth } from './components/PrivateRoute';
 
 function App() {
-  const { isAuthenticated, user } = getAuth();
+  const { isAuthenticated } = getAuth();
 
   return (
     <BrowserRouter>
@@ -44,34 +32,43 @@ function App() {
           } 
         />
         
-        {/* 需要认证的路由 */}
-        {isAuthenticated ? (
-          <>
-            {user?.role === 'admin' ? (
-              <Route path="/" element={<AdminLayout />}>
-                <Route index element={<Navigate to="/dashboard" replace />} />
-                <Route path="dashboard" element={<Dashboard />} />
-                <Route path="users" element={<UserManagement />} />
-                <Route path="customers" element={<CustomerManagement />} />
-                <Route path="tasks" element={<TaskManagement />} />
-                <Route path="stats" element={<Stats />} />
-                <Route path="config" element={<SystemConfig />} />
-                <Route path="twilio-test" element={<TwilioTest />} />
-              </Route>
-            ) : (
-              <Route path="/" element={<AgentLayout />}>
-                <Route index element={<Navigate to="/dashboard" replace />} />
-                <Route path="dashboard" element={<AgentDashboard />} />
-                <Route path="calls" element={<CallList />} />
-                <Route path="communication" element={<CommunicationRecords />} />
-                <Route path="stats" element={<MyStats />} />
-                <Route path="settings" element={<Settings />} />
-              </Route>
-            )}
-          </>
-        ) : null}
+        {/* 管理员路由 */}
+        <Route 
+          path="/" 
+          element={
+            <PrivateRoute allowedRoles={['admin']}>
+              <AdminLayout />
+            </PrivateRoute>
+          }
+        >
+          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="users" element={<UserManagement />} />
+          <Route path="customers" element={<CustomerManagement />} />
+          <Route path="tasks" element={<TaskManagement />} />
+          <Route path="stats" element={<Stats />} />
+          <Route path="config" element={<SystemConfig />} />
+          <Route path="twilio-test" element={<TwilioTest />} />
+        </Route>
+
+        {/* 客服路由 */}
+        <Route 
+          path="/" 
+          element={
+            <PrivateRoute allowedRoles={['agent']}>
+              <AgentLayout />
+            </PrivateRoute>
+          }
+        >
+          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route path="dashboard" element={<AgentDashboard />} />
+          <Route path="calls" element={<CallList />} />
+          <Route path="communication" element={<CommunicationRecords />} />
+          <Route path="stats" element={<MyStats />} />
+          <Route path="settings" element={<Settings />} />
+        </Route>
         
-        {/* 未登录时，除 /login 外都跳转到登录页 */}
+        {/* 404 - 根据登录状态跳转 */}
         <Route 
           path="*" 
           element={
