@@ -4,6 +4,8 @@ import react from '@vitejs/plugin-react'
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  // 支持子路径部署，通过环境变量配置
+  base: process.env.VITE_BASE_PATH || '/',
   server: {
     port: 8080,
     host: '0.0.0.0',
