@@ -217,12 +217,11 @@ fi
 
 cd "${PROJECT_DIR}"
 
-# 创建 Dockerfile - 后端
+# 创建 Dockerfile - 后端（使用 sql.js，无需编译原生模块）
 cat > server/Dockerfile << 'DOCKERFILE'
 # 构建阶段
 FROM node:20-alpine AS builder
 WORKDIR /app
-RUN apk add --no-cache python3 make g++ sqlite-dev
 RUN npm install -g pnpm
 COPY package.json pnpm-lock.yaml* ./
 RUN pnpm install --frozen-lockfile
@@ -232,21 +231,19 @@ RUN pnpm run build
 # 生产阶段
 FROM node:20-alpine AS production
 WORKDIR /app
-RUN apk add --no-cache python3 make g++ sqlite sqlite-dev
 RUN npm install -g pnpm
 COPY package.json pnpm-lock.yaml* ./
 RUN pnpm install --frozen-lockfile --prod
 COPY --from=builder /app/dist ./dist
 RUN mkdir -p data uploads && chmod 777 data uploads
 RUN echo "NODE_ENV=production\nPORT=5001\nDB_TYPE=sqlite\nSQLITE_PATH=/app/data/database.sqlite" > .env
-RUN pnpm rebuild better-sqlite3
 EXPOSE 5001
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget --quiet --tries=1 --spider http://localhost:5001/api/system/health || exit 1
 CMD ["node", "dist/app.js"]
 DOCKERFILE
 
-# 创建 Dockerfile - 前端
+# 创建 Dockerfile - 前端（支持子路径）
 cat > client/Dockerfile << 'DOCKERFILE'
 FROM node:20-alpine AS builder
 WORKDIR /app
@@ -254,6 +251,8 @@ RUN npm install -g pnpm
 COPY package.json pnpm-lock.yaml* ./
 RUN pnpm install
 COPY . .
+ARG VITE_BASE_PATH=/
+ENV VITE_BASE_PATH=$VITE_BASE_PATH
 RUN pnpm run build
 FROM nginx:alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
@@ -293,7 +292,7 @@ server {
 }
 NGINX
 
-# 创建 docker-compose.yml
+# 创建 docker-compose.yml（支持子路径构建）
 cat > docker-compose.yml << COMPOSE
 services:
   backend:
@@ -319,7 +318,10 @@ services:
       start_period: 15s
 
   frontend:
-    build: ./client
+    build:
+      context: ./client
+      args:
+        VITE_BASE_PATH: /${SUBPATH}
     container_name: callcenter-frontend
     restart: always
     ports:
@@ -337,6 +339,7 @@ COMPOSE
 cat > .env << ENV
 HTTP_PORT=${HTTP_PORT}
 API_PORT=${API_PORT}
+SUBPATH=${SUBPATH}
 ENV
 
 print_info "构建 Docker 镜像（首次可能需要几分钟）..."

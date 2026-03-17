@@ -1,7 +1,15 @@
 import axios, { AxiosError } from 'axios';
 
+// 获取 API 基础路径
+// 子路径部署时，API 路径应该是相对路径，让浏览器自动拼接
+const getBaseURL = () => {
+  // 如果环境变量中配置了子路径
+  const basePath = import.meta.env.VITE_BASE_PATH || '';
+  return basePath ? `${basePath}/api` : '/api';
+};
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: getBaseURL(),
   headers: {
     'Content-Type': 'application/json'
   }
