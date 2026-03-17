@@ -16,11 +16,17 @@ import MyStats from './pages/agent/MyStats';
 import Settings from './pages/agent/Settings';
 import PrivateRoute, { getAuth } from './components/PrivateRoute';
 
+// 获取基础路径（子路径部署时使用）
+const getBasePath = (): string => {
+  return import.meta.env.VITE_BASE_PATH || '';
+};
+
 function App() {
   const { isAuthenticated } = getAuth();
+  const basePath = getBasePath();
 
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={basePath || undefined}>
       <Routes>
         {/* 登录页 - 已登录则跳转到首页 */}
         <Route 

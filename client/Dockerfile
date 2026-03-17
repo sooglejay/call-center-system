@@ -15,7 +15,11 @@ RUN pnpm install --frozen-lockfile
 # 复制源代码
 COPY . .
 
-# 构建（使用默认环境变量）
+# 接收构建参数
+ARG VITE_BASE_PATH=/
+ENV VITE_BASE_PATH=$VITE_BASE_PATH
+
+# 构建
 RUN pnpm run build
 
 # 生产阶段 - 使用 Nginx
