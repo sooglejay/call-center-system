@@ -26,17 +26,14 @@ FROM node:20-alpine AS production
 
 WORKDIR /app
 
-# 安装运行时依赖和编译工具（better-sqlite3 需要重新编译）
+# 安装运行时依赖和编译工具
 RUN apk add --no-cache python3 make g++ sqlite sqlite-dev
 
-# 安装 pnpm
-RUN npm install -g pnpm
+# 复制 package.json
+COPY package.json ./
 
-# 复制依赖文件
-COPY package.json pnpm-lock.yaml ./
-
-# 仅安装生产依赖
-RUN pnpm install --frozen-lockfile --prod
+# 使用 npm 安装生产依赖（会自动编译原生模块）
+RUN npm install --omit=dev
 
 # 从构建阶段复制编译后的代码
 COPY --from=builder /app/dist ./dist
@@ -46,9 +43,6 @@ RUN mkdir -p data uploads && chmod 777 data uploads
 
 # 创建默认环境变量文件
 RUN echo "NODE_ENV=production\nPORT=5001\nDB_TYPE=sqlite\nSQLITE_PATH=/app/data/database.sqlite" > .env
-
-# 重新编译原生模块
-RUN pnpm rebuild better-sqlite3
 
 # 暴露端口
 EXPOSE 5001
