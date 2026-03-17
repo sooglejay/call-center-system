@@ -1,18 +1,16 @@
-import { Pool } from 'pg';
+import initSqlJs, { Database } from 'sql.js';
 import dotenv from 'dotenv';
-import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 
 dotenv.config();
 
-// 数据库类型选择
-const DB_TYPE = process.env.DB_TYPE || 'sqlite'; // 'sqlite' | 'postgres' | 'memory'
+// 数据库实例
+let db: Database | null = null;
+let dbPath: string;
+let saveTimeout: NodeJS.Timeout | null = null;
 
-// SQLite 数据库实例
-let sqliteDb: Database.Database | null = null;
-
-// 创建数据库表的 SQL（不包含默认数据）
+// 创建数据库表的 SQL
 const createTablesSQL = `
 -- 用户表
 CREATE TABLE IF NOT EXISTS users (
@@ -44,6 +42,8 @@ CREATE TABLE IF NOT EXISTS customers (
   status TEXT DEFAULT 'pending',
   priority INTEGER DEFAULT 1,
   assigned_to INTEGER REFERENCES users(id),
+  imported_by INTEGER REFERENCES users(id),
+  source TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -61,6 +61,8 @@ CREATE TABLE IF NOT EXISTS calls (
   call_notes TEXT,
   recording_url TEXT,
   recording_duration INTEGER,
+  call_duration INTEGER,
+  is_connected INTEGER DEFAULT 0,
   started_at DATETIME,
   ended_at DATETIME,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -101,6 +103,9 @@ CREATE TABLE IF NOT EXISTS agent_configs (
   dial_interval INTEGER DEFAULT 30,
   dial_start_time TEXT DEFAULT '09:00:00',
   dial_end_time TEXT DEFAULT '18:00:00',
+  dial_strategy TEXT DEFAULT 'newest',
+  dial_delay INTEGER DEFAULT 3,
+  remove_duplicates INTEGER DEFAULT 0,
   sip_endpoint TEXT,
   sip_username TEXT,
   sip_password TEXT,
@@ -161,38 +166,60 @@ INSERT OR IGNORE INTO system_configs (config_key, config_value, description) VAL
 ('voicemail_greeting', '您好，我现在无法接听您的电话，请在听到提示音后留言。', '语音信箱问候语');
 `;
 
-// ==================== SQLite 实现 ====================
-const initSQLite = (): Database.Database => {
-  const dbPath = process.env.SQLITE_PATH || path.join(__dirname, '../../data/database.sqlite');
+// 保存数据库到文件
+const saveDatabase = () => {
+  if (!db) return;
+  
+  // 防抖：延迟保存，避免频繁写入
+  if (saveTimeout) {
+    clearTimeout(saveTimeout);
+  }
+  
+  saveTimeout = setTimeout(() => {
+    try {
+      const data = db!.export();
+      const buffer = Buffer.from(data);
+      
+      // 确保目录存在
+      const dbDir = path.dirname(dbPath);
+      if (!fs.existsSync(dbDir)) {
+        fs.mkdirSync(dbDir, { recursive: true });
+      }
+      
+      fs.writeFileSync(dbPath, buffer);
+    } catch (error) {
+      console.error('保存数据库失败:', error);
+    }
+  }, 100);
+};
+
+// 初始化数据库
+const initDatabase = async (): Promise<void> => {
+  const SQL = await initSqlJs();
+  
+  dbPath = process.env.SQLITE_PATH || path.join(__dirname, '../../data/database.sqlite');
   
   // 确保数据目录存在
   const dbDir = path.dirname(dbPath);
   if (!fs.existsSync(dbDir)) {
     fs.mkdirSync(dbDir, { recursive: true });
   }
-
-  const db = new Database(dbPath);
-
-  // 启用外键约束
-  db.pragma('foreign_keys = ON');
   
-  // 在 macOS 上禁用 WAL 模式以避免 I/O 错误
-  if (process.platform !== 'darwin') {
-    db.pragma('journal_mode = WAL');
-  }
-
-  return db;
-};
-
-// 初始化数据库表结构（不含默认用户）
-const initDatabase = async (): Promise<void> => {
-  if (!sqliteDb) {
-    sqliteDb = initSQLite();
+  // 尝试从文件加载
+  if (fs.existsSync(dbPath)) {
+    const buffer = fs.readFileSync(dbPath);
+    db = new SQL.Database(buffer);
+    console.log('✅ 从文件加载数据库:', dbPath);
+  } else {
+    db = new SQL.Database();
+    console.log('✅ 创建新数据库');
   }
   
+  // 创建表结构
   try {
-    sqliteDb.exec(createTablesSQL);
-    sqliteDb.exec(defaultConfigSQL);
+    db.run(createTablesSQL);
+    db.run(defaultConfigSQL);
+    saveDatabase();
     console.log('✅ 数据库表结构初始化完成');
   } catch (error) {
     console.error('❌ 数据库初始化失败:', error);
@@ -200,92 +227,63 @@ const initDatabase = async (): Promise<void> => {
   }
 };
 
-// 兼容 pg 的 query 接口
-const createSQLiteQuery = (db: Database.Database) => {
-  return (text: string, params?: any[]): any => {
-    // 将 PostgreSQL 的 $1, $2 转换为 SQLite 的 ?
-    const sqliteText = text.replace(/\$(\d+)/g, '?');
+// 查询函数（兼容 better-sqlite3 API）
+const query = (sql: string, params?: any[]): { rows: any[]; rowCount: number } => {
+  if (!db) {
+    throw new Error('数据库未初始化');
+  }
+  
+  // 将 PostgreSQL 的 $1, $2 转换为 ? ? 
+  const sqliteSql = sql.replace(/\$(\d+)/g, '?');
+  
+  try {
+    const upperSql = sqliteSql.trim().toUpperCase();
     
-    // 判断是查询还是修改
-    const isSelect = sqliteText.trim().toLowerCase().startsWith('select');
-    
-    try {
-      if (isSelect) {
-        const stmt = db.prepare(sqliteText);
-        const rows = params ? stmt.all(...params) : stmt.all();
-        return { rows, rowCount: rows.length };
-      } else {
-        const stmt = db.prepare(sqliteText);
-        const result = params ? stmt.run(...params) : stmt.run();
-        return { 
-          rows: result.changes > 0 ? [{ id: result.lastInsertRowid }] : [],
-          rowCount: result.changes
-        };
+    // SELECT 查询
+    if (upperSql.startsWith('SELECT')) {
+      const stmt = db!.prepare(sqliteSql);
+      
+      if (params && params.length > 0) {
+        stmt.bind(params);
       }
-    } catch (error) {
-      console.error('SQLite 查询错误:', error);
-      throw error;
+      
+      const rows: any[] = [];
+      while (stmt.step()) {
+        const row = stmt.getAsObject();
+        rows.push(row);
+      }
+      stmt.free();
+      
+      return { rows, rowCount: rows.length };
     }
-  };
+    
+    // INSERT, UPDATE, DELETE
+    db!.run(sqliteSql, params);
+    
+    // 获取最后插入的 ID 和影响行数
+    const lastId = db!.exec("SELECT last_insert_rowid() as id")[0]?.values[0]?.[0];
+    const changes = db!.getRowsModified();
+    
+    // 保存更改
+    saveDatabase();
+    
+    // 对于 INSERT，返回新记录
+    if (upperSql.startsWith('INSERT')) {
+      return { 
+        rows: [{ id: lastId }], 
+        rowCount: changes 
+      };
+    }
+    
+    return { rows: [], rowCount: changes };
+  } catch (error) {
+    console.error('SQL 查询错误:', error);
+    console.error('SQL:', sqliteSql);
+    console.error('Params:', params);
+    throw error;
+  }
 };
 
-// ==================== 内存数据库实现 ====================
-class MemoryDB {
-  private data: any = {
-    users: [],
-    customers: [],
-    calls: [],
-    tasks: [],
-    voicemail_records: [],
-    sms_records: [],
-    unanswered_records: [],
-    system_configs: {},
-    agent_configs: {}
-  };
-
-  async query(text: string, params?: any[]): Promise<{ rows: any[]; rowCount: number }> {
-    return { rows: [], rowCount: 0 };
-  }
-}
-
-// ==================== 数据库导出 ====================
-let pool: any;
-let queryFn: (text: string, params?: any[]) => Promise<{ rows: any[]; rowCount: number }>;
-
-// 检查是否使用 PostgreSQL
-const usePostgres = !!(process.env.DATABASE_URL || (process.env.DB_HOST && process.env.DB_HOST !== 'localhost'));
-
-if (DB_TYPE === 'postgres' || usePostgres) {
-  // PostgreSQL 模式
-  pool = new Pool({
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '5432'),
-    database: process.env.DB_NAME || 'postgres',
-    user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || '',
-  });
-  queryFn = (text: string, params?: any[]) => pool.query(text, params);
-  console.log('✅ 使用 PostgreSQL 数据库');
-} else if (DB_TYPE === 'memory') {
-  // 内存数据库模式
-  pool = new MemoryDB();
-  queryFn = (text: string, params?: any[]) => pool.query(text, params);
-  console.log('✅ 使用内存数据库（演示模式）');
-} else {
-  // 默认使用 SQLite
-  sqliteDb = initSQLite();
-  pool = sqliteDb;
-  queryFn = createSQLiteQuery(sqliteDb);
-  
-  // 自动初始化表结构
-  try {
-    sqliteDb.exec(createTablesSQL);
-    console.log('✅ SQLite 数据库已就绪');
-  } catch (error) {
-    console.error('❌ SQLite 初始化失败:', error);
-  }
-}
-
-export default pool;
-export const query = queryFn;
-export { initDatabase };
+// 导出
+export default { query };
+export { query, initDatabase };
