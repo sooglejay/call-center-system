@@ -9,6 +9,7 @@ import TaskManagement from './pages/admin/TaskManagement';
 import Stats from './pages/admin/Stats';
 import SystemConfig from './pages/admin/SystemConfig';
 import TwilioTest from './pages/admin/TwilioTest';
+import DataPermission from './pages/admin/DataPermission';
 import AgentDashboard from './pages/agent/Dashboard';
 import CallList from './pages/agent/CallList';
 import CommunicationRecords from './pages/agent/CommunicationRecords';
@@ -55,6 +56,7 @@ function App() {
           <Route path="stats" element={<Stats />} />
           <Route path="config" element={<SystemConfig />} />
           <Route path="twilio-test" element={<TwilioTest />} />
+          <Route path="data-permission" element={<DataPermission />} />
         </Route>
 
         {/* 客服路由 */}

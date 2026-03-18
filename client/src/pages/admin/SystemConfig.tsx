@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Card, Form, Input, Button, message, Alert, Switch, Typography, Select } from 'antd';
 import { configApi } from '../../services/api';
 
@@ -6,7 +6,6 @@ const { TextArea } = Input;
 const { Text } = Typography;
 
 export default function SystemConfig() {
-  const [configs, setConfigs] = useState<any>({});
   const [form] = Form.useForm();
 
   useEffect(() => {
@@ -25,7 +24,6 @@ export default function SystemConfig() {
           configMap[item.config_key] = item.config_value;
         }
       });
-      setConfigs(configMap);
       form.setFieldsValue(configMap);
     } catch (error) {
       message.error('获取配置失败');

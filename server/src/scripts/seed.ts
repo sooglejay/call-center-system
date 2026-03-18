@@ -11,7 +11,7 @@
  *   DB_TYPE=postgres      # 使用PostgreSQL
  */
 
-import { query } from '../config/database';
+import { query, initDatabase } from '../config/database';
 
 // 生成日期辅助函数
 const daysAgo = (days: number) => {
@@ -332,10 +332,12 @@ async function seedCustomers() {
   for (const customer of customers) {
     try {
       const assignedTo = Math.random() > 0.3 ? Math.floor(Math.random() * 3) + 2 : null;
+      // 所有 seed 生成的客户数据标记为测试数据 (mock)
+      const dataSource = 'mock';
       await query(
-        `INSERT INTO customers (name, phone, email, company, address, notes, status, priority, assigned_to, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, datetime('now', '-${Math.floor(Math.random() * 30)} days'), datetime('now'))`,
-        [customer.name, customer.phone, customer.email, customer.company, customer.address, customer.notes, customer.status, customer.priority, assignedTo]
+        `INSERT INTO customers (name, phone, email, company, address, notes, status, priority, assigned_to, data_source, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, datetime('now', '-${Math.floor(Math.random() * 30)} days'), datetime('now'))`,
+        [customer.name, customer.phone, customer.email, customer.company, customer.address, customer.notes, customer.status, customer.priority, assignedTo, dataSource]
       );
       count++;
     } catch (error) {
@@ -446,6 +448,10 @@ async function seed(isMini = false) {
   console.log('🌱 开始生成测试数据...\n');
   
   try {
+    // 初始化数据库
+    await initDatabase();
+    console.log('✅ 数据库初始化完成\n');
+    
     // 清理数据（保留用户）
     await clearData();
     

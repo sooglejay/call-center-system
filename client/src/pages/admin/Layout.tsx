@@ -10,7 +10,8 @@ import {
   SettingOutlined,
   LogoutOutlined,
   DownOutlined,
-  PhoneOutlined
+  PhoneOutlined,
+  DatabaseOutlined
 } from '@ant-design/icons';
 import { useAuthStore } from '../../stores';
 
@@ -36,6 +37,7 @@ export default function AdminLayout() {
     { key: '/customers', icon: <UserOutlined />, label: '客户管理' },
     { key: '/tasks', icon: <FileTextOutlined />, label: '任务分配' },
     { key: '/stats', icon: <BarChartOutlined />, label: '监控统计' },
+    { key: '/data-permission', icon: <DatabaseOutlined />, label: '数据权限' },
     { key: '/config', icon: <SettingOutlined />, label: '系统配置' },
     { key: '/twilio-test', icon: <PhoneOutlined />, label: 'Twilio测试' },
   ];

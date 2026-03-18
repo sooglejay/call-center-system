@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS users (
   position TEXT,
   avatar_url TEXT,
   status TEXT DEFAULT 'active',
+  data_access_type TEXT DEFAULT 'mock',
   last_login_at DATETIME,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -42,8 +43,10 @@ CREATE TABLE IF NOT EXISTS customers (
   status TEXT DEFAULT 'pending',
   priority INTEGER DEFAULT 1,
   assigned_to INTEGER REFERENCES users(id),
+  data_source TEXT DEFAULT 'mock',
   imported_by INTEGER REFERENCES users(id),
   source TEXT,
+  data_source TEXT DEFAULT 'mock',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -193,6 +196,27 @@ const saveDatabase = () => {
       console.error('保存数据库失败:', error);
     }
   }, 100);
+};
+
+// 同步保存数据库到文件（用于脚本）
+const saveDatabaseSync = () => {
+  if (!db) return;
+  
+  try {
+    const data = db!.export();
+    const buffer = Buffer.from(data);
+    
+    // 确保目录存在
+    const dbDir = path.dirname(dbPath);
+    if (!fs.existsSync(dbDir)) {
+      fs.mkdirSync(dbDir, { recursive: true });
+    }
+    
+    fs.writeFileSync(dbPath, buffer);
+    console.log('✅ 数据库已保存');
+  } catch (error) {
+    console.error('保存数据库失败:', error);
+  }
 };
 
 // 初始化数据库
