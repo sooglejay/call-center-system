@@ -227,7 +227,7 @@ const initDatabase = async (): Promise<void> => {
   }
 };
 
-// 查询函数（兼容 better-sqlite3 API）
+// 查询函数（返回 { rows, rowCount } 格式）
 const query = (sql: string, params?: any[]): { rows: any[]; rowCount: number } => {
   if (!db) {
     throw new Error('数据库未初始化');
