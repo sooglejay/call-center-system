@@ -38,35 +38,56 @@ export const createUser = async (req: Request, res: Response) => {
   try {
     const { username, password, real_name, role, phone, email } = req.body;
     
+    if (!username || !password) {
+      return res.status(400).json({ error: '用户名和密码不能为空' });
+    }
+    
     const existingUser = await query('SELECT id FROM users WHERE username = $1', [username]);
     if (existingUser.rows.length > 0) {
       return res.status(400).json({ error: '用户名已存在' });
     }
     
+    // 将 undefined 转换为 null
+    const safePhone = phone || null;
+    const safeEmail = email || null;
+    const safeRealName = real_name || null;
+    const safeRole = role || 'agent';
+    
     // 明文存储密码（开发便利）
-    await query(
-      `INSERT INTO users (username, password, real_name, role, phone, email, data_access_type)
-       VALUES ($1, $2, $3, $4, $5, $6, 'mock')`,
-      [username, password, real_name, role, phone, email]
+    const insertResult = await query(
+      `INSERT INTO users (username, password, real_name, role, phone, email, data_access_type, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 'mock', datetime('now'), datetime('now'))`,
+      [username, password, safeRealName, safeRole, safePhone, safeEmail]
     );
     
-    // 获取插入的用户
+    // 获取插入的用户 - 使用 last_insert_rowid()
     const result = await query(
-      'SELECT id, username, real_name, role, phone, email, status, data_access_type, created_at FROM users WHERE id = (SELECT MAX(id) FROM users)'
+      'SELECT id, username, real_name, role, phone, email, status, data_access_type, created_at FROM users WHERE id = last_insert_rowid()'
     );
     
-    // 为客服创建默认配置
-    if (role === 'agent') {
-      await query(
-        'INSERT INTO agent_configs (agent_id, dial_strategy, dial_delay, remove_duplicates) VALUES ($1, $2, $3, $4)',
-        [result.rows[0].id, 'newest', 3, false]
-      );
+    if (result.rows.length === 0) {
+      return res.status(500).json({ error: '创建用户失败' });
     }
     
-    res.status(201).json(result.rows[0]);
+    const newUser = result.rows[0];
+    
+    // 为客服创建默认配置
+    if (safeRole === 'agent') {
+      try {
+        await query(
+          'INSERT INTO agent_configs (agent_id, dial_strategy, dial_delay, remove_duplicates, created_at, updated_at) VALUES ($1, $2, $3, $4, datetime(\'now\'), datetime(\'now\'))',
+          [newUser.id, 'newest', 3, false]
+        );
+      } catch (configErr) {
+        console.error('创建客服配置失败:', configErr);
+        // 不影响用户创建，继续
+      }
+    }
+    
+    res.status(201).json(newUser);
   } catch (error) {
     console.error('创建用户错误:', error);
-    res.status(500).json({ error: '服务器错误' });
+    res.status(500).json({ error: '服务器错误', detail: error instanceof Error ? error.message : '未知错误' });
   }
 };
 
