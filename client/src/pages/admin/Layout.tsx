@@ -32,14 +32,14 @@ export default function AdminLayout() {
   };
 
   const menuItems = [
-    { key: '/dashboard', icon: <DashboardOutlined />, label: '仪表板' },
-    { key: '/users', icon: <TeamOutlined />, label: '人员管理' },
-    { key: '/customers', icon: <UserOutlined />, label: '客户管理' },
-    { key: '/tasks', icon: <FileTextOutlined />, label: '任务分配' },
-    { key: '/stats', icon: <BarChartOutlined />, label: '监控统计' },
-    { key: '/data-permission', icon: <DatabaseOutlined />, label: '数据权限' },
-    { key: '/config', icon: <SettingOutlined />, label: '系统配置' },
-    { key: '/twilio-test', icon: <PhoneOutlined />, label: 'Twilio测试' },
+    { key: '/admin/dashboard', icon: <DashboardOutlined />, label: '仪表板' },
+    { key: '/admin/users', icon: <TeamOutlined />, label: '人员管理' },
+    { key: '/admin/customers', icon: <UserOutlined />, label: '客户管理' },
+    { key: '/admin/tasks', icon: <FileTextOutlined />, label: '任务分配' },
+    { key: '/admin/stats', icon: <BarChartOutlined />, label: '监控统计' },
+    { key: '/admin/data-permission', icon: <DatabaseOutlined />, label: '数据权限' },
+    { key: '/admin/config', icon: <SettingOutlined />, label: '系统配置' },
+    { key: '/admin/twilio-test', icon: <PhoneOutlined />, label: 'Twilio测试' },
   ];
 
   const userMenuItems = [

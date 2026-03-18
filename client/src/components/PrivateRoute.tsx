@@ -31,7 +31,8 @@ export default function PrivateRoute({ children, allowedRoles }: PrivateRoutePro
   // 角色权限检查
   if (allowedRoles && user && !allowedRoles.includes(user.role)) {
     // 根据角色跳转到对应首页
-    return <Navigate to="/dashboard" replace />;
+    const redirectPath = user.role === 'admin' ? '/admin/dashboard' : '/agent/dashboard';
+    return <Navigate to={redirectPath} replace />;
   }
 
   return <>{children}</>;

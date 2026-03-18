@@ -30,11 +30,11 @@ export default function AgentLayout() {
   };
 
   const menuItems = [
-    { key: '/dashboard', icon: <DashboardOutlined />, label: '工作台' },
-    { key: '/calls', icon: <PhoneOutlined />, label: '电话列表' },
-    { key: '/communication', icon: <AudioOutlined />, label: '通信记录' },
-    { key: '/stats', icon: <BarChartOutlined />, label: '我的业绩' },
-    { key: '/settings', icon: <SettingOutlined />, label: '拨号设置' },
+    { key: '/agent/dashboard', icon: <DashboardOutlined />, label: '工作台' },
+    { key: '/agent/calls', icon: <PhoneOutlined />, label: '电话列表' },
+    { key: '/agent/communication', icon: <AudioOutlined />, label: '通信记录' },
+    { key: '/agent/stats', icon: <BarChartOutlined />, label: '我的业绩' },
+    { key: '/agent/settings', icon: <SettingOutlined />, label: '拨号设置' },
   ];
 
   const userMenuItems = [
