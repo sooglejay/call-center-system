@@ -1,18 +1,17 @@
-name: CI/CD Pipeline
+name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main ]
   pull_request:
     branches: [ main ]
 
 env:
   NODE_VERSION: '20'
-  PNPM_VERSION: '9'
 
 jobs:
-  # 代码检查
-  lint:
+  # 后端代码检查和构建
+  server:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -25,198 +24,23 @@ jobs:
     - name: Install pnpm
       uses: pnpm/action-setup@v2
       with:
-        version: ${{ env.PNPM_VERSION }}
-    
-    - name: Get pnpm store directory
-      shell: bash
-      run: |
-        echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-    
-    - name: Setup pnpm cache
-      uses: actions/cache@v4
-      with:
-        path: ${{ env.STORE_PATH }}
-        key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-        restore-keys: |
-          ${{ runner.os }}-pnpm-store-
-    
-    - name: Install dependencies (Server)
-      working-directory: ./server
-      run: pnpm install
-    
-    - name: Install dependencies (Client)
-      working-directory: ./client
-      run: pnpm install
-    
-    - name: Type check (Server)
-      working-directory: ./server
-      run: pnpm exec tsc --noEmit || true
-    
-    - name: Type check (Client)
-      working-directory: ./client
-      run: pnpm exec tsc --noEmit || true
-
-  # 构建前端
-  build-client:
-    runs-on: ubuntu-latest
-    needs: lint
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ env.NODE_VERSION }}
-    
-    - name: Install pnpm
-      uses: pnpm/action-setup@v2
-      with:
-        version: ${{ env.PNPM_VERSION }}
-    
-    - name: Get pnpm store directory
-      shell: bash
-      run: |
-        echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-    
-    - name: Setup pnpm cache
-      uses: actions/cache@v4
-      with:
-        path: ${{ env.STORE_PATH }}
-        key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-        restore-keys: |
-          ${{ runner.os }}-pnpm-store-
-    
-    - name: Install dependencies
-      working-directory: ./client
-      run: pnpm install
-    
-    - name: Build
-      working-directory: ./client
-      run: pnpm build
-      env:
-        VITE_API_URL: ${{ secrets.VITE_API_URL || 'https://call-center-api.railway.app/api' }}
-    
-    - name: Upload build artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: client-build
-        path: client/dist
-
-  # 构建后端
-  build-server:
-    runs-on: ubuntu-latest
-    needs: lint
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ env.NODE_VERSION }}
-    
-    - name: Install pnpm
-      uses: pnpm/action-setup@v2
-      with:
-        version: ${{ env.PNPM_VERSION }}
-    
-    - name: Get pnpm store directory
-      shell: bash
-      run: |
-        echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-    
-    - name: Setup pnpm cache
-      uses: actions/cache@v4
-      with:
-        path: ${{ env.STORE_PATH }}
-        key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-        restore-keys: |
-          ${{ runner.os }}-pnpm-store-
+        version: 9
     
     - name: Install dependencies
       working-directory: ./server
-      run: pnpm install
+      run: pnpm install --frozen-lockfile
+    
+    - name: Type check
+      working-directory: ./server
+      run: pnpm exec tsc --noEmit
     
     - name: Build
       working-directory: ./server
       run: pnpm build
 
-  # 部署到 Vercel (前端预览)
-  deploy-client-preview:
+  # 前端代码检查和构建
+  client:
     runs-on: ubuntu-latest
-    needs: build-client
-    if: github.ref == 'refs/heads/develop'
-    environment:
-      name: Preview
-      url: ${{ steps.deploy.outputs.preview-url }}
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Download build artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: client-build
-        path: client/dist
-    
-    - name: Deploy to Vercel (Preview)
-      id: deploy
-      uses: amondnet/vercel-action@v25
-      with:
-        vercel-token: ${{ secrets.VERCEL_TOKEN }}
-        vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-        vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-        working-directory: ./client
-
-  # 部署到 Vercel (前端生产环境)
-  deploy-client-production:
-    runs-on: ubuntu-latest
-    needs: build-client
-    if: github.ref == 'refs/heads/main'
-    environment:
-      name: Production
-      url: https://call-center-demo.vercel.app
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Download build artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: client-build
-        path: client/dist
-    
-    - name: Deploy to Vercel (Production)
-      uses: amondnet/vercel-action@v25
-      with:
-        vercel-token: ${{ secrets.VERCEL_TOKEN }}
-        vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-        vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-        working-directory: ./client
-        vercel-args: '--prod'
-
-  # 部署到 Railway (后端生产环境)
-  deploy-server-production:
-    runs-on: ubuntu-latest
-    needs: [build-server, lint]
-    if: github.ref == 'refs/heads/main'
-    environment:
-      name: Production
-      url: https://call-center-api.railway.app
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install Railway CLI
-      run: npm install -g @railway/cli
-    
-    - name: Deploy to Railway
-      working-directory: ./server
-      run: railway up --service call-center-api
-      env:
-        RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-
-  # 数据库迁移
-  migrate-database:
-    runs-on: ubuntu-latest
-    needs: deploy-server-production
-    if: github.ref == 'refs/heads/main'
     steps:
     - uses: actions/checkout@v4
     
@@ -228,30 +52,29 @@ jobs:
     - name: Install pnpm
       uses: pnpm/action-setup@v2
       with:
-        version: ${{ env.PNPM_VERSION }}
+        version: 9
     
     - name: Install dependencies
-      working-directory: ./server
-      run: pnpm install
+      working-directory: ./client
+      run: pnpm install --frozen-lockfile
     
-    - name: Run database migrations
-      working-directory: ./server
-      run: pnpm run migrate
-      env:
-        DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    - name: Type check
+      working-directory: ./client
+      run: pnpm exec tsc --noEmit
+    
+    - name: Build
+      working-directory: ./client
+      run: pnpm build
 
-  # 健康检查
-  health-check:
+  # Docker 构建测试
+  docker:
     runs-on: ubuntu-latest
-    needs: [deploy-client-production, deploy-server-production]
-    if: github.ref == 'refs/heads/main'
+    needs: [server, client]
     steps:
-    - name: Check Frontend Health
-      run: |
-        sleep 30
-        curl -f https://call-center-demo.vercel.app || exit 1
+    - uses: actions/checkout@v4
     
-    - name: Check Backend Health
-      run: |
-        curl -f https://call-center-api.railway.app/api/system/health || exit 1
-
+    - name: Build backend image
+      run: docker build -t callcenter-backend:test ./server
+    
+    - name: Build frontend image
+      run: docker build -t callcenter-frontend:test ./client
