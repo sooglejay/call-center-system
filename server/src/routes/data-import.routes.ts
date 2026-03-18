@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { 
   uploadMiddleware, 
+  previewCSV,
+  importWithMapping,
   importRealCustomers, 
   clearMockData, 
   clearRealData, 
@@ -17,7 +19,13 @@ router.use(adminMiddleware);
 // 获取数据统计
 router.get('/stats', getDataStats);
 
-// 上传 CSV 导入真实数据
+// 预览 CSV 文件（返回列名和预览数据）
+router.post('/preview', uploadMiddleware, previewCSV);
+
+// 使用列映射导入数据
+router.post('/import', uploadMiddleware, importWithMapping);
+
+// 快速导入（自动匹配，兼容旧版本）
 router.post('/upload', uploadMiddleware, importRealCustomers);
 
 // 初始化 mock 数据
