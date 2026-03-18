@@ -163,7 +163,9 @@ INSERT OR IGNORE INTO system_configs (config_key, config_value, description) VAL
 ('sms_enabled', 'false', '是否启用短信功能'),
 ('sms_template_unanswered', '您好，我是{agentName}，刚刚给您打了电话。如有需要请联系我：{agentPhone}', '未接通短信模板'),
 ('voicemail_enabled', 'false', '是否启用语音信箱'),
-('voicemail_greeting', '您好，我现在无法接听您的电话，请在听到提示音后留言。', '语音信箱问候语');
+('voicemail_greeting', '您好，我现在无法接听您的电话，请在听到提示音后留言。', '语音信箱问候语'),
+('allow_register', 'true', '是否允许用户注册'),
+('register_default_role', 'agent', '注册用户默认角色');
 `;
 
 // 保存数据库到文件
