@@ -44,9 +44,21 @@ export const getCustomers = async (req: any, res: Response) => {
     const { search, status, assigned_to, sort_by = 'created_at', page = 1, pageSize = 20 } = req.query;
     const offset = (parseInt(page as string) - 1) * parseInt(pageSize as string);
     
+    // 获取当前用户信息
+    const currentUser = req.user;
+    const userResult = await query('SELECT role, data_access_type FROM users WHERE id = $1', [currentUser.id]);
+    const userRole = userResult.rows[0]?.role;
+    const dataAccessType = userResult.rows[0]?.data_access_type || 'mock';
+    
     // 简单查询 - 获取所有客户
     const result = await query('SELECT * FROM customers ORDER BY created_at DESC');
     let data = result.rows;
+    
+    // 根据用户权限过滤数据
+    // 管理员可以看到所有数据，客服只能看到自己权限范围内的数据
+    if (userRole !== 'admin') {
+      data = data.filter((c: any) => (c.data_source || 'mock') === dataAccessType);
+    }
     
     // 搜索过滤
     if (search) {
@@ -194,15 +206,26 @@ export const deleteCustomer = async (req: Request, res: Response) => {
 
 export const batchImportCustomers = async (req: any, res: Response) => {
   try {
-    const { customers } = req.body;
+    const { customers, data_source = 'mock' } = req.body;
     const importedBy = req.user.id;
+    
+    // 获取管理员的数据权限类型（只有管理员可以导入数据）
+    const userResult = await query('SELECT role, data_access_type FROM users WHERE id = $1', [importedBy]);
+    const userRole = userResult.rows[0]?.role;
+    
+    if (userRole !== 'admin') {
+      return res.status(403).json({ error: '只有管理员可以导入客户数据' });
+    }
+    
+    // 管理员导入的数据标记为 real，或者根据传入的 data_source 参数
+    const finalDataSource = data_source || 'real';
     
     const importedCustomers = [];
     for (const customer of customers || []) {
       try {
         const result = await query(
-          'INSERT INTO customers (name, phone, email, company, status, imported_by) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-          [customer.name, customer.phone, customer.email || '', customer.company || '', 'pending', importedBy]
+          'INSERT INTO customers (name, phone, email, company, status, imported_by, data_source) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+          [customer.name, customer.phone, customer.email || '', customer.company || '', 'pending', importedBy, finalDataSource]
         );
         importedCustomers.push(result.rows[0]);
       } catch (err) {
@@ -310,9 +333,15 @@ export const getAgentCustomers = async (req: any, res: Response) => {
     const agentId = req.user.id;
     const offset = (parseInt(page as string) - 1) * parseInt(pageSize as string);
     
+    // 获取当前客服的数据权限
+    const userResult = await query('SELECT data_access_type FROM users WHERE id = $1', [agentId]);
+    const dataAccessType = userResult.rows[0]?.data_access_type || 'mock';
+    
     // 获取客服的客户（通过任务关联或 assigned_to）
     let result = await query('SELECT * FROM customers ORDER BY created_at DESC');
-    let customers = result.rows.filter((c: any) => c.assigned_to === agentId);
+    let customers = result.rows.filter((c: any) => 
+      c.assigned_to === agentId && (c.data_source || 'mock') === dataAccessType
+    );
     
     // 状态过滤
     if (status) {

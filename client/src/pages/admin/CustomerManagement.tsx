@@ -62,6 +62,7 @@ export default function CustomerManagement() {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [currentCustomer, setCurrentCustomer] = useState<Customer | null>(null);
   const [editForm] = Form.useForm();
+  const [importDataSource, setImportDataSource] = useState<'mock' | 'real'>('real');
 
   useEffect(() => {
     fetchCustomers();
@@ -208,10 +209,11 @@ export default function CustomerManagement() {
 
   const handleImport = async () => {
     try {
-      await customerApi.importCustomers(importedData, selectedAgent);
-      message.success('导入成功');
+      await customerApi.importCustomers(importedData, selectedAgent, importDataSource);
+      message.success(`成功导入 ${importedData.length} 条${importDataSource === 'real' ? '真实' : '测试'}数据`);
       setImportModalVisible(false);
       setImportedData([]);
+      setImportDataSource('real');
       fetchCustomers();
     } catch (error) {
       message.error('导入失败');
@@ -639,10 +641,26 @@ export default function CustomerManagement() {
         onCancel={() => {
           setImportModalVisible(false);
           setImportedData([]);
+          setImportDataSource('real');
         }}
         width={800}
       >
         <Form layout="vertical">
+          <Form.Item label="数据类型">
+            <Radio.Group 
+              value={importDataSource} 
+              onChange={e => setImportDataSource(e.target.value)}
+              buttonStyle="solid"
+            >
+              <Radio.Button value="real">真实客户数据</Radio.Button>
+              <Radio.Button value="mock">测试数据</Radio.Button>
+            </Radio.Group>
+            <div style={{ marginTop: 8, color: '#666', fontSize: 12 }}>
+              {importDataSource === 'real' 
+                ? '真实数据：仅对拥有真实数据权限的客服可见' 
+                : '测试数据：用于系统测试和培训，对测试数据权限的客服可见'}
+            </div>
+          </Form.Item>
           <Form.Item label="分配给客服">
             <Select
               placeholder="选择客服（可选）"

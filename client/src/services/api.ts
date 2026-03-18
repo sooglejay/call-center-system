@@ -59,6 +59,7 @@ export const userApi = {
   getUsers: (params?: any) => api.get('/users', { params }),
   createUser: (data: any) => api.post('/users', data),
   updateUser: (id: number, data: any) => api.put(`/users/${id}`, data),
+  updateDataAccess: (id: number, data_access_type: string) => api.put(`/users/${id}/data-access`, { data_access_type }),
   deleteUser: (id: number) => api.delete(`/users/${id}`),
   resetPassword: (id: number, new_password: string) => api.post(`/users/${id}/reset-password`, { new_password }),
   getAgents: () => api.get('/users/agents/list')
@@ -73,7 +74,8 @@ export const customerApi = {
   getCustomer: (id: number) => api.get(`/customers/${id}`),
   updateCustomer: (id: number, data: any) => api.put(`/customers/${id}`, data),
   deleteCustomer: (id: number) => api.delete(`/customers/${id}`),
-  importCustomers: (customers: any[], assigned_to?: number) => api.post('/customers/import', { customers, assigned_to }),
+  importCustomers: (customers: any[], assigned_to?: number, data_source?: string) => 
+    api.post('/customers/import', { customers, assigned_to, data_source }),
   batchAssign: (customer_ids: number[], assigned_to: number) => api.post('/customers/batch-assign', { customer_ids, assigned_to })
 };
 
@@ -136,6 +138,17 @@ export const configApi = {
 export const communicationApi = {
   getRecords: (params?: any) => api.get('/communication/records', { params }),
   getStats: () => api.get('/communication/stats')
+};
+
+// 数据导入API
+export const dataImportApi = {
+  getStats: () => api.get('/data-import/stats'),
+  uploadCsv: (formData: FormData) => api.post('/data-import/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  initMockData: () => api.post('/data-import/init-mock'),
+  clearMockData: () => api.delete('/data-import/mock'),
+  clearRealData: () => api.delete('/data-import/real')
 };
 
 import type { User, Customer, CallRecord, Task, AgentConfig, SystemConfig, Stats, DashboardStats, AgentRanking } from '../types';

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Table, Button, Modal, Form, Input, Select, Popconfirm, message, Tag } from 'antd';
+import { Table, Button, Modal, Form, Input, Select, Popconfirm, message, Tag, Tooltip } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, KeyOutlined } from '@ant-design/icons';
 import { userApi } from '../../services/api';
 import type { User } from '../../services/api';
@@ -83,6 +83,16 @@ export default function UserManagement() {
     setResetPasswordVisible(true);
   };
 
+  const handleDataAccessChange = async (userId: number, dataAccessType: string) => {
+    try {
+      await userApi.updateDataAccess(userId, dataAccessType);
+      message.success('数据权限更新成功');
+      fetchUsers();
+    } catch (error) {
+      message.error('数据权限更新失败');
+    }
+  };
+
   const columns = [
     { title: '用户名', dataIndex: 'username', key: 'username' },
     { title: '姓名', dataIndex: 'real_name', key: 'real_name' },
@@ -98,6 +108,35 @@ export default function UserManagement() {
         {status === 'active' ? '启用' : '禁用'}
       </Tag>
     )},
+    { 
+      title: '数据权限', 
+      dataIndex: 'data_access_type', 
+      key: 'data_access_type', 
+      render: (dataAccessType: string, record: User) => {
+        if (record.role === 'admin') {
+          return <Tag color="purple">全部数据</Tag>;
+        }
+        return (
+          <Select
+            value={dataAccessType || 'mock'}
+            style={{ width: 120 }}
+            onChange={(value) => handleDataAccessChange(record.id, value)}
+            size="small"
+          >
+            <Select.Option value="mock">
+              <Tooltip title="仅能访问测试数据">
+                <span>测试数据</span>
+              </Tooltip>
+            </Select.Option>
+            <Select.Option value="real">
+              <Tooltip title="仅能访问真实客户数据">
+                <span>真实数据</span>
+              </Tooltip>
+            </Select.Option>
+          </Select>
+        );
+      }
+    },
     {
       title: '操作',
       key: 'action',

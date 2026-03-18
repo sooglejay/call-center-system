@@ -5,7 +5,7 @@ import { query } from '../config/database';
 export const getUsers = async (req: Request, res: Response) => {
   try {
     const { role, status, search } = req.query;
-    let sql = 'SELECT id, username, real_name, role, phone, email, status, created_at FROM users WHERE 1=1';
+    let sql = 'SELECT id, username, real_name, role, phone, email, status, data_access_type, created_at FROM users WHERE 1=1';
     const params: any[] = [];
     
     if (role) {
@@ -45,14 +45,14 @@ export const createUser = async (req: Request, res: Response) => {
     
     // 明文存储密码（开发便利）
     await query(
-      `INSERT INTO users (username, password, real_name, role, phone, email)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+      `INSERT INTO users (username, password, real_name, role, phone, email, data_access_type)
+       VALUES ($1, $2, $3, $4, $5, $6, 'mock')`,
       [username, password, real_name, role, phone, email]
     );
     
     // 获取插入的用户
     const result = await query(
-      'SELECT id, username, real_name, role, phone, email, status, created_at FROM users WHERE id = (SELECT MAX(id) FROM users)'
+      'SELECT id, username, real_name, role, phone, email, status, data_access_type, created_at FROM users WHERE id = (SELECT MAX(id) FROM users)'
     );
     
     // 为客服创建默认配置
@@ -83,7 +83,7 @@ export const updateUser = async (req: Request, res: Response) => {
     
     // 查询更新后的用户
     const result = await query(
-      'SELECT id, username, real_name, role, phone, email, status, created_at FROM users WHERE id = $1',
+      'SELECT id, username, real_name, role, phone, email, status, data_access_type, created_at FROM users WHERE id = $1',
       [id]
     );
     
@@ -94,6 +94,38 @@ export const updateUser = async (req: Request, res: Response) => {
     res.json(result.rows[0]);
   } catch (error) {
     console.error('更新用户错误:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+};
+
+// 更新用户数据访问权限
+export const updateDataAccess = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { data_access_type } = req.body;
+    
+    if (!['mock', 'real'].includes(data_access_type)) {
+      return res.status(400).json({ error: '无效的数据访问类型' });
+    }
+    
+    await query(
+      `UPDATE users SET data_access_type = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      [data_access_type, id]
+    );
+    
+    // 查询更新后的用户
+    const result = await query(
+      'SELECT id, username, real_name, role, phone, email, status, data_access_type, created_at FROM users WHERE id = $1',
+      [id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: '用户不存在' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('更新数据访问权限错误:', error);
     res.status(500).json({ error: '服务器错误' });
   }
 };
@@ -137,7 +169,7 @@ export const resetPassword = async (req: Request, res: Response) => {
 export const getAgents = async (req: Request, res: Response) => {
   try {
     const result = await query(
-      'SELECT id, username, real_name, phone, email, status FROM users WHERE role = $1 AND status = $2',
+      'SELECT id, username, real_name, phone, email, status, data_access_type FROM users WHERE role = $1 AND status = $2',
       ['agent', 'active']
     );
     res.json(result.rows);
