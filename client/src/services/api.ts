@@ -143,6 +143,15 @@ export const communicationApi = {
 // 数据导入API
 export const dataImportApi = {
   getStats: () => api.get('/data-import/stats'),
+  // 预览 CSV 文件
+  previewCsv: (formData: FormData) => api.post('/data-import/preview', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  // 使用列映射导入
+  importWithMapping: (formData: FormData) => api.post('/data-import/import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  // 快速上传（自动匹配）
   uploadCsv: (formData: FormData) => api.post('/data-import/upload', formData, {
     headers: { 'Content-Type': 'multipart/form-data' }
   }),

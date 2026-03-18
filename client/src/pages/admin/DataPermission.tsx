@@ -12,7 +12,9 @@ import {
   Alert,
   Popconfirm,
   Select,
-  Typography
+  Typography,
+  Modal,
+  Table as AntTable
 } from 'antd';
 import {
   UploadOutlined,
@@ -20,13 +22,30 @@ import {
   TeamOutlined,
   DeleteOutlined,
   PlayCircleOutlined,
-  ReloadOutlined
+  ReloadOutlined,
+  CheckCircleOutlined,
+  WarningOutlined
 } from '@ant-design/icons';
 import type { UploadProps } from 'antd';
 import { userApi, dataImportApi } from '../../services/api';
 import type { User } from '../../services/api';
 
 const { Text, Title } = Typography;
+
+interface SystemField {
+  key: string;
+  label: string;
+  required: boolean;
+}
+
+interface CsvPreviewData {
+  columns: string[];
+  preview: Record<string, string>[];
+  total_rows: number;
+  system_fields: SystemField[];
+  suggestions: Record<string, string>;
+  has_required_fields: boolean;
+}
 
 interface DataStats {
   customers: {
@@ -44,14 +63,22 @@ interface DataStats {
     role: string;
     data_access_type: string;
   }>;
+  system_fields?: SystemField[];
 }
 
 const DataPermission: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [stats, setStats] = useState<DataStats | null>(null);
   const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [importResult, setImportResult] = useState<any>(null);
+
+  // CSV 预览相关状态
+  const [previewModalVisible, setPreviewModalVisible] = useState(false);
+  const [previewData, setPreviewData] = useState<CsvPreviewData | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+  const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
 
   // 加载数据
   const loadData = async () => {
@@ -85,28 +112,76 @@ const DataPermission: React.FC = () => {
     }
   };
 
-  // CSV 上传配置
+  // CSV 上传预览
+  const handleUploadPreview = async (file: File) => {
+    setPreviewLoading(true);
+    setPendingFile(file);
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    try {
+      const res = await dataImportApi.previewCsv(formData);
+      const data = res.data as CsvPreviewData;
+      setPreviewData(data);
+      
+      // 初始化列映射（使用建议值）
+      const initialMapping: Record<string, string> = {};
+      data.system_fields.forEach(field => {
+        if (data.suggestions[field.key]) {
+          initialMapping[field.key] = data.suggestions[field.key];
+        }
+      });
+      setColumnMapping(initialMapping);
+      
+      setPreviewModalVisible(true);
+    } catch (error: any) {
+      message.error(error.response?.data?.error || '解析CSV失败');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  // 执行导入
+  const handleConfirmImport = async () => {
+    if (!pendingFile) {
+      message.error('请重新选择文件');
+      return;
+    }
+    
+    // 验证必填字段
+    if (!columnMapping.name || !columnMapping.phone) {
+      message.error('姓名和电话是必填字段，请确保已映射');
+      return;
+    }
+    
+    setImportLoading(true);
+    
+    const formData = new FormData();
+    formData.append('file', pendingFile);
+    formData.append('column_mapping', JSON.stringify(columnMapping));
+    formData.append('data_source', 'real');
+    
+    try {
+      const res = await dataImportApi.importWithMapping(formData);
+      setImportResult(res.data);
+      message.success('CSV 导入完成');
+      setPreviewModalVisible(false);
+      setPendingFile(null);
+      loadData();
+    } catch (error: any) {
+      message.error(error.response?.data?.error || '导入失败');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  // 上传配置
   const uploadProps: UploadProps = {
     accept: '.csv',
     showUploadList: false,
-    beforeUpload: async (file) => {
-      setUploading(true);
-      setImportResult(null);
-      
-      const formData = new FormData();
-      formData.append('file', file);
-      
-      try {
-        const res = await dataImportApi.uploadCsv(formData);
-        setImportResult(res.data);
-        message.success('CSV 导入完成');
-        loadData();
-      } catch (error: any) {
-        message.error(error.response?.data?.error || '导入失败');
-      } finally {
-        setUploading(false);
-      }
-      
+    beforeUpload: (file) => {
+      handleUploadPreview(file);
       return false;
     }
   };
@@ -203,6 +278,15 @@ const DataPermission: React.FC = () => {
     }
   ];
 
+  // 预览数据表格列
+  const previewColumns = previewData?.columns.map(col => ({
+    title: col,
+    dataIndex: col,
+    key: col,
+    width: 150,
+    ellipsis: true
+  })) || [];
+
   return (
     <div style={{ padding: 24 }}>
       <Title level={3}>数据权限管理</Title>
@@ -237,6 +321,7 @@ const DataPermission: React.FC = () => {
                 <p>• <b>测试数据（Mock）</b>：用于开发和测试，客服账号默认使用测试数据</p>
                 <p>• <b>真实数据（Real）</b>：正式客户数据，管理员可上传 CSV 导入真实数据</p>
                 <p>• 客服只能看到其权限范围内的数据，管理员可以看到所有数据</p>
+                <p>• 上传 CSV 时支持动态列匹配，只需姓名和电话为必填字段</p>
               </div>
             }
             type="info"
@@ -275,7 +360,7 @@ const DataPermission: React.FC = () => {
 
           <Space>
             <Upload {...uploadProps}>
-              <Button icon={<UploadOutlined />} loading={uploading}>
+              <Button icon={<UploadOutlined />} loading={previewLoading}>
                 上传 CSV 导入真实数据
               </Button>
             </Upload>
@@ -330,22 +415,130 @@ const DataPermission: React.FC = () => {
       {/* CSV 格式说明 */}
       <Card title="CSV 格式说明" style={{ marginTop: 24 }}>
         <Alert
-          message="CSV 文件必须包含以下字段"
+          message="CSV 文件支持动态列匹配"
           description={
             <div>
-              <p><b>必要字段：</b>name（姓名）, phone（电话）</p>
-              <p><b>可选字段：</b>email, company, address, notes, status, priority</p>
-              <p><b>示例：</b></p>
+              <p><b>必填字段：</b>姓名、电话（列名会自动识别，也可以手动映射）</p>
+              <p><b>可选字段：</b>邮箱、公司、地址、备注、状态、优先级</p>
+              <p><b>智能识别：</b>系统会自动识别常见的列名，如 "客户名"、"手机号"、"Mobile" 等</p>
+              <p><b>示例 CSV：</b></p>
               <pre style={{ background: '#f5f5f5', padding: 12, borderRadius: 4 }}>
-{`name,phone,email,company,notes
+{`姓名,电话,邮箱,公司,备注
 张三,13800138000,zhangsan@example.com,测试公司,重要客户
 李四,13900139000,lisi@example.com,示例公司,潜在客户`}
+              </pre>
+              <p><b>或者使用英文列名：</b></p>
+              <pre style={{ background: '#f5f5f5', padding: 12, borderRadius: 4 }}>
+{`name,phone,email,company,notes
+Zhang San,13800138000,zhangsan@example.com,Test Company,VIP
+Li Si,13900139000,lisi@example.com,Demo Company,Potential`}
               </pre>
             </div>
           }
           type="info"
         />
       </Card>
+
+      {/* 列映射预览弹窗 */}
+      <Modal
+        title="CSV 列匹配"
+        open={previewModalVisible}
+        onCancel={() => {
+          setPreviewModalVisible(false);
+          setPendingFile(null);
+        }}
+        width={900}
+        footer={[
+          <Button key="cancel" onClick={() => {
+            setPreviewModalVisible(false);
+            setPendingFile(null);
+          }}>
+            取消
+          </Button>,
+          <Button 
+            key="import" 
+            type="primary" 
+            loading={importLoading}
+            onClick={handleConfirmImport}
+            disabled={!columnMapping.name || !columnMapping.phone}
+          >
+            确认导入
+          </Button>
+        ]}
+      >
+        {previewData && (
+          <div>
+            {/* 状态提示 */}
+            {previewData.has_required_fields ? (
+              <Alert
+                message="已识别必填字段"
+                description={`共 ${previewData.total_rows} 条数据待导入，请确认列映射是否正确`}
+                type="success"
+                showIcon
+                icon={<CheckCircleOutlined />}
+                style={{ marginBottom: 16 }}
+              />
+            ) : (
+              <Alert
+                message="缺少必填字段"
+                description="请确保 CSV 文件包含姓名和电话列，并手动映射到对应系统字段"
+                type="warning"
+                showIcon
+                icon={<WarningOutlined />}
+                style={{ marginBottom: 16 }}
+              />
+            )}
+
+            {/* 列映射表单 */}
+            <Card title="列映射配置" size="small" style={{ marginBottom: 16 }}>
+              <Space direction="vertical" style={{ width: '100%' }}>
+                {previewData.system_fields.map(field => (
+                  <div key={field.key} style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                    <div style={{ width: 120 }}>
+                      <Text strong>
+                        {field.label}
+                        {field.required && <Text type="danger"> *</Text>}
+                      </Text>
+                    </div>
+                    <Select
+                      style={{ width: 200 }}
+                      placeholder={`选择 ${field.label} 对应列`}
+                      value={columnMapping[field.key] || undefined}
+                      onChange={(val) => {
+                        setColumnMapping(prev => ({
+                          ...prev,
+                          [field.key]: val
+                        }));
+                      }}
+                      allowClear
+                      options={previewData.columns.map(col => ({
+                        value: col,
+                        label: col
+                      }))}
+                    />
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {field.required ? '(必填)' : '(可选)'}
+                    </Text>
+                  </div>
+                ))}
+              </Space>
+            </Card>
+
+            {/* 数据预览 */}
+            <Card title={`数据预览（前 ${Math.min(previewData.preview.length, 10)} 行）`} size="small">
+              <AntTable
+                dataSource={previewData.preview}
+                columns={previewColumns}
+                rowKey={(_, index) => `row-${index}`}
+                pagination={false}
+                scroll={{ x: 'max-content' }}
+                size="small"
+                bordered
+              />
+            </Card>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };
