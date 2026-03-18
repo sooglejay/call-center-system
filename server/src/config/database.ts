@@ -46,7 +46,6 @@ CREATE TABLE IF NOT EXISTS customers (
   data_source TEXT DEFAULT 'mock',
   imported_by INTEGER REFERENCES users(id),
   source TEXT,
-  data_source TEXT DEFAULT 'mock',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
