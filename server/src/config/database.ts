@@ -219,6 +219,25 @@ const initDatabase = async (): Promise<void> => {
   try {
     db.run(createTablesSQL);
     db.run(defaultConfigSQL);
+    
+    // 创建默认用户（如果不存在）
+    const defaultUsers = [
+      { username: 'admin', password: 'admin123', role: 'admin', real_name: '系统管理员' },
+      { username: 'agent', password: 'agent123', role: 'agent', real_name: '客服专员' }
+    ];
+    
+    for (const user of defaultUsers) {
+      const existing = db!.exec(`SELECT id FROM users WHERE username = '${user.username}'`);
+      if (existing.length === 0 || existing[0].values.length === 0) {
+        db!.run(
+          `INSERT INTO users (username, password, role, real_name, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'active', datetime('now'), datetime('now'))`,
+          [user.username, user.password, user.role, user.real_name]
+        );
+        console.log(`✅ 创建默认用户: ${user.username}`);
+      }
+    }
+    
     saveDatabase();
     console.log('✅ 数据库表结构初始化完成');
   } catch (error) {

@@ -12,6 +12,15 @@ const DEFAULT_ADMIN = {
   status: 'active'
 };
 
+// 默认客服账号配置
+const DEFAULT_AGENT = {
+  username: 'agent',
+  password: 'agent123',
+  role: 'agent',
+  real_name: '客服专员',
+  status: 'active'
+};
+
 // 检查是否需要初始化（数据库中没有用户）
 const checkNeedInit = async (): Promise<boolean> => {
   try {
@@ -45,8 +54,24 @@ const initializeDatabase = async (): Promise<void> => {
     console.log('✅ 默认管理员账号已存在');
   }
   
+  // 检查默认客服是否已存在
+  const existingAgent = await query('SELECT id FROM users WHERE username = $1', [DEFAULT_AGENT.username]);
+  
+  if (existingAgent.rows.length === 0) {
+    // 创建默认客服账号
+    await query(
+      `INSERT INTO users (username, password, role, real_name, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, datetime('now'), datetime('now'))`,
+      [DEFAULT_AGENT.username, DEFAULT_AGENT.password, DEFAULT_AGENT.role, DEFAULT_AGENT.real_name, DEFAULT_AGENT.status]
+    );
+    console.log('✅ 默认客服账号已创建');
+  } else {
+    console.log('✅ 默认客服账号已存在');
+  }
+  
   console.log('✅ 数据库初始化完成');
   console.log(`   默认管理员: ${DEFAULT_ADMIN.username} / ${DEFAULT_ADMIN.password}`);
+  console.log(`   默认客服: ${DEFAULT_AGENT.username} / ${DEFAULT_AGENT.password}`);
 };
 
 export const login = async (req: Request, res: Response) => {

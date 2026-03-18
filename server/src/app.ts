@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
-import pool from './config/database';
+import { initDatabase } from './config/database';
 
 import authRoutes from './routes/auth.routes';
 import userRoutes from './routes/user.routes';
@@ -47,13 +47,6 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   console.error('服务器错误:', err);
   res.status(500).json({ error: '服务器内部错误' });
 });
-
-// 初始化数据库
-const initDatabase = async () => {
-  console.log('✅ 内存数据库已就绪，包含默认用户：');
-  console.log('   - 管理员: admin / admin123');
-  console.log('   - 客服: agent / agent123');
-};
 
 // 启动服务器
 app.listen(PORT, async () => {
