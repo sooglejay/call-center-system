@@ -19,7 +19,6 @@ npm install -g pnpm
 ```bash
 cd server
 pnpm install          # 安装后端依赖
-pnpm db:seed          # 初始化数据库和测试数据
 pnpm dev              # 启动后端服务 http://localhost:8081
 ```
 
@@ -28,7 +27,12 @@ pnpm dev              # 启动后端服务 http://localhost:8081
 服务器运行在端口 8081
 API地址: http://localhost:8081/api
 健康检查: http://localhost:8081/api/system/health
+✅ 内存数据库已就绪，包含默认用户：
+   - 管理员: admin / admin123
+   - 客服: agent / agent123
 ```
+
+**注意**: 数据库会在首次启动时自动创建，无需手动初始化。
 
 **保持此终端窗口运行**，后端服务需要持续运行。
 
@@ -58,8 +62,6 @@ pnpm dev              # 启动前端服务 http://localhost:8080
 |------|--------|------|
 | 管理员 | `admin` | `admin123` |
 | 客服 | `agent` | `agent123` |
-| 客服1 | `agent01` | `agent123` |
-| 客服2 | `agent02` | `agent123` |
 
 ---
 
@@ -69,10 +71,10 @@ pnpm dev              # 启动前端服务 http://localhost:8080
 
 ```
 call-center-system/
-├── server/           # 后端 (Node.js + Express)
+├── server/           # 后端 (Node.js + Express + sql.js)
 │   ├── package.json
 │   ├── src/
-│   └── ...
+│   └── data/         # SQLite 数据库文件存储
 └── client/           # 前端 (React + Vite)
     ├── package.json
     ├── src/
@@ -86,8 +88,7 @@ cd server
 
 pnpm install         # 安装后端依赖
 pnpm dev             # 启动后端开发服务
-pnpm db:seed         # 重新生成完整测试数据
-pnpm db:seed:mini    # 生成最小测试数据
+pnpm build           # 构建生产版本
 pnpm test            # 运行测试
 ```
 
@@ -102,80 +103,67 @@ pnpm build           # 构建生产版本
 pnpm preview         # 预览生产构建
 ```
 
-### 测试数据
-
-运行 `pnpm db:seed` 会生成：
-- 6 个用户（1 管理员 + 1 客服 + 4 客服专员）
-- 67 个客户数据（按姓氏 A-Z 分布）
-- 30 条通话记录
-- 20 个任务
-
 ### 数据库
 
-- **类型**: SQLite（内置，无需配置）
+- **类型**: SQLite（使用 sql.js，纯 JavaScript 实现，无需编译原生模块）
 - **文件位置**: `server/data/database.sqlite`
-- **重置数据库**: 删除该文件后重新运行 `pnpm db:seed`
+- **特点**: 跨平台兼容，Docker 部署无需额外配置
 
 ---
 
 ## 🐛 常见问题
 
-### 1. better-sqlite3 编译失败（macOS）
-
-如果遇到编译错误，手动执行：
+### 1. 端口被占用
 
 ```bash
-cd server
-node scripts/postinstall.js
+# 查看端口占用
+lsof -i :8081
+lsof -i :8080
+
+# 杀掉进程
+kill -9 <PID>
 ```
 
-或完全手动：
-
-```bash
-cd server/node_modules/better-sqlite3
-node-gyp rebuild
-cd ../..
-pnpm db:seed
-```
-
-### 2. 端口被占用
-
-修改端口配置：
-
-```bash
-# server/.env
-PORT=8081
-
-# client/.env.development
-VITE_API_URL=http://localhost:8081/api
-```
-
-### 3. 数据库权限错误
+### 2. 数据库权限错误
 
 ```bash
 chmod -R 755 server/data
 ```
 
-### 4. 完全重置
+### 3. 完全重置
 
 ```bash
 # 删除数据库文件
 rm server/data/database.sqlite
 
-# 重新初始化
-cd server
-pnpm db:seed
+# 重启服务后会自动创建新数据库
+pnpm dev
 ```
 
-### 5. 登录失败
+### 4. 登录失败
 
 确保：
 1. 后端服务已启动（http://localhost:8081/api/system/health 可访问）
-2. 数据库已初始化（运行过 `pnpm db:seed`）
-3. 使用的是正确的默认账号密码
+2. 使用正确的默认账号密码：`admin / admin123`
+
+### 5. 前端无法连接后端
+
+检查前端代理配置（`client/vite.config.ts`）：
+```typescript
+proxy: {
+  '/api': {
+    target: 'http://localhost:8081',
+    changeOrigin: true,
+  }
+}
+```
 
 ---
 
 ## 🔧 生产部署
 
 详见 [DEPLOY.md](./DEPLOY.md)
+
+## 📖 开发迭代流程
+
+详见 [WORKFLOW.md](./WORKFLOW.md)
