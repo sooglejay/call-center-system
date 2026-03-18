@@ -23,32 +23,44 @@ const getBasePath = (): string => {
 };
 
 function App() {
-  const { isAuthenticated } = getAuth();
+  const { isAuthenticated, user } = getAuth();
   const basePath = getBasePath();
+  
+  // 根据用户角色确定默认跳转路径
+  const getDefaultRedirect = () => {
+    if (!isAuthenticated) return '/login';
+    return user?.role === 'admin' ? '/admin/dashboard' : '/agent/dashboard';
+  };
 
   return (
     <BrowserRouter basename={basePath || undefined}>
       <Routes>
-        {/* 登录页 - 已登录则跳转到首页 */}
+        {/* 根路径重定向 */}
+        <Route 
+          path="/" 
+          element={<Navigate to={getDefaultRedirect()} replace />} 
+        />
+        
+        {/* 登录页 */}
         <Route 
           path="/login" 
           element={
             isAuthenticated ? 
-              <Navigate to="/dashboard" replace /> : 
+              <Navigate to={getDefaultRedirect()} replace /> : 
               <LoginPage />
           } 
         />
         
-        {/* 管理员路由 */}
+        {/* 管理员路由 - 使用 /admin 前缀 */}
         <Route 
-          path="/" 
+          path="/admin" 
           element={
             <PrivateRoute allowedRoles={['admin']}>
               <AdminLayout />
             </PrivateRoute>
           }
         >
-          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="users" element={<UserManagement />} />
           <Route path="customers" element={<CustomerManagement />} />
@@ -59,16 +71,16 @@ function App() {
           <Route path="data-permission" element={<DataPermission />} />
         </Route>
 
-        {/* 客服路由 */}
+        {/* 客服路由 - 使用 /agent 前缀 */}
         <Route 
-          path="/" 
+          path="/agent" 
           element={
             <PrivateRoute allowedRoles={['agent']}>
               <AgentLayout />
             </PrivateRoute>
           }
         >
-          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<AgentDashboard />} />
           <Route path="calls" element={<CallList />} />
           <Route path="communication" element={<CommunicationRecords />} />
@@ -81,7 +93,7 @@ function App() {
           path="*" 
           element={
             isAuthenticated ? 
-              <Navigate to="/" replace /> : 
+              <Navigate to={getDefaultRedirect()} replace /> : 
               <Navigate to="/login" replace />
           } 
         />
