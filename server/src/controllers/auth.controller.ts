@@ -214,3 +214,100 @@ export const changePassword = async (req: any, res: Response) => {
     res.status(500).json({ error: '服务器错误' });
   }
 };
+
+// 获取系统配置（公开）
+export const getPublicConfig = async (req: Request, res: Response) => {
+  try {
+    const result = await query(
+      "SELECT config_key, config_value FROM system_configs WHERE config_key IN ('allow_register', 'register_default_role')"
+    );
+    
+    const config: Record<string, string> = {};
+    for (const row of result.rows) {
+      config[row.config_key] = row.config_value;
+    }
+    
+    res.json({
+      allowRegister: config.allow_register === 'true',
+      registerDefaultRole: config.register_default_role || 'agent'
+    });
+  } catch (error) {
+    console.error('获取系统配置错误:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+};
+
+// 用户注册
+export const register = async (req: Request, res: Response) => {
+  try {
+    const { username, password, real_name, phone, email } = req.body;
+    
+    // 检查是否允许注册
+    const configResult = await query(
+      "SELECT config_value FROM system_configs WHERE config_key = 'allow_register'"
+    );
+    
+    if (configResult.rows.length === 0 || configResult.rows[0].config_value !== 'true') {
+      return res.status(403).json({ error: '系统已关闭注册功能' });
+    }
+    
+    // 获取默认角色
+    const roleResult = await query(
+      "SELECT config_value FROM system_configs WHERE config_key = 'register_default_role'"
+    );
+    const defaultRole = roleResult.rows[0]?.config_value || 'agent';
+    
+    // 验证必填字段
+    if (!username || !password) {
+      return res.status(400).json({ error: '用户名和密码不能为空' });
+    }
+    
+    // 验证用户名格式
+    if (username.length < 3 || username.length > 20) {
+      return res.status(400).json({ error: '用户名长度需在3-20个字符之间' });
+    }
+    
+    // 验证密码长度
+    if (password.length < 6) {
+      return res.status(400).json({ error: '密码长度至少6个字符' });
+    }
+    
+    // 检查用户名是否已存在
+    const existingUser = await query('SELECT id FROM users WHERE username = $1', [username]);
+    if (existingUser.rows.length > 0) {
+      return res.status(400).json({ error: '用户名已存在' });
+    }
+    
+    // 创建用户
+    const result = await query(
+      `INSERT INTO users (username, password, role, real_name, phone, email, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 'active', datetime('now'), datetime('now'))`,
+      [username, password, defaultRole, real_name || username, phone || null, email || null]
+    );
+    
+    // 获取新用户信息
+    const newUserResult = await query('SELECT id, username, real_name, role FROM users WHERE id = $1', [result.rows[0].id]);
+    const newUser = newUserResult.rows[0];
+    
+    // 生成 token
+    const token = generateToken({
+      id: newUser.id,
+      username: newUser.username,
+      role: newUser.role
+    });
+    
+    res.status(201).json({
+      message: '注册成功',
+      token,
+      user: {
+        id: newUser.id,
+        username: newUser.username,
+        real_name: newUser.real_name,
+        role: newUser.role
+      }
+    });
+  } catch (error) {
+    console.error('注册错误:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+};

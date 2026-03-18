@@ -45,10 +45,13 @@ api.interceptors.response.use(
 // 认证API
 export const authApi = {
   login: (username: string, password: string) => api.post('/auth/login', { username, password }),
+  register: (data: { username: string; password: string; real_name?: string; phone?: string; email?: string }) => 
+    api.post('/auth/register', data),
   getMe: () => api.get('/auth/me'),
   updateProfile: (data: Partial<User>) => api.put('/auth/profile', data),
   changePassword: (old_password: string, new_password: string) => 
-    api.put('/auth/password', { old_password, new_password })
+    api.put('/auth/password', { old_password, new_password }),
+  getPublicConfig: () => api.get('/auth/public-config')
 };
 
 // 用户API

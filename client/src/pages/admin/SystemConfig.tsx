@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Card, Form, Input, Button, message, Alert, Switch, Typography } from 'antd';
+import { Card, Form, Input, Button, message, Alert, Switch, Typography, Select } from 'antd';
 import { configApi } from '../../services/api';
 
 const { TextArea } = Input;
 const { Text } = Typography;
 
 export default function SystemConfig() {
-  const [, setConfigs] = useState<any>({});
+  const [configs, setConfigs] = useState<any>({});
   const [form] = Form.useForm();
 
   useEffect(() => {
@@ -18,7 +18,12 @@ export default function SystemConfig() {
       const response = await configApi.getConfigs();
       const configMap: any = {};
       response.data.forEach((item: any) => {
-        configMap[item.config_key] = item.config_value;
+        // 转换字符串 'true'/'false' 为布尔值
+        if (item.config_value === 'true' || item.config_value === 'false') {
+          configMap[item.config_key] = item.config_value === 'true';
+        } else {
+          configMap[item.config_key] = item.config_value;
+        }
       });
       setConfigs(configMap);
       form.setFieldsValue(configMap);
@@ -31,6 +36,7 @@ export default function SystemConfig() {
     try {
       await configApi.updateConfig(key, value);
       message.success('配置更新成功');
+      fetchConfigs();
     } catch (error) {
       message.error('配置更新失败');
     }
@@ -41,8 +47,8 @@ export default function SystemConfig() {
       <h2>系统配置</h2>
       
       <Alert
-        message="Twilio 配置说明"
-        description="请在下方配置Twilio账号信息以启用电话拨打、短信和语音信箱功能。"
+        message="配置说明"
+        description="请在下方配置系统参数，包括 Twilio 电话服务、短信功能和用户注册设置。"
         type="info"
         showIcon
         style={{ marginBottom: 24 }}
@@ -101,7 +107,7 @@ export default function SystemConfig() {
           <Button type="primary" onClick={() => handleUpdateConfig('sms_template_unanswered', form.getFieldValue('sms_template_unanswered'))}>保存短信模板</Button>
         </Card>
 
-        <Card title="语音信箱配置">
+        <Card title="语音信箱配置" style={{ marginBottom: 24 }}>
           <Form.Item label="启用语音信箱" name="voicemail_enabled" valuePropName="checked">
             <Switch 
               checkedChildren="开启" 
@@ -120,6 +126,38 @@ export default function SystemConfig() {
             />
           </Form.Item>
           <Button type="primary" onClick={() => handleUpdateConfig('voicemail_greeting', form.getFieldValue('voicemail_greeting'))}>保存问候语</Button>
+        </Card>
+
+        <Card title="用户注册配置">
+          <Alert
+            message="注册开关"
+            description="开启后，用户可以在登录页面自行注册账号。关闭后，只能由管理员在人员管理中添加用户。"
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+          />
+          <Form.Item label="允许用户注册" name="allow_register" valuePropName="checked">
+            <Switch 
+              checkedChildren="开启" 
+              unCheckedChildren="关闭"
+              onChange={(checked) => handleUpdateConfig('allow_register', checked.toString())}
+            />
+          </Form.Item>
+          
+          <Form.Item 
+            label="注册用户默认角色" 
+            name="register_default_role"
+            extra="新注册用户将自动获得此角色，一般设置为 agent（客服）"
+          >
+            <Select 
+              style={{ maxWidth: 200 }}
+              onChange={(value) => handleUpdateConfig('register_default_role', value)}
+              options={[
+                { value: 'agent', label: '客服' },
+                { value: 'admin', label: '管理员' }
+              ]}
+            />
+          </Form.Item>
         </Card>
       </Form>
     </div>
