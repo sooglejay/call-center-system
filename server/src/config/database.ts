@@ -218,6 +218,47 @@ const saveDatabaseSync = () => {
   }
 };
 
+// 数据库迁移：检查并添加缺失的列
+const runMigrations = () => {
+  if (!db) return;
+  
+  console.log('🔄 检查数据库迁移...');
+  
+  // 获取 users 表的列信息
+  const usersColumns = db.exec("PRAGMA table_info(users)");
+  const usersColumnNames = usersColumns.length > 0 ? usersColumns[0].values.map(col => col[1]) : [];
+  
+  // 检查并添加 data_access_type 列
+  if (!usersColumnNames.includes('data_access_type')) {
+    console.log('  ➕ 添加 users.data_access_type 列');
+    db.run("ALTER TABLE users ADD COLUMN data_access_type TEXT DEFAULT 'mock'");
+  }
+  
+  // 获取 customers 表的列信息
+  const customersColumns = db.exec("PRAGMA table_info(customers)");
+  const customersColumnNames = customersColumns.length > 0 ? customersColumns[0].values.map(col => col[1]) : [];
+  
+  // 检查并添加 data_source 列
+  if (!customersColumnNames.includes('data_source')) {
+    console.log('  ➕ 添加 customers.data_source 列');
+    db.run("ALTER TABLE customers ADD COLUMN data_source TEXT DEFAULT 'mock'");
+  }
+  
+  // 检查并添加 imported_by 列
+  if (!customersColumnNames.includes('imported_by')) {
+    console.log('  ➕ 添加 customers.imported_by 列');
+    db.run("ALTER TABLE customers ADD COLUMN imported_by INTEGER REFERENCES users(id)");
+  }
+  
+  // 检查并添加 source 列
+  if (!customersColumnNames.includes('source')) {
+    console.log('  ➕ 添加 customers.source 列');
+    db.run("ALTER TABLE customers ADD COLUMN source TEXT");
+  }
+  
+  console.log('✅ 数据库迁移完成');
+};
+
 // 初始化数据库
 const initDatabase = async (): Promise<void> => {
   const SQL = await initSqlJs();
@@ -245,6 +286,9 @@ const initDatabase = async (): Promise<void> => {
     db.run(createTablesSQL);
     db.run(defaultConfigSQL);
     
+    // 运行数据库迁移（添加缺失的列）
+    runMigrations();
+    
     // 创建默认用户（如果不存在）
     const defaultUsers = [
       { username: 'admin', password: 'admin123', role: 'admin', real_name: '系统管理员' },
@@ -255,8 +299,8 @@ const initDatabase = async (): Promise<void> => {
       const existing = db!.exec(`SELECT id FROM users WHERE username = '${user.username}'`);
       if (existing.length === 0 || existing[0].values.length === 0) {
         db!.run(
-          `INSERT INTO users (username, password, role, real_name, status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, 'active', datetime('now'), datetime('now'))`,
+          `INSERT INTO users (username, password, role, real_name, status, data_access_type, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'active', 'real', datetime('now'), datetime('now'))`,
           [user.username, user.password, user.role, user.real_name]
         );
         console.log(`✅ 创建默认用户: ${user.username}`);
