@@ -7,18 +7,18 @@ services:
     container_name: callcenter-backend
     restart: always
     ports:
-      - "${API_PORT:-8081}:5001"
+      - "${API_PORT:-8081}:8081"
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
     environment:
       - NODE_ENV=production
-      - PORT=5001
+      - PORT=8081
       - DB_TYPE=sqlite
       - SQLITE_PATH=/app/data/database.sqlite
       - JWT_SECRET=call-center-secret-key-2024
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:5001/api/system/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8081/api/system/health"]
       interval: 30s
       timeout: 10s
       retries: 3
