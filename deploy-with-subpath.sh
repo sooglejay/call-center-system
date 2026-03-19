@@ -236,10 +236,10 @@ COPY package.json pnpm-lock.yaml* ./
 RUN pnpm install --frozen-lockfile --prod
 COPY --from=builder /app/dist ./dist
 RUN mkdir -p data uploads && chmod 777 data uploads
-RUN echo "NODE_ENV=production\nPORT=5001\nDB_TYPE=sqlite\nSQLITE_PATH=/app/data/database.sqlite" > .env
-EXPOSE 5001
+RUN echo "NODE_ENV=production\nPORT=8081\nDB_TYPE=sqlite\nSQLITE_PATH=/app/data/database.sqlite" > .env
+EXPOSE 8081
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --quiet --tries=1 --spider http://localhost:5001/api/system/health || exit 1
+  CMD wget --quiet --tries=1 --spider http://localhost:8081/api/system/health || exit 1
 CMD ["node", "dist/app.js"]
 DOCKERFILE
 
@@ -274,7 +274,7 @@ server {
     }
 
     location /api/ {
-        proxy_pass http://backend:5001/api/;
+        proxy_pass http://backend:8081/api/;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -300,18 +300,18 @@ services:
     container_name: callcenter-backend
     restart: always
     ports:
-      - "${API_PORT}:5001"
+      - "${API_PORT}:8081"
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
     environment:
       - NODE_ENV=production
-      - PORT=5001
+      - PORT=8081
       - DB_TYPE=sqlite
       - SQLITE_PATH=/app/data/database.sqlite
       - JWT_SECRET=call-center-secret-key-2024
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:5001/api/system/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8081/api/system/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -411,8 +411,10 @@ if [ "$SKIP_NGINX" = false ] && [ -n "$CONFIG_FILE" ]; then
         cp "$CONFIG_FILE" "$BACKUP_FILE"
         print_success "已备份原配置: $BACKUP_FILE"
         
-        # 生成配置块
-        CONFIG_BLOCK="
+        # 生成配置块并写入临时文件
+        CONFIG_TMP_FILE=$(mktemp)
+        cat > "$CONFIG_TMP_FILE" << CONFIG_BLOCK
+
     # ================================================
     # 【客服外呼系统配置 - 自动生成 $(date +%Y-%m-%d)】
     # ================================================
@@ -428,7 +430,7 @@ if [ "$SKIP_NGINX" = false ] && [ -n "$CONFIG_FILE" ]; then
         proxy_set_header X-Forwarded-Proto \$scheme;
         
         proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection \"upgrade\";
+        proxy_set_header Connection "upgrade";
         
         proxy_connect_timeout 60s;
         proxy_send_timeout 60s;
@@ -454,21 +456,33 @@ if [ "$SKIP_NGINX" = false ] && [ -n "$CONFIG_FILE" ]; then
     location /$SUBPATH/assets/ {
         proxy_pass http://localhost:$HTTP_PORT/assets/;
         expires 1y;
-        add_header Cache-Control \"public, immutable\";
+        add_header Cache-Control "public, immutable";
     }
     
     # 【客服外呼系统配置结束】
-"
+CONFIG_BLOCK
         
         # 将配置插入到 server 块内（在最后一个 } 之前）
-        # 查找最后一个 server 块的结束位置
-        if grep -q "server_name.*${DOMAIN}" "$CONFIG_FILE"; then
-            # 在匹配的 server 块中插入
-            sed -i "/server_name.*${DOMAIN}/,/^}/ s/^}/$CONFIG_BLOCK\n}/" "$CONFIG_FILE"
-        else
-            # 在文件末尾的 server 块中插入
-            sed -i "$ s/^}/$CONFIG_BLOCK\n}/" "$CONFIG_FILE"
-        fi
+        # 使用 awk 插入配置（更可靠）
+        awk -v config_file="$CONFIG_TMP_FILE" '
+            BEGIN { 
+                config = ""
+                while ((getline line < config_file) > 0) {
+                    config = config line "\n"
+                }
+                close(config_file)
+            }
+            /^}/ && !inserted { 
+                print config
+                print "}"
+                inserted = 1
+                next 
+            }
+            { print }
+        ' "$CONFIG_FILE" > "${CONFIG_FILE}.new"
+        
+        mv "${CONFIG_FILE}.new" "$CONFIG_FILE"
+        rm -f "$CONFIG_TMP_FILE"
         
         print_success "Nginx 配置已更新"
         
