@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Table, Button, Tag, Input, Select, Form, Modal, message, Badge, Space, Empty, Alert } from 'antd';
+import { Table, Button, Tag, Input, Select, Form, Modal, message, Badge, Space } from 'antd';
 import { PhoneOutlined, PlayCircleOutlined, PauseCircleOutlined, EditOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import { customerApi, callApi } from '../../services/api';
 import type { Customer, CallRecord } from '../../services/api';
@@ -267,7 +267,7 @@ export default function CallList() {
             <Button 
               type="primary" 
               icon={<PlayCircleOutlined />} 
-              onClick={() => setAutoDialing(true)}
+              onClick={handleStartAutoDial}
             >
               开始自动拨号
             </Button>

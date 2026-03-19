@@ -14,9 +14,7 @@ import {
   Select,
   Typography,
   Modal,
-  Table as AntTable,
-  Empty,
-  Spin
+  Table as AntTable
 } from 'antd';
 import {
   UploadOutlined,
@@ -26,9 +24,7 @@ import {
   PlayCircleOutlined,
   ReloadOutlined,
   CheckCircleOutlined,
-  WarningOutlined,
-  ExclamationCircleOutlined,
-  InfoCircleOutlined
+  WarningOutlined
 } from '@ant-design/icons';
 import type { UploadProps } from 'antd';
 import { userApi, dataImportApi } from '../../services/api';

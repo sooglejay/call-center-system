@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Card, Form, Input, Button, message, Alert, Switch, Typography, Select, Spin } from 'antd';
+import { Card, Form, Input, Button, message, Alert, Switch, Typography, Select } from 'antd';
 import { SettingOutlined } from '@ant-design/icons';
 import { configApi } from '../../services/api';
 

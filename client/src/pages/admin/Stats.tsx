@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Card, DatePicker, Table, Statistic, Row, Col, Empty, Alert, Spin } from 'antd';
-import { BarChartOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { BarChartOutlined } from '@ant-design/icons';
 import { statsApi } from '../../services/api';
 import dayjs from 'dayjs';
 
