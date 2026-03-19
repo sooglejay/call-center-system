@@ -39,14 +39,14 @@ COPY --from=builder /app/dist ./dist
 RUN mkdir -p data uploads && chmod 777 data uploads
 
 # 创建默认环境变量文件
-RUN echo "NODE_ENV=production\nPORT=5001\nDB_TYPE=sqlite\nSQLITE_PATH=/app/data/database.sqlite" > .env
+RUN echo "NODE_ENV=production\nPORT=8081\nDB_TYPE=sqlite\nSQLITE_PATH=/app/data/database.sqlite" > .env
 
 # 暴露端口
-EXPOSE 5001
+EXPOSE 8081
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --quiet --tries=1 --spider http://localhost:5001/api/system/health || exit 1
+  CMD wget --quiet --tries=1 --spider http://localhost:8081/api/system/health || exit 1
 
 # 启动命令
 CMD ["node", "dist/app.js"]
