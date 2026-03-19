@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Table, Button, Tag, Input, Select, Form, Modal, message, Badge, Space } from 'antd';
-import { PhoneOutlined, PlayCircleOutlined, PauseCircleOutlined, EditOutlined } from '@ant-design/icons';
+import { Table, Button, Tag, Input, Select, Form, Modal, message, Badge, Space, Empty, Alert } from 'antd';
+import { PhoneOutlined, PlayCircleOutlined, PauseCircleOutlined, EditOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import { customerApi, callApi } from '../../services/api';
 import type { Customer, CallRecord } from '../../services/api';
 import { useAutoDialStore, useAgentConfigStore } from '../../stores';
@@ -15,6 +15,7 @@ export default function CallList() {
   const [callModalVisible, setCallModalVisible] = useState(false);
   const [notesModalVisible, setNotesModalVisible] = useState(false);
   const [editingRecord, setEditingRecord] = useState<CallRecord | null>(null);
+  const [totalCount, setTotalCount] = useState(0);
   const [noteForm] = Form.useForm();
   
   const { isAutoDialing, setAutoDialing, setCurrentCustomer, dialStatus, setDialStatus } = useAutoDialStore();
@@ -37,7 +38,10 @@ export default function CallList() {
         status: filters.status,
         search: filters.search
       });
-      setCustomers(response.data.data);
+      setCustomers(response.data.data || []);
+      setTotalCount(response.data.pagination?.total || 0);
+    } catch (error) {
+      message.error('获取客户列表失败');
     } finally {
       setLoading(false);
     }
@@ -47,7 +51,14 @@ export default function CallList() {
     try {
       const response = await callApi.getNextCall();
       if (response.data.message) {
-        message.info('没有待拨打的客户');
+        Modal.info({
+          title: '提示',
+          content: '没有待拨打的客户，请联系管理员分配任务',
+          okText: '我知道了',
+          onOk: () => {
+            setAutoDialing(false);
+          }
+        });
         setAutoDialing(false);
         return;
       }
@@ -84,9 +95,12 @@ export default function CallList() {
         setDialStatus('connected');
       }, 2000);
 
-    } catch (error) {
-      message.error('拨打电话失败');
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.error || '拨打电话失败';
+      message.error(errorMsg);
       setDialStatus('idle');
+      setCallModalVisible(false);
+      setCallingCustomer(null);
     }
   };
 
@@ -98,18 +112,50 @@ export default function CallList() {
     // 延迟后拨打下一个
     if (isAutoDialing) {
       const delay = (config?.dial_delay || 3) * 1000;
+      message.info(`${(delay / 1000).toFixed(0)}秒后拨打下一个...`);
       setTimeout(() => {
         startNextCall();
       }, delay);
     }
   };
 
+  const handleStartAutoDial = () => {
+    if (customers.length === 0) {
+      Modal.warning({
+        title: '暂无拨打任务',
+        content: '没有待拨打的客户，请联系管理员分配任务后再进行拨打',
+        okText: '我知道了'
+      });
+      return;
+    }
+    
+    Modal.confirm({
+      title: '开始自动拨号',
+      icon: <ExclamationCircleOutlined />,
+      content: `即将开始自动拨号，共有 ${totalCount} 个待拨打客户。拨号过程中您可以随时停止。`,
+      okText: '开始',
+      cancelText: '取消',
+      onOk: () => {
+        setAutoDialing(true);
+        message.success('自动拨号已开始');
+      }
+    });
+  };
+
   const handleStopAutoDial = () => {
-    setAutoDialing(false);
-    setDialStatus('idle');
-    setCallModalVisible(false);
-    setCallingCustomer(null);
-    message.info('已停止自动拨号');
+    Modal.confirm({
+      title: '停止自动拨号',
+      content: '确定要停止自动拨号吗？',
+      okText: '确定',
+      cancelText: '取消',
+      onOk: () => {
+        setAutoDialing(false);
+        setDialStatus('idle');
+        setCallModalVisible(false);
+        setCallingCustomer(null);
+        message.info('已停止自动拨号');
+      }
+    });
   };
 
   const handleSaveNotes = async (values: any) => {
@@ -121,7 +167,7 @@ export default function CallList() {
       setNotesModalVisible(false);
       fetchCustomers();
     } catch (error) {
-      message.error('保存失败');
+      message.error('保存失败，请重试');
     }
   };
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Table, Button, Modal, Form, Input, Select, Popconfirm, message, Tag, Tooltip } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, KeyOutlined } from '@ant-design/icons';
+import { Table, Button, Modal, Form, Input, Select, Popconfirm, message, Tag, Tooltip, Empty } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, KeyOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import { userApi } from '../../services/api';
 import type { User } from '../../services/api';
 
@@ -22,7 +22,9 @@ export default function UserManagement() {
     setLoading(true);
     try {
       const response = await userApi.getUsers();
-      setUsers(response.data);
+      setUsers(response.data || []);
+    } catch (error: any) {
+      message.error(error.response?.data?.error || '获取用户列表失败');
     } finally {
       setLoading(false);
     }
@@ -41,12 +43,22 @@ export default function UserManagement() {
   };
 
   const handleDelete = async (id: number) => {
+    // 防止删除自己
+    const currentUser = localStorage.getItem('user');
+    if (currentUser) {
+      const user = JSON.parse(currentUser);
+      if (user.id === id) {
+        message.warning('不能删除当前登录的账号');
+        return;
+      }
+    }
+    
     try {
       await userApi.deleteUser(id);
       message.success('删除成功');
       fetchUsers();
-    } catch (error) {
-      message.error('删除失败');
+    } catch (error: any) {
+      message.error(error.response?.data?.error || '删除失败，请重试');
     }
   };
 
@@ -54,15 +66,16 @@ export default function UserManagement() {
     try {
       if (editingUser) {
         await userApi.updateUser(editingUser.id, values);
-        message.success('更新成功');
+        message.success('用户信息更新成功');
       } else {
         await userApi.createUser(values);
-        message.success('创建成功');
+        message.success('用户创建成功');
       }
       setModalVisible(false);
       fetchUsers();
     } catch (error: any) {
-      message.error(error.response?.data?.error || '操作失败');
+      const errorMsg = error.response?.data?.error || '操作失败，请重试';
+      message.error(errorMsg);
     }
   };
 
@@ -70,11 +83,11 @@ export default function UserManagement() {
     if (!resetUserId) return;
     try {
       await userApi.resetPassword(resetUserId, values.new_password);
-      message.success('密码重置成功');
+      message.success('密码重置成功，请通知用户新密码');
       setResetPasswordVisible(false);
       passwordForm.resetFields();
-    } catch (error) {
-      message.error('密码重置失败');
+    } catch (error: any) {
+      message.error(error.response?.data?.error || '密码重置失败，请重试');
     }
   };
 

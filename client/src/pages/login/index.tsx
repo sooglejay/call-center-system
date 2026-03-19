@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Card, Form, Input, Button, message, Typography, Divider } from 'antd';
-import { PhoneOutlined, LockOutlined, UserOutlined, MailOutlined } from '@ant-design/icons';
+import { Card, Form, Input, Button, message, Typography, Divider, Alert } from 'antd';
+import { PhoneOutlined, LockOutlined, UserOutlined, MailOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import { authApi } from '../../services/api';
 
 const { Title, Text, Link } = Typography;
@@ -14,6 +14,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [config, setConfig] = useState<PublicConfig | null>(null);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const [form] = Form.useForm();
 
   useEffect(() => {
@@ -28,6 +29,8 @@ export default function LoginPage() {
 
   const handleLogin = async (values: { username: string; password: string }) => {
     setLoading(true);
+    setLoginError(null);
+    
     try {
       const response = await authApi.login(values.username, values.password);
       const { token, user } = response.data;
@@ -36,14 +39,18 @@ export default function LoginPage() {
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(user));
       
-      message.success('登录成功');
+      message.success('登录成功，正在跳转...');
       
       // 强制刷新跳转到首页
-      window.location.href = '/';
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 500);
       
     } catch (error: any) {
       console.error('登录错误:', error);
-      message.error(error.response?.data?.error || '登录失败');
+      const errorMsg = error.response?.data?.error || '登录失败，请稍后重试';
+      setLoginError(errorMsg);
+      message.error(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -51,6 +58,8 @@ export default function LoginPage() {
 
   const handleRegister = async (values: any) => {
     setLoading(true);
+    setLoginError(null);
+    
     try {
       const response = await authApi.register({
         username: values.username,
@@ -69,11 +78,15 @@ export default function LoginPage() {
       message.success('注册成功，正在跳转...');
       
       // 跳转到首页
-      window.location.href = '/';
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 500);
       
     } catch (error: any) {
       console.error('注册错误:', error);
-      message.error(error.response?.data?.error || '注册失败');
+      const errorMsg = error.response?.data?.error || '注册失败，请稍后重试';
+      setLoginError(errorMsg);
+      message.error(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -81,6 +94,7 @@ export default function LoginPage() {
 
   const switchMode = () => {
     setMode(mode === 'login' ? 'register' : 'login');
+    setLoginError(null);
     form.resetFields();
   };
 
@@ -101,6 +115,19 @@ export default function LoginPage() {
             {mode === 'login' ? '请登录以继续使用' : '创建新账号'}
           </p>
         </div>
+        
+        {/* 错误提示 */}
+        {loginError && (
+          <Alert
+            message={loginError}
+            type="error"
+            showIcon
+            icon={<ExclamationCircleOutlined />}
+            style={{ marginBottom: 16 }}
+            closable
+            onClose={() => setLoginError(null)}
+          />
+        )}
         
         <Form
           form={form}

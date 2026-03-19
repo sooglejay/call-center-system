@@ -7,6 +7,7 @@
     "dev": "tsx watch src/app.ts",
     "build": "tsc",
     "start": "node dist/app.js",
+    "start:dev": "node --loader ts-node/esm src/app.ts",
     "db:init": "tsx src/scripts/init-db.ts",
     "db:migrate": "tsx src/scripts/migrate.ts",
     "db:seed": "tsx src/scripts/seed.ts",
@@ -45,8 +46,11 @@
     "@vitest/ui": "^1.0.0",
     "supertest": "^6.3.3",
     "@types/supertest": "^6.0.0",
-    "tsx": "^4.7.0",
+    "tsx": "4.7.0",
     "typescript": "^5.3.3",
     "vitest": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0 <=22.x"
   }
 }
