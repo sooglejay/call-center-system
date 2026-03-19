@@ -483,55 +483,78 @@ export default function CustomerManagement() {
         <TabPane tab="客户列表" key="list">
           {/* 按姓氏分组显示 */}
           {sortBy === 'name' ? (
-            Object.entries(groupedCustomers)
-              .sort(([a], [b]) => a.localeCompare(b))
-              .map(([letter, groupCustomers]) => (
-                <div key={letter} style={{ marginBottom: 24 }}>
-                  <div style={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    marginBottom: 8,
-                    padding: '8px 16px',
-                    background: '#e6f7ff',
-                    borderRadius: 4
-                  }}>
-                    <Text strong style={{ fontSize: 18, marginRight: 8 }}>{letter}</Text>
-                    <Badge count={groupCustomers.length} style={{ backgroundColor: '#1890ff' }} />
+            Object.entries(groupedCustomers).length === 0 ? (
+              <Alert
+                message="暂无客户数据"
+                description={
+                  <div>
+                    <p>系统中还没有客户数据，请先导入客户：</p>
+                    <Button 
+                      type="primary" 
+                      icon={<UploadOutlined />}
+                      onClick={() => setImportGuideVisible(true)}
+                      style={{ marginTop: 8 }}
+                    >
+                      导入客户数据
+                    </Button>
                   </div>
-                  <Table 
-                    columns={columns} 
-                    dataSource={groupCustomers} 
-                    rowKey="id" 
-                    loading={loading}
-                    pagination={false}
-                    rowSelection={{
-                      selectedRowKeys: selectedRowKeys.filter(key => 
-                        groupCustomers.some(c => c.id === key)
-                      ),
-                      onChange: (keys) => handleGroupSelectionChange(
-                        groupCustomers, 
-                        keys as number[], 
-                        keys.length > 0
-                      ),
-                      onSelect: (record, selected) => {
-                        if (selected) {
-                          setSelectedRowKeys([...selectedRowKeys, record.id]);
-                        } else {
-                          setSelectedRowKeys(selectedRowKeys.filter(k => k !== record.id));
+                }
+                type="info"
+                showIcon
+                icon={<InfoCircleOutlined />}
+                style={{ marginTop: 24 }}
+              />
+            ) : (
+              Object.entries(groupedCustomers)
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([letter, groupCustomers]) => (
+                  <div key={letter} style={{ marginBottom: 24 }}>
+                    <div style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      marginBottom: 8,
+                      padding: '8px 16px',
+                      background: '#e6f7ff',
+                      borderRadius: 4
+                    }}>
+                      <Text strong style={{ fontSize: 18, marginRight: 8 }}>{letter}</Text>
+                      <Badge count={groupCustomers.length} style={{ backgroundColor: '#1890ff' }} />
+                    </div>
+                    <Table 
+                      columns={columns} 
+                      dataSource={groupCustomers} 
+                      rowKey="id" 
+                      loading={loading}
+                      pagination={false}
+                      rowSelection={{
+                        selectedRowKeys: selectedRowKeys.filter(key => 
+                          groupCustomers.some(c => c.id === key)
+                        ),
+                        onChange: (keys) => handleGroupSelectionChange(
+                          groupCustomers, 
+                          keys as number[], 
+                          keys.length > 0
+                        ),
+                        onSelect: (record, selected) => {
+                          if (selected) {
+                            setSelectedRowKeys([...selectedRowKeys, record.id]);
+                          } else {
+                            setSelectedRowKeys(selectedRowKeys.filter(k => k !== record.id));
+                          }
+                        },
+                        onSelectAll: (selected, _selectedRows, changeRows) => {
+                          const changeIds = changeRows.map(r => r.id);
+                          if (selected) {
+                            setSelectedRowKeys([...selectedRowKeys, ...changeIds]);
+                          } else {
+                            setSelectedRowKeys(selectedRowKeys.filter(k => !changeIds.includes(k)));
+                          }
                         }
-                      },
-                      onSelectAll: (selected, _selectedRows, changeRows) => {
-                        const changeIds = changeRows.map(r => r.id);
-                        if (selected) {
-                          setSelectedRowKeys([...selectedRowKeys, ...changeIds]);
-                        } else {
-                          setSelectedRowKeys(selectedRowKeys.filter(k => !changeIds.includes(k)));
-                        }
-                      }
-                    }}
-                  />
-                </div>
-              ))
+                      }}
+                    />
+                  </div>
+                ))
+            )
           ) : (
             <Table 
               columns={columns} 
@@ -543,6 +566,21 @@ export default function CustomerManagement() {
                 onChange: (keys) => setSelectedRowKeys(keys as number[])
               }}
               pagination={{ pageSize: 20 }}
+              locale={{
+                emptyText: (
+                  <div style={{ padding: '24px 0' }}>
+                    <InfoCircleOutlined style={{ fontSize: 48, color: '#bfbfbf', marginBottom: 16 }} />
+                    <p style={{ fontSize: 16, color: '#8c8c8c', marginBottom: 16 }}>暂无客户数据</p>
+                    <Button 
+                      type="primary" 
+                      icon={<UploadOutlined />}
+                      onClick={() => setImportGuideVisible(true)}
+                    >
+                      导入客户数据
+                    </Button>
+                  </div>
+                )
+              }}
             />
           )}
         </TabPane>

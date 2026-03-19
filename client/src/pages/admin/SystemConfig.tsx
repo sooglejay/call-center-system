@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import { Card, Form, Input, Button, message, Alert, Switch, Typography, Select } from 'antd';
+import { Card, Form, Input, Button, message, Alert, Switch, Typography, Select, Spin } from 'antd';
+import { SettingOutlined } from '@ant-design/icons';
 import { configApi } from '../../services/api';
 
 const { TextArea } = Input;
@@ -25,8 +26,8 @@ export default function SystemConfig() {
         }
       });
       form.setFieldsValue(configMap);
-    } catch (error) {
-      message.error('获取配置失败');
+    } catch (error: any) {
+      message.error(error.response?.data?.error || '获取配置失败，请刷新重试');
     }
   };
 
@@ -35,14 +36,14 @@ export default function SystemConfig() {
       await configApi.updateConfig(key, value);
       message.success('配置更新成功');
       fetchConfigs();
-    } catch (error) {
-      message.error('配置更新失败');
+    } catch (error: any) {
+      message.error(error.response?.data?.error || '配置更新失败，请重试');
     }
   };
 
   return (
     <div>
-      <h2>系统配置</h2>
+      <h2><SettingOutlined style={{ marginRight: 8 }} />系统配置</h2>
       
       <Alert
         message="配置说明"

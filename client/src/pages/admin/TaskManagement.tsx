@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Table, Button, Modal, Form, Input, Select, DatePicker, message, Tag, Tabs, Badge, Checkbox, Transfer, Space, Divider, Typography } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, TeamOutlined } from '@ant-design/icons';
+import { Table, Button, Modal, Form, Input, Select, DatePicker, message, Tag, Tabs, Badge, Checkbox, Transfer, Space, Divider, Typography, Empty, Alert } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, TeamOutlined, ScheduleOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { taskApi, userApi, customerApi } from '../../services/api';
 import type { Task, User, Customer } from '../../services/api';
 import dayjs from 'dayjs';
@@ -75,7 +75,9 @@ export default function TaskManagement() {
     setLoading(true);
     try {
       const response = await taskApi.getTasks();
-      setTasks(response.data.data);
+      setTasks(response.data.data || []);
+    } catch (error: any) {
+      message.error(error.response?.data?.error || '获取任务列表失败，请刷新重试');
     } finally {
       setLoading(false);
     }
@@ -84,7 +86,7 @@ export default function TaskManagement() {
   const fetchAgents = async () => {
     try {
       const response = await userApi.getAgents();
-      setAgents(response.data);
+      setAgents(response.data || []);
     } catch (error) {
       console.error('获取客服列表失败');
     }
@@ -93,7 +95,7 @@ export default function TaskManagement() {
   const fetchNameLetterStats = async () => {
     try {
       const response = await customerApi.getNameLetterStats(unassignedOnly);
-      setNameLetterStats(response.data);
+      setNameLetterStats(response.data || {});
     } catch (error) {
       console.error('获取姓氏统计失败');
     }
@@ -135,10 +137,10 @@ export default function TaskManagement() {
   const handleDelete = async (id: number) => {
     try {
       await taskApi.deleteTask(id);
-      message.success('删除成功');
+      message.success('删除任务成功');
       fetchTasks();
-    } catch (error) {
-      message.error('删除失败');
+    } catch (error: any) {
+      message.error(error.response?.data?.error || '删除任务失败，请重试');
     }
   };
 
@@ -228,13 +230,48 @@ export default function TaskManagement() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <h2>任务分配</h2>
+        <h2><ScheduleOutlined style={{ marginRight: 8 }} />任务分配</h2>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
           创建任务
         </Button>
       </div>
 
-      <Table columns={columns} dataSource={tasks} rowKey="id" loading={loading} />
+      {tasks.length === 0 && !loading ? (
+        <Alert
+          message="暂无任务数据"
+          description={
+            <div>
+              <p>系统中还没有任务，请先创建任务：</p>
+              <Button 
+                type="primary" 
+                icon={<PlusOutlined />}
+                onClick={handleAdd}
+                style={{ marginTop: 8 }}
+              >
+                创建任务
+              </Button>
+            </div>
+          }
+          type="info"
+          showIcon
+          icon={<InfoCircleOutlined />}
+        />
+      ) : (
+        <Table 
+          columns={columns} 
+          dataSource={tasks} 
+          rowKey="id" 
+          loading={loading}
+          locale={{
+            emptyText: (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="暂无任务数据"
+              />
+            )
+          }}
+        />
+      )}
 
       <Modal
         title={editingTask ? '编辑任务' : '创建任务'}

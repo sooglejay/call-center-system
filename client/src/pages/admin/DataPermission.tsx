@@ -14,7 +14,9 @@ import {
   Select,
   Typography,
   Modal,
-  Table as AntTable
+  Table as AntTable,
+  Empty,
+  Spin
 } from 'antd';
 import {
   UploadOutlined,
@@ -24,7 +26,9 @@ import {
   PlayCircleOutlined,
   ReloadOutlined,
   CheckCircleOutlined,
-  WarningOutlined
+  WarningOutlined,
+  ExclamationCircleOutlined,
+  InfoCircleOutlined
 } from '@ant-design/icons';
 import type { UploadProps } from 'antd';
 import { userApi, dataImportApi } from '../../services/api';
@@ -88,10 +92,10 @@ const DataPermission: React.FC = () => {
         userApi.getUsers(),
         dataImportApi.getStats()
       ]);
-      setUsers(usersRes.data);
+      setUsers(usersRes.data || []);
       setStats(statsRes.data);
-    } catch (error) {
-      message.error('加载数据失败');
+    } catch (error: any) {
+      message.error(error.response?.data?.error || '加载数据失败，请刷新重试');
     } finally {
       setLoading(false);
     }
@@ -107,8 +111,8 @@ const DataPermission: React.FC = () => {
       await userApi.updateDataAccess(userId, dataAccessType);
       message.success('权限更新成功');
       loadData();
-    } catch (error) {
-      message.error('权限更新失败');
+    } catch (error: any) {
+      message.error(error.response?.data?.error || '权限更新失败，请重试');
     }
   };
 
