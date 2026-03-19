@@ -6,6 +6,7 @@
 - [部署方式](#部署方式)
   - [方式一：Docker 部署（推荐）](#方式一docker-部署推荐)
   - [方式二：原生部署](#方式二原生部署)
+- [Nginx 配置](#nginx-配置)
 - [常见问题](#常见问题)
 - [快速修复](#快速修复)
 
@@ -120,6 +121,128 @@ cd client && pnpm dev &
 # 生产模式
 cd server && pnpm build && pnpm start &
 cd client && pnpm build && pnpm preview --port 8080 &
+```
+
+## Nginx 配置
+
+### 为什么需要独立配置？
+
+为了避免影响服务器上已运行的网站，我们提供了独立的 Nginx 配置文件，具有以下优点：
+
+- ✅ **完全隔离**：不影响现有网站配置
+- ✅ **独立管理**：单独的配置文件，易于维护
+- ✅ **安全可靠**：配置错误不影响其他服务
+- ✅ **灵活切换**：支持多种部署方式
+
+### 配置方式
+
+我们提供三种配置方式：
+
+| 方式 | 访问地址 | 适用场景 |
+|------|---------|---------|
+| 子路径配置 | `yourdomain.com/callcenter/` | 与现有网站共存 |
+| 独立域名配置 | `call.yourdomain.com` | 有独立子域名 |
+| 仅代理 API | `yourdomain.com/api/` | 前端使用容器端口 |
+
+### 快速安装
+
+```bash
+# 1. 进入项目目录
+cd call-center-system
+
+# 2. 运行配置脚本（需要 root 权限）
+sudo ./setup-nginx.sh
+
+# 3. 选择配置方式
+# 输入 1-5 选择不同的配置方案
+```
+
+### 手动安装
+
+如果你想手动配置：
+
+```bash
+# 1. 复制配置文件到 Nginx 目录
+sudo cp nginx-callcenter.conf /etc/nginx/conf.d/callcenter.conf
+
+# 2. 编辑配置文件（根据需要选择配置方式）
+sudo vim /etc/nginx/conf.d/callcenter.conf
+
+# 3. 测试配置
+sudo nginx -t
+
+# 4. 重载 Nginx
+sudo nginx -s reload
+```
+
+### 配置文件说明
+
+配置文件位于项目根目录：`nginx-callcenter.conf`
+
+```nginx
+# 上游服务器定义
+upstream callcenter_backend {
+    server 127.0.0.1:8081;  # 后端 API
+}
+
+upstream callcenter_frontend {
+    server 127.0.0.1:8080;  # 前端
+}
+
+# 子路径配置（默认）
+server {
+    listen 80;
+    server_name _;
+
+    # 访问地址：http://yourdomain.com/callcenter/
+    location /callcenter/ {
+        proxy_pass http://callcenter_frontend/;
+        ...
+    }
+
+    location /callcenter/api/ {
+        proxy_pass http://callcenter_backend/api/;
+        ...
+    }
+}
+```
+
+### 卸载配置
+
+如果需要移除配置：
+
+```bash
+# 运行卸载脚本
+sudo ./setup-nginx.sh
+# 选择选项 5
+
+# 或手动删除
+sudo rm /etc/nginx/conf.d/callcenter.conf
+sudo nginx -s reload
+```
+
+### 端口映射
+
+```
+┌─────────────────────────────────────────────────────┐
+│                  Nginx 代理架构                      │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│  用户请求                                           │
+│      │                                              │
+│      ▼                                              │
+│  ┌─────────────┐                                    │
+│  │   Nginx     │  监听 80/443 端口                  │
+│  │   :80       │                                    │
+│  └──────┬──────┘                                    │
+│         │                                           │
+│         ├─► /callcenter/*  ──► 127.0.0.1:8080       │
+│         │                    (前端容器)              │
+│         │                                           │
+│         └─► /callcenter/api/* ──► 127.0.0.1:8081    │
+│                              (后端容器)              │
+│                                                     │
+└─────────────────────────────────────────────────────┘
 ```
 
 ## 常见问题
