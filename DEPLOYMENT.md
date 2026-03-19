@@ -41,16 +41,43 @@
 # 1. 进入项目目录
 cd call-center-system
 
-# 2. 赋予部署脚本执行权限
+# 2. 创建环境变量配置（可选）
+# 如果需要自定义配置，复制示例文件
+cp .env.example .env
+# 然后编辑 .env 文件
+vim .env
+
+# 3. 赋予部署脚本执行权限
 chmod +x deploy.sh
 
-# 3. 执行部署脚本
+# 4. 执行部署脚本
 ./deploy.sh
 # 选择选项 1 (Docker 部署)
 
 # 或直接运行
 docker-compose up -d --build
 ```
+
+#### 环境变量说明
+
+创建 `.env` 文件可以自定义配置：
+
+```bash
+# 复制示例配置
+cp .env.example .env
+```
+
+| 变量名 | 默认值 | 说明 |
+|--------|--------|------|
+| HTTP_PORT | 8080 | 前端访问端口 |
+| API_PORT | 8081 | 后端 API 端口 |
+| VITE_BASE_PATH | / | 子路径部署时设置，如 /callcenter |
+| JWT_SECRET | call-center-secret-key-2024 | JWT 密钥（建议修改） |
+
+⚠️ **重要提示**：
+- `VITE_BASE_PATH` 修改后需要重新构建前端镜像
+- 子路径部署时设置为 `/callcenter`（不带末尾斜杠）
+- 直接访问端口时设置为 `/` 或不设置
 
 #### 访问地址
 - 前端：http://localhost:8080
