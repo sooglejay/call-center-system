@@ -1,13 +1,46 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Table, Button, Modal, Upload, message, Tabs, Select, Form, Input, Badge, Space, Tag, Radio, Divider, Typography, Alert, Card, Row, Col } from 'antd';
+import { Table, Button, Modal, Upload, message, Tabs, Select, Form, Input, Badge, Space, Tag, Radio, Divider, Typography, Alert, Card, Row, Col, Spin } from 'antd';
 import { UploadOutlined, CameraOutlined, UserAddOutlined, TeamOutlined, InfoCircleOutlined, DownloadOutlined } from '@ant-design/icons';
-import { customerApi, configApi, userApi } from '../../services/api';
+import { customerApi, dataImportApi, userApi } from '../../services/api';
 import type { Customer, User } from '../../services/api';
 import * as XLSX from 'xlsx';
 
 const { TabPane } = Tabs;
 const { Search } = Input;
 const { Text } = Typography;
+
+// 系统字段定义
+interface SystemField {
+  key: string;
+  label: string;
+  required: boolean;
+}
+
+// 复合字段的子字段
+interface SubField {
+  key: string;
+  label: string;
+  type: string;
+  samples: string[];
+}
+
+// 复合字段信息
+interface CompositeField {
+  separator: string;
+  partCount: number;
+  subFields: SubField[];
+}
+
+// CSV 预览数据
+interface CsvPreviewData {
+  columns: string[];
+  preview: Record<string, string>[];
+  total_rows: number;
+  system_fields: SystemField[];
+  suggestions: Record<string, string>;
+  has_required_fields: boolean;
+  composite_fields?: Record<string, CompositeField>; // 复合字段信息
+}
 
 // 获取姓氏首字母
 const getFirstLetter = (name: string): string => {
@@ -63,6 +96,14 @@ export default function CustomerManagement() {
   const [currentCustomer, setCurrentCustomer] = useState<Customer | null>(null);
   const [editForm] = Form.useForm();
   const [importDataSource, setImportDataSource] = useState<'mock' | 'real'>('real');
+
+  // CSV 预览相关状态
+  const [previewModalVisible, setPreviewModalVisible] = useState(false);
+  const [previewData, setPreviewData] = useState<CsvPreviewData | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+  const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
 
   useEffect(() => {
     fetchCustomers();
@@ -190,23 +231,98 @@ export default function CustomerManagement() {
     message.success('模板下载成功');
   };
 
-  // 处理文件上传（从引导弹窗触发）
+  // 处理文件上传 - 使用动态列匹配预览
   const handleFileUploadFromGuide = async (file: File) => {
+    setPreviewLoading(true);
+    setPendingFile(file);
+    
     const formData = new FormData();
     formData.append('file', file);
     
     try {
-      const response = await configApi.uploadFile(formData);
-      setImportedData(response.data.data);
+      const response = await dataImportApi.previewCsv(formData);
+      const data = response.data as CsvPreviewData;
+      setPreviewData(data);
+      
+      // 初始化列映射（使用建议值）
+      const initialMapping: Record<string, string> = {};
+      data.system_fields.forEach(field => {
+        if (data.suggestions[field.key]) {
+          initialMapping[field.key] = data.suggestions[field.key];
+        }
+      });
+      setColumnMapping(initialMapping);
+      
       setImportGuideVisible(false);
-      setImportModalVisible(true);
-      message.success(`成功解析 ${response.data.data.length} 条记录`);
-    } catch (error) {
-      message.error('文件解析失败，请检查文件格式是否符合要求');
+      setPreviewModalVisible(true);
+    } catch (error: any) {
+      message.error(error.response?.data?.error || '文件解析失败，请检查文件格式');
+    } finally {
+      setPreviewLoading(false);
     }
     return false;
   };
 
+  // 执行导入 - 使用列映射
+  const handleConfirmImport = async () => {
+    if (!pendingFile) {
+      message.error('请重新选择文件');
+      return;
+    }
+    
+    // 验证必填字段
+    if (!columnMapping.name || !columnMapping.phone) {
+      message.error('姓名和电话是必填字段，请确保已映射');
+      return;
+    }
+    
+    setImportLoading(true);
+    
+    const formData = new FormData();
+    formData.append('file', pendingFile);
+    formData.append('column_mapping', JSON.stringify(columnMapping));
+    formData.append('data_source', importDataSource);
+    
+    // 添加复合字段配置
+    if (previewData?.composite_fields) {
+      formData.append('composite_fields', JSON.stringify(previewData.composite_fields));
+    }
+    
+    if (selectedAgent) {
+      formData.append('assigned_to', selectedAgent.toString());
+    }
+    
+    try {
+      const response = await dataImportApi.importWithMapping(formData);
+      const result = response.data;
+      
+      setPreviewModalVisible(false);
+      setPendingFile(null);
+      setColumnMapping({});
+      setSelectedAgent(undefined);
+      
+      // 显示导入结果
+      Modal.success({
+        title: '导入完成',
+        content: (
+          <div>
+            <p>总记录数: {result.summary.total}</p>
+            <p>成功导入: {result.summary.imported}</p>
+            <p>重复跳过: {result.summary.duplicates}</p>
+            <p>导入失败: {result.summary.errors}</p>
+          </div>
+        ),
+      });
+      
+      fetchCustomers();
+    } catch (error: any) {
+      message.error(error.response?.data?.error || '导入失败，请重试');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  // 旧的导入函数（保留兼容）
   const handleImport = async () => {
     try {
       await customerApi.importCustomers(importedData, selectedAgent, importDataSource);
@@ -215,8 +331,8 @@ export default function CustomerManagement() {
       setImportedData([]);
       setImportDataSource('real');
       fetchCustomers();
-    } catch (error) {
-      message.error('导入失败');
+    } catch (error: any) {
+      message.error(error.response?.data?.error || '导入失败，请重试');
     }
   };
 
@@ -721,6 +837,196 @@ export default function CustomerManagement() {
           pagination={{ pageSize: 5 }}
           rowKey={(_, index) => index?.toString() || ''}
         />
+      </Modal>
+
+      {/* CSV 预览和列映射 Modal */}
+      <Modal
+        title="数据预览与列映射"
+        open={previewModalVisible}
+        onCancel={() => {
+          setPreviewModalVisible(false);
+          setPendingFile(null);
+          setColumnMapping({});
+        }}
+        footer={[
+          <Button key="cancel" onClick={() => setPreviewModalVisible(false)}>
+            取消
+          </Button>,
+          <Button 
+            key="import" 
+            type="primary" 
+            loading={importLoading}
+            onClick={handleConfirmImport}
+            disabled={!columnMapping.name || !columnMapping.phone}
+          >
+            开始导入
+          </Button>,
+        ]}
+        width={900}
+      >
+        <Spin spinning={previewLoading}>
+          {previewData && (
+            <>
+              <Alert
+                message={`检测到 ${previewData.total_rows} 条数据，共 ${previewData.columns.length} 列`}
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+              />
+              
+              <Card title="列映射配置" size="small" style={{ marginBottom: 16 }}>
+                {/* 复合字段提示 */}
+                {previewData.composite_fields && Object.keys(previewData.composite_fields).length > 0 && (
+                  <Alert
+                    message="检测到复合字段"
+                    description={
+                      <div>
+                        {Object.entries(previewData.composite_fields).map(([colName, composite]) => (
+                          <div key={colName} style={{ marginBottom: 8 }}>
+                            <Text strong>{colName}</Text>
+                            <Text type="secondary"> 包含 {composite.partCount} 个子字段（分隔符: "{composite.separator}"）</Text>
+                            <div style={{ marginTop: 4, paddingLeft: 16 }}>
+                              {composite.subFields.map((sf, idx) => (
+                                <Tag key={idx} color="blue">{sf.label}: {sf.samples.slice(0, 2).join(', ')}</Tag>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    }
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: 12 }}
+                  />
+                )}
+                
+                <Row gutter={[16, 12]}>
+                  {previewData.system_fields.map(field => {
+                    const matched = previewData.columns.find(col => 
+                      col.toLowerCase() === field.key.toLowerCase() ||
+                      col.includes(field.label) ||
+                      col.toLowerCase().includes(field.key.toLowerCase())
+                    );
+                    
+                    // 构建可选项：普通列 + 复合字段的子字段
+                    const options: { value: string; label: string; isComposite?: boolean }[] = [
+                      ...previewData.columns.map(col => ({ value: col, label: col })),
+                    ];
+                    
+                    // 添加复合字段的子字段
+                    if (previewData.composite_fields) {
+                      Object.entries(previewData.composite_fields).forEach(([colName, composite]) => {
+                        composite.subFields.forEach(sf => {
+                          options.push({
+                            value: sf.key,
+                            label: `${colName} → ${sf.label}`,
+                            isComposite: true
+                          });
+                        });
+                      });
+                    }
+                    
+                    return (
+                      <Col span={8} key={field.key}>
+                        <div style={{ marginBottom: 4 }}>
+                          <Text strong>{field.label}</Text>
+                          {field.required && <Tag color="red" style={{ marginLeft: 4 }}>必填</Tag>}
+                        </div>
+                        <Select
+                          style={{ width: '100%' }}
+                          placeholder={`选择对应的列`}
+                          value={columnMapping[field.key] || undefined}
+                          onChange={(value) => {
+                            setColumnMapping(prev => ({
+                              ...prev,
+                              [field.key]: value
+                            }));
+                          }}
+                          allowClear
+                          showSearch
+                          optionFilterProp="label"
+                        >
+                          {options.map(opt => (
+                            <Select.Option 
+                              key={opt.value} 
+                              value={opt.value}
+                              label={opt.label}
+                            >
+                              {opt.isComposite ? (
+                                <span>
+                                  <Tag color="purple" style={{ marginRight: 4 }}>拆分</Tag>
+                                  {opt.label}
+                                </span>
+                              ) : opt.label}
+                            </Select.Option>
+                          ))}
+                        </Select>
+                        {matched && !columnMapping[field.key] && (
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            建议: {matched}
+                          </Text>
+                        )}
+                      </Col>
+                    );
+                  })}
+                </Row>
+              </Card>
+
+              <Card title="数据预览（前5行）" size="small">
+                <Table
+                  dataSource={previewData.preview}
+                  columns={previewData.columns.map(col => ({
+                    title: (
+                      <span>
+                        {col}
+                        {columnMapping.name === col && <Tag color="blue" style={{ marginLeft: 4 }}>姓名</Tag>}
+                        {columnMapping.phone === col && <Tag color="green" style={{ marginLeft: 4 }}>电话</Tag>}
+                      </span>
+                    ),
+                    dataIndex: col,
+                    key: col,
+                    ellipsis: true,
+                    width: 150,
+                  }))}
+                  pagination={false}
+                  scroll={{ x: true }}
+                  size="small"
+                  rowKey={(_, index) => index?.toString() || ''}
+                />
+              </Card>
+
+              <div style={{ marginTop: 16 }}>
+                <Form layout="inline">
+                  <Form.Item label="数据来源">
+                    <Radio.Group 
+                      value={importDataSource} 
+                      onChange={e => setImportDataSource(e.target.value)}
+                      buttonStyle="solid"
+                    >
+                      <Radio.Button value="real">真实数据</Radio.Button>
+                      <Radio.Button value="mock">测试数据</Radio.Button>
+                    </Radio.Group>
+                  </Form.Item>
+                  <Form.Item label="分配客服">
+                    <Select
+                      placeholder="可选"
+                      allowClear
+                      style={{ width: 200 }}
+                      value={selectedAgent}
+                      onChange={(value) => setSelectedAgent(value)}
+                    >
+                      {agents.map(agent => (
+                        <Select.Option key={agent.id} value={agent.id}>
+                          {agent.real_name}
+                        </Select.Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                </Form>
+              </div>
+            </>
+          )}
+        </Spin>
       </Modal>
 
       {/* 批量分配模态框 */}
