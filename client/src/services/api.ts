@@ -3,9 +3,15 @@ import axios, { AxiosError } from 'axios';
 // 获取 API 基础路径
 // 子路径部署时，API 路径应该是相对路径，让浏览器自动拼接
 const getBaseURL = () => {
-  // 如果环境变量中配置了子路径
   const basePath = import.meta.env.VITE_BASE_PATH || '';
-  return basePath ? `${basePath}/api` : '/api';
+  // 如果是根路径（/ 或空），直接返回 /api
+  // 如果是子路径（如 /callcenter），拼接为 /callcenter/api
+  if (!basePath || basePath === '/') {
+    return '/api';
+  }
+  // 确保子路径不以 / 结尾，然后拼接 /api
+  const normalizedPath = basePath.endsWith('/') ? basePath.slice(0, -1) : basePath;
+  return `${normalizedPath}/api`;
 };
 
 const api = axios.create({
