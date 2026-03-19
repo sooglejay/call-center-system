@@ -22,8 +22,13 @@ dotenv.config();
 const app: express.Application = express();
 const PORT = process.env.PORT || 8081;
 
-// 中间件
-app.use(cors());
+// 中间件 - CORS 配置
+app.use(cors({
+  origin: true, // 允许所有来源
+  credentials: true, // 允许携带凭证
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
