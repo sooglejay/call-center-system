@@ -42,6 +42,87 @@ const parseCSVWithColumns = (buffer: Buffer): Promise<{ columns: string[], data:
   });
 };
 
+// 检测复合字段（包含分隔符的字段）
+const detectCompositeField = (columnData: any[]): { 
+  isComposite: boolean; 
+  separator?: string; 
+  partCount?: number;
+  sampleParts?: string[][];
+} => {
+  if (columnData.length === 0) return { isComposite: false };
+  
+  const separators = [',', '，', ';', '；', '|', '/', '\\', '\t'];
+  
+  // 检查前10行
+  const sampleData = columnData.slice(0, Math.min(10, columnData.length));
+  
+  for (const sep of separators) {
+    const hasSeparator = sampleData.every(row => {
+      const val = String(row || '');
+      return val.includes(sep) && val.split(sep).length > 1;
+    });
+    
+    if (hasSeparator) {
+      const sampleParts = sampleData.map(row => {
+        return String(row || '').split(sep).map(p => p.trim());
+      });
+      
+      // 检查所有行的拆分部分数量是否一致
+      const partCount = sampleParts[0].length;
+      const isConsistent = sampleParts.every(parts => parts.length === partCount);
+      
+      if (isConsistent && partCount > 1) {
+        return {
+          isComposite: true,
+          separator: sep,
+          partCount,
+          sampleParts
+        };
+      }
+    }
+  }
+  
+  return { isComposite: false };
+};
+
+// 智能识别子字段类型
+const identifySubFieldType = (samples: string[]): string => {
+  const nonEmptySamples = samples.filter(s => s && s.trim());
+  if (nonEmptySamples.length === 0) return 'field';
+  
+  // 检查是否为统一的值（如机构名）
+  const uniqueValues = new Set(nonEmptySamples);
+  if (uniqueValues.size === 1 && nonEmptySamples.length > 1) {
+    return 'company'; // 可能是机构名
+  }
+  
+  // 检查是否为中文姓名（2-4个汉字）
+  const chineseNameRegex = /^[\u4e00-\u9fa5·•]{2,10}$/;
+  if (nonEmptySamples.every(s => chineseNameRegex.test(s))) {
+    return 'name';
+  }
+  
+  // 检查是否为英文姓名
+  const englishNameRegex = /^[a-zA-Z\s\-]+$/;
+  if (nonEmptySamples.every(s => englishNameRegex.test(s))) {
+    return 'name_en';
+  }
+  
+  // 检查是否为邮箱
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (nonEmptySamples.every(s => emailRegex.test(s))) {
+    return 'email';
+  }
+  
+  // 检查是否为手机号
+  const phoneRegex = /^[\d\s\-\+\(\)]{7,15}$/;
+  if (nonEmptySamples.every(s => phoneRegex.test(s))) {
+    return 'phone';
+  }
+  
+  return 'field';
+};
+
 // 预览 CSV 文件 - 返回列名和前几行数据
 export const previewCSV = async (req: any, res: Response) => {
   try {
@@ -62,8 +143,40 @@ export const previewCSV = async (req: any, res: Response) => {
     
     console.log(`[CSV预览] 解析到 ${columns.length} 列, ${data.length} 行`);
     
-    // 智能匹配建议
-    const suggestions = suggestColumnMapping(columns);
+    // 检测复合字段
+    const compositeFields: Record<string, any> = {};
+    
+    for (const col of columns) {
+      const columnData = data.map(row => row[col]);
+      const detected = detectCompositeField(columnData);
+      
+      if (detected.isComposite && detected.sampleParts) {
+        // 识别每个子字段的类型
+        const subFields = [];
+        for (let i = 0; i < detected.partCount!; i++) {
+          const samples = detected.sampleParts.map(parts => parts[i]);
+          const fieldType = identifySubFieldType(samples);
+          
+          subFields.push({
+            key: `${col}_part_${i + 1}`,
+            label: getSubFieldLabel(fieldType, i),
+            type: fieldType,
+            samples: samples.slice(0, 5)
+          });
+        }
+        
+        compositeFields[col] = {
+          separator: detected.separator,
+          partCount: detected.partCount,
+          subFields
+        };
+      }
+    }
+    
+    console.log(`[CSV预览] 检测到 ${Object.keys(compositeFields).length} 个复合字段`);
+    
+    // 智能匹配建议（包含复合字段的子字段）
+    const suggestions = suggestColumnMapping(columns, compositeFields);
     
     res.json({
       columns,                          // CSV 文件的列名
@@ -71,6 +184,7 @@ export const previewCSV = async (req: any, res: Response) => {
       total_rows: data.length,          // 总行数
       system_fields: SYSTEM_FIELDS,     // 系统支持的字段
       suggestions,                      // 智能匹配建议
+      composite_fields: compositeFields, // 复合字段信息
       has_required_fields: columns.some(c => 
         suggestions.name || 
         c.toLowerCase().includes('name') || 
@@ -89,8 +203,23 @@ export const previewCSV = async (req: any, res: Response) => {
   }
 };
 
-// 智能列匹配建议
-const suggestColumnMapping = (csvColumns: string[]): Record<string, string> => {
+// 获取子字段标签
+const getSubFieldLabel = (fieldType: string, index: number): string => {
+  const labels: Record<string, string> = {
+    'company': '公司/机构',
+    'name': '姓名',
+    'name_en': '英文名',
+    'phone': '电话',
+    'email': '邮箱',
+    'address': '地址',
+    'field': `字段${index + 1}`
+  };
+  
+  return labels[fieldType] || `字段${index + 1}`;
+};
+
+// 智能列匹配建议（支持复合字段）
+const suggestColumnMapping = (csvColumns: string[], compositeFields: Record<string, any> = {}): Record<string, string> => {
   const mapping: Record<string, string> = {};
   
   const patterns: Record<string, RegExp[]> = {
@@ -104,7 +233,7 @@ const suggestColumnMapping = (csvColumns: string[]): Record<string, string> => {
       /顾客名/i,
       /用户名/i,
       /客户姓名/i,
-      /^姓名$/i
+      /^姓名$/
     ],
     phone: [
       /phone/i, 
@@ -134,7 +263,9 @@ const suggestColumnMapping = (csvColumns: string[]): Record<string, string> => {
       /firm/i,
       /企业名称/i,
       /公司名称/i,
-      /所属公司/i
+      /所属公司/i,
+      /机构/i,
+      /商城/i
     ],
     address: [
       /address/i, 
@@ -159,7 +290,11 @@ const suggestColumnMapping = (csvColumns: string[]): Record<string, string> => {
     priority: [/priority/i, /优先级/i, /级别/i, /重要/i],
   };
   
+  // 先处理普通列
   for (const csvCol of csvColumns) {
+    // 跳过复合字段
+    if (compositeFields[csvCol]) continue;
+    
     for (const [systemField, regexList] of Object.entries(patterns)) {
       if (regexList.some(regex => regex.test(csvCol))) {
         if (!mapping[systemField]) {
@@ -170,20 +305,51 @@ const suggestColumnMapping = (csvColumns: string[]): Record<string, string> => {
     }
   }
   
+  // 再处理复合字段的子字段
+  for (const [parentCol, composite] of Object.entries(compositeFields)) {
+    if (!composite.subFields) continue;
+    
+    for (const subField of composite.subFields) {
+      const type = subField.type;
+      
+      // 根据识别的类型自动映射
+      if (type === 'name' && !mapping.name) {
+        mapping.name = subField.key;
+      } else if (type === 'company' && !mapping.company) {
+        mapping.company = subField.key;
+      } else if (type === 'name_en' && !mapping['name_en']) {
+        // name_en 不在 SYSTEM_FIELDS 中，但我们可以在 notes 中存储
+        // 或者忽略
+      } else if (type === 'phone' && !mapping.phone) {
+        mapping.phone = subField.key;
+      } else if (type === 'email' && !mapping.email) {
+        mapping.email = subField.key;
+      }
+    }
+  }
+  
   return mapping;
-};
+}; 
 
 // 执行导入（带列映射）
 export const importWithMapping = async (req: any, res: Response) => {
   try {
-    let { column_mapping, data_source = 'real' } = req.body;
+    let { column_mapping, data_source = 'real', composite_fields } = req.body;
     
-    // 如果 column_mapping 是字符串（来自 FormData），尝试解析 JSON
+    // 如果参数是字符串（来自 FormData），尝试解析 JSON
     if (typeof column_mapping === 'string') {
       try {
         column_mapping = JSON.parse(column_mapping);
       } catch {
         return res.status(400).json({ error: '列映射格式错误，请提供有效的 JSON' });
+      }
+    }
+    
+    if (typeof composite_fields === 'string') {
+      try {
+        composite_fields = JSON.parse(composite_fields);
+      } catch {
+        composite_fields = {};
       }
     }
     
@@ -205,15 +371,15 @@ export const importWithMapping = async (req: any, res: Response) => {
       return res.status(403).json({ error: '只有管理员可以导入数据' });
     }
     
-    // 从临时存储获取 CSV 数据（这里需要前端重新上传或使用 session 存储）
-    // 为了简化，我们要求前端在导入时再次上传文件
     if (!req.file) {
       return res.status(400).json({ error: '请上传CSV文件' });
     }
     
     const { data } = await parseCSVWithColumns(req.file.buffer);
     
-    console.log(`[CSV导入] 解析到 ${data.length} 条记录，使用映射:`, column_mapping);
+    console.log(`[CSV导入] 解析到 ${data.length} 条记录`);
+    console.log(`[CSV导入] 列映射:`, column_mapping);
+    console.log(`[CSV导入] 复合字段:`, composite_fields);
     
     // 导入数据
     let imported = 0;
@@ -225,8 +391,34 @@ export const importWithMapping = async (req: any, res: Response) => {
       const record = data[i];
       try {
         // 根据映射提取数据
-        const name = record[column_mapping.name] || '';
-        const phone = record[column_mapping.phone] || '';
+        const customerData: any = {};
+        
+        for (const [systemField, sourceField] of Object.entries(column_mapping)) {
+          if (!sourceField) continue;
+          
+          // 检查是否是复合字段的子字段
+          if (typeof sourceField === 'string' && sourceField.includes('_part_')) {
+            const match = sourceField.match(/^(.+)_part_(\d+)$/);
+            if (match && composite_fields[match[1]]) {
+              const parentCol = match[1];
+              const partIndex = parseInt(match[2]) - 1;
+              const separator = composite_fields[parentCol].separator || ',';
+              
+              const parentValue = record[parentCol] || '';
+              const parts = parentValue.split(separator).map((p: string) => p.trim());
+              
+              if (parts[partIndex]) {
+                customerData[systemField] = parts[partIndex];
+              }
+            }
+          } else {
+            // 普通字段
+            customerData[systemField] = record[sourceField as string] || '';
+          }
+        }
+        
+        const name = customerData.name || '';
+        const phone = customerData.phone || '';
         
         // 跳过空行
         if (!name && !phone) {
@@ -251,19 +443,22 @@ export const importWithMapping = async (req: any, res: Response) => {
           continue;
         }
         
-        // 提取其他字段
-        const email = column_mapping.email ? record[column_mapping.email] || '' : '';
-        const company = column_mapping.company ? record[column_mapping.company] || '' : '';
-        const address = column_mapping.address ? record[column_mapping.address] || '' : '';
-        const notes = column_mapping.notes ? record[column_mapping.notes] || '' : '';
-        const status = column_mapping.status ? record[column_mapping.status] || 'pending' : 'pending';
-        const priority = column_mapping.priority ? parseInt(record[column_mapping.priority]) || 1 : 1;
-        
         // 插入数据
         await query(
           `INSERT INTO customers (name, phone, email, company, address, notes, status, priority, data_source, imported_by, created_at, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, datetime('now'), datetime('now'))`,
-          [name, phone, email, company, address, notes, status, priority, data_source, adminId]
+          [
+            name, 
+            phone, 
+            customerData.email || '', 
+            customerData.company || '', 
+            customerData.address || '', 
+            customerData.notes || '', 
+            customerData.status || 'pending', 
+            customerData.priority || 1, 
+            data_source, 
+            adminId
+          ]
         );
         imported++;
       } catch (err) {
