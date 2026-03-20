@@ -30,17 +30,30 @@ fun LoginScreen(
     val error by viewModel.error
     val savedServerUrl by viewModel.savedServerUrl
     val savedUsername by viewModel.savedUsername
+    val isLoggedIn by viewModel.isLoggedIn
 
-    var serverUrl by remember { mutableStateOf(savedServerUrl ?: "http://10.0.2.2:8081/api/") }
-    var username by remember { mutableStateOf(savedUsername ?: "") }
+    var serverUrl by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
 
     val focusManager = LocalFocusManager.current
 
+    // 初始化保存的服务器地址和用户名
+    LaunchedEffect(savedServerUrl, savedUsername) {
+        if (savedServerUrl.isNotBlank()) {
+            serverUrl = savedServerUrl
+        } else {
+            serverUrl = "http://10.0.2.2:8081/api/"
+        }
+        if (savedUsername.isNotBlank()) {
+            username = savedUsername
+        }
+    }
+
     // 监听登录状态
-    LaunchedEffect(viewModel.isLoggedIn.value) {
-        if (viewModel.isLoggedIn.value) {
+    LaunchedEffect(isLoggedIn) {
+        if (isLoggedIn) {
             onLoginSuccess()
         }
     }
@@ -91,6 +104,12 @@ fun LoginScreen(
                 modifier = Modifier.fillMaxWidth(),
                 leadingIcon = {
                     Icon(Icons.Default.Cloud, contentDescription = null)
+                },
+                isError = serverUrl.isNotBlank() && !isValidUrl(serverUrl),
+                supportingText = {
+                    if (serverUrl.isNotBlank() && !isValidUrl(serverUrl)) {
+                        Text("请输入有效的服务器地址")
+                    }
                 },
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Uri,
@@ -150,7 +169,7 @@ fun LoginScreen(
                 keyboardActions = KeyboardActions(
                     onDone = {
                         focusManager.clearFocus()
-                        if (username.isNotBlank() && password.isNotBlank() && serverUrl.isNotBlank()) {
+                        if (validateInput(serverUrl, username, password)) {
                             viewModel.login(username, password, serverUrl)
                         }
                     }
@@ -160,11 +179,31 @@ fun LoginScreen(
             // 错误提示
             if (error != null) {
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = error!!,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall
-                )
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Error,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = error!!,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -178,7 +217,7 @@ fun LoginScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp),
-                enabled = !isLoading && username.isNotBlank() && password.isNotBlank() && serverUrl.isNotBlank()
+                enabled = !isLoading && validateInput(serverUrl, username, password)
             ) {
                 if (isLoading) {
                     CircularProgressIndicator(
@@ -186,24 +225,81 @@ fun LoginScreen(
                         color = MaterialTheme.colorScheme.onPrimary
                     )
                 } else {
+                    Icon(
+                        Icons.Default.Login,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text("登录")
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             // 提示信息
-            Text(
-                text = "提示：Android 模拟器访问本机服务使用 10.0.2.2",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Text(
-                text = "默认账号：admin / admin123",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "连接提示",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "• Android 模拟器访问本机：10.0.2.2",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "• 真机访问：使用电脑局域网 IP",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "• 默认账号：admin / admin123",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
         }
     }
+}
+
+/**
+ * 验证 URL 格式
+ */
+private fun isValidUrl(url: String): Boolean {
+    return try {
+        val uri = java.net.URI.create(url)
+        uri.scheme != null && uri.host != null
+    } catch (e: Exception) {
+        false
+    }
+}
+
+/**
+ * 验证输入
+ */
+private fun validateInput(serverUrl: String, username: String, password: String): Boolean {
+    return serverUrl.isNotBlank() && 
+           username.isNotBlank() && 
+           password.isNotBlank() &&
+           isValidUrl(serverUrl)
 }

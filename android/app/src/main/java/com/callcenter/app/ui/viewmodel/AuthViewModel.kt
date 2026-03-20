@@ -28,11 +28,11 @@ class AuthViewModel @Inject constructor(
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
-    private val _savedServerUrl = MutableStateFlow<String?>(null)
-    val savedServerUrl: StateFlow<String?> = _savedServerUrl.asStateFlow()
+    private val _savedServerUrl = MutableStateFlow("")
+    val savedServerUrl: StateFlow<String> = _savedServerUrl.asStateFlow()
 
-    private val _savedUsername = MutableStateFlow<String?>(null)
-    val savedUsername: StateFlow<String?> = _savedUsername.asStateFlow()
+    private val _savedUsername = MutableStateFlow("")
+    val savedUsername: StateFlow<String> = _savedUsername.asStateFlow()
 
     init {
         checkLoginState()
@@ -42,8 +42,8 @@ class AuthViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoggedIn.value = authRepository.isLoggedIn()
             _currentUser.value = authRepository.currentUser.value
-            _savedServerUrl.value = authRepository.getServerUrl()
-            _savedUsername.value = authRepository.getSavedUsername()
+            _savedServerUrl.value = authRepository.getServerUrl() ?: ""
+            _savedUsername.value = authRepository.getSavedUsername() ?: ""
         }
     }
 
@@ -61,7 +61,19 @@ class AuthViewModel @Inject constructor(
                     _error.value = null
                 },
                 onFailure = { exception ->
-                    _error.value = exception.message ?: "登录失败"
+                    _error.value = when {
+                        exception.message?.contains("Unable to resolve host") == true -> 
+                            "无法连接到服务器，请检查网络和服务器地址"
+                        exception.message?.contains("timeout") == true -> 
+                            "连接超时，请检查服务器地址是否正确"
+                        exception.message?.contains("401") == true -> 
+                            "用户名或密码错误"
+                        exception.message?.contains("403") == true -> 
+                            "没有权限访问"
+                        exception.message?.contains("404") == true -> 
+                            "服务器地址不存在，请检查 URL"
+                        else -> exception.message ?: "登录失败，请重试"
+                    }
                 }
             )
 
