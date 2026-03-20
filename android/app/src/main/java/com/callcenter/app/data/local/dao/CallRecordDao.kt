@@ -8,13 +8,13 @@ import kotlinx.coroutines.flow.Flow
 interface CallRecordDao {
 
     @Query("SELECT * FROM call_records ORDER BY createdAt DESC")
-    fun getAllRecords(): Flow<List<CallRecordEntity>>
+    suspend fun getAllRecords(): List<CallRecordEntity>
 
     @Query("SELECT * FROM call_records WHERE customerId = :customerId ORDER BY createdAt DESC")
-    fun getRecordsByCustomer(customerId: Int): Flow<List<CallRecordEntity>>
+    suspend fun getRecordsByCustomer(customerId: Int): List<CallRecordEntity>
 
     @Query("SELECT * FROM call_records WHERE agentId = :agentId ORDER BY createdAt DESC")
-    fun getRecordsByAgent(agentId: Int): Flow<List<CallRecordEntity>>
+    suspend fun getRecordsByAgent(agentId: Int): List<CallRecordEntity>
 
     @Query("SELECT * FROM call_records WHERE id = :id")
     suspend fun getRecordById(id: Int): CallRecordEntity?
