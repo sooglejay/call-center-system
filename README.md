@@ -3,12 +3,21 @@
 <p align="center">
   <img src="https://img.shields.io/badge/React-18-blue?logo=react" alt="React 18">
   <img src="https://img.shields.io/badge/Node.js-20-green?logo=node.js" alt="Node.js 20">
+  <img src="https://img.shields.io/badge/Android-14-green?logo=android" alt="Android">
+  <img src="https://img.shields.io/badge/Kotlin-1.9-purple?logo=kotlin" alt="Kotlin">
   <img src="https://img.shields.io/badge/SQLite-3-blue?logo=sqlite" alt="SQLite">
-  <img src="https://img.shields.io/badge/Twilio-API-red?logo=twilio" alt="Twilio">
   <img src="https://img.shields.io/badge/License-MIT-yellow" alt="License">
 </p>
 
-一款基于 Web 的智能自动拨打电话客服销售系统，支持管理员和客服双角色，集成 Twilio 实现电话拨打、录音、语音信箱和短信通知等功能。
+一款智能自动拨打电话客服销售系统，包含 **Web 管理后台** 和 **Android 移动端 App**，支持管理员和客服双角色，实现电话拨打、录音、语音信箱和短信通知等功能。
+
+## 📱 多端支持
+
+| 平台 | 技术栈 | 目录 |
+|------|--------|------|
+| **Web 后台** | React 18 + Ant Design | `client/` |
+| **后端服务** | Node.js 20 + Express | `server/` |
+| **Android App** | Kotlin + Jetpack Compose | `android/` |
 
 ## ✨ 功能特性
 
@@ -18,8 +27,8 @@
 - 📋 **客户管理** - 导入/分配/按姓氏分组
 - 📝 **任务管理** - 创建任务，分配给客服
 - 📈 **统计分析** - 通话趋势、坐席绩效
-- ⚙️ **系统配置** - Twilio 集成设置
-- 🧪 **Twilio 测试** - 连接测试、短信测试、电话测试
+- ⚙️ **系统配置** - 系统设置
+- 🧪 **连接测试** - 短信测试、电话测试
 
 ### 客服功能
 - 🎯 **工作台** - 今日任务、待办列表
@@ -27,6 +36,13 @@
 - 💬 **通话记录** - 历史记录、客户沟通
 - 📊 **个人统计** - 绩效数据、通话统计
 - ⚙️ **设置** - 个人信息、偏好设置
+
+### Android App 特有功能
+- 📱 **移动办公** - 随时随地处理客户电话
+- 🔄 **自动拨号** - 按顺序自动拨打待联系客户
+- 📴 **离线支持** - 本地缓存客户数据，离线查看
+- 🔔 **后台运行** - 自动拨号在后台持续运行
+- 📝 **通话备注** - 记录通话结果
 
 ### 核心特性
 - ✅ 首次登录自动初始化数据库
@@ -86,6 +102,29 @@ cd client
 pnpm install
 pnpm dev    # http://localhost:8080
 ```
+
+### 方式三：Android App
+
+**前置要求：**
+- Android Studio Hedgehog (2023.1.1) 或更高版本
+- JDK 17
+- Android SDK 34
+
+```bash
+# 1. 用 Android Studio 打开 android 目录
+
+# 2. 等待 Gradle 同步完成
+
+# 3. 连接设备或启动模拟器
+
+# 4. 点击 Run 按钮
+```
+
+**服务器配置：**
+- 模拟器访问本机：`http://10.0.2.2:8081/api/`
+- 真机访问：`http://192.168.1.100:8081/api/`
+
+详见 [android/README.md](android/README.md)
 
 ---
 
