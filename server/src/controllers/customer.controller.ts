@@ -169,6 +169,69 @@ export const getCustomerById = async (req: Request, res: Response) => {
   }
 };
 
+// 手动创建客户
+export const createCustomer = async (req: any, res: Response) => {
+  try {
+    const { name, phone, email, company, address, notes, status, assigned_to } = req.body;
+    const createdBy = req.user.id;
+    
+    // 验证必填字段
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: '客户姓名不能为空' });
+    }
+    if (!phone || !phone.trim()) {
+      return res.status(400).json({ error: '电话号码不能为空' });
+    }
+    
+    // 检查电话是否已存在
+    const existingCustomer = await query('SELECT id FROM customers WHERE phone = $1', [phone.trim()]);
+    if (existingCustomer.rows.length > 0) {
+      return res.status(400).json({ error: '该电话号码已存在' });
+    }
+    
+    // 获取当前用户的数据权限类型
+    const userResult = await query('SELECT role, data_access_type FROM users WHERE id = $1', [createdBy]);
+    const dataAccessType = userResult.rows[0]?.data_access_type || 'real';
+    
+    // 插入客户数据
+    const result = await query(
+      `INSERT INTO customers (name, phone, email, company, address, notes, status, assigned_to, imported_by, data_source, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, datetime('now'), datetime('now'))
+       RETURNING *`,
+      [
+        name.trim(),
+        phone.trim(),
+        email?.trim() || null,
+        company?.trim() || null,
+        address?.trim() || null,
+        notes?.trim() || null,
+        status || 'pending',
+        assigned_to || null,
+        createdBy,
+        dataAccessType
+      ]
+    );
+    
+    // 获取分配客服名称
+    const users = await query('SELECT id, real_name FROM users');
+    const userMap = new Map(users.rows.map((u: any) => [u.id, u.real_name]));
+    
+    const newCustomer = {
+      ...result.rows[0],
+      imported_by_name: userMap.get(createdBy) || '',
+      assigned_to_name: assigned_to ? userMap.get(assigned_to) || '未分配' : '未分配'
+    };
+    
+    res.status(201).json({
+      message: '客户创建成功',
+      data: newCustomer
+    });
+  } catch (error) {
+    console.error('创建客户错误:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+};
+
 export const updateCustomer = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;

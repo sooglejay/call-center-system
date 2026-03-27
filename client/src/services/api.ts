@@ -78,6 +78,7 @@ export const customerApi = {
   getNameLetterStats: (unassigned_only?: boolean) => api.get('/customers/name-letter-stats', { params: { unassigned_only } }),
   getAgentCustomers: (params?: any) => api.get('/customers/agent/list', { params }),
   getCustomer: (id: number) => api.get(`/customers/${id}`),
+  createCustomer: (data: any) => api.post('/customers', data),
   updateCustomer: (id: number, data: any) => api.put(`/customers/${id}`, data),
   deleteCustomer: (id: number) => api.delete(`/customers/${id}`),
   importCustomers: (customers: any[], assigned_to?: number, data_source?: string) => 
