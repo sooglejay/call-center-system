@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Table, Button, Modal, Upload, message, Tabs, Select, Form, Input, Badge, Space, Tag, Radio, Divider, Typography, Alert, Card, Row, Col, Spin } from 'antd';
-import { UploadOutlined, CameraOutlined, UserAddOutlined, TeamOutlined, InfoCircleOutlined, DownloadOutlined } from '@ant-design/icons';
+import { UploadOutlined, CameraOutlined, UserAddOutlined, TeamOutlined, InfoCircleOutlined, DownloadOutlined, PlusOutlined } from '@ant-design/icons';
 import { customerApi, dataImportApi, userApi } from '../../services/api';
 import type { Customer, User } from '../../services/api';
 import * as XLSX from 'xlsx';
@@ -93,8 +93,10 @@ export default function CustomerManagement() {
   const [nameGroups, setNameGroups] = useState<Record<string, number>>({});
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
+  const [addModalVisible, setAddModalVisible] = useState(false);
   const [currentCustomer, setCurrentCustomer] = useState<Customer | null>(null);
   const [editForm] = Form.useForm();
+  const [addForm] = Form.useForm();
   const [importDataSource, setImportDataSource] = useState<'mock' | 'real'>('real');
 
   // CSV 预览相关状态
@@ -509,6 +511,13 @@ export default function CustomerManagement() {
               批量分配 ({selectedRowKeys.length})
             </Button>
           )}
+          <Button 
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => setAddModalVisible(true)}
+          >
+            手动添加客户
+          </Button>
           <Button 
             icon={<UploadOutlined />} 
             onClick={() => setImportGuideVisible(true)}
@@ -1218,6 +1227,125 @@ export default function CustomerManagement() {
             label="备注"
           >
             <Input.TextArea rows={3} placeholder="备注信息" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 手动添加客户弹窗 */}
+      <Modal
+        title="手动添加客户"
+        open={addModalVisible}
+        onOk={async () => {
+          try {
+            const values = await addForm.validateFields();
+            const response = await customerApi.createCustomer(values);
+            message.success('客户添加成功');
+            setAddModalVisible(false);
+            addForm.resetFields();
+            fetchCustomers();
+          } catch (error: any) {
+            if (error.response?.data?.error) {
+              message.error(error.response.data.error);
+            } else if (error.errorFields) {
+              // 表单验证错误，不需要额外提示
+            } else {
+              message.error('添加失败');
+            }
+          }
+        }}
+        onCancel={() => {
+          setAddModalVisible(false);
+          addForm.resetFields();
+        }}
+        width={600}
+        okText="添加"
+        cancelText="取消"
+      >
+        <Form form={addForm} layout="vertical">
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                name="name"
+                label="客户姓名"
+                rules={[{ required: true, message: '请输入客户姓名' }]}
+              >
+                <Input placeholder="请输入客户姓名" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                name="phone"
+                label="联系电话"
+                rules={[
+                  { required: true, message: '请输入联系电话' },
+                  { pattern: /^1[3-9]\d{9}$/, message: '请输入有效的手机号码' }
+                ]}
+              >
+                <Input placeholder="请输入联系电话" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                name="email"
+                label="邮箱"
+                rules={[{ type: 'email', message: '请输入有效的邮箱地址' }]}
+              >
+                <Input placeholder="请输入邮箱" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                name="company"
+                label="公司名称"
+              >
+                <Input placeholder="请输入公司名称" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item
+            name="address"
+            label="联系地址"
+          >
+            <Input.TextArea rows={2} placeholder="请输入联系地址" />
+          </Form.Item>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                name="status"
+                label="客户状态"
+                initialValue="pending"
+              >
+                <Select placeholder="选择状态">
+                  <Select.Option value="pending">待跟进</Select.Option>
+                  <Select.Option value="contacted">已联系</Select.Option>
+                  <Select.Option value="interested">有意向</Select.Option>
+                  <Select.Option value="converted">已转化</Select.Option>
+                  <Select.Option value="not_interested">无意向</Select.Option>
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                name="assigned_to"
+                label="分配客服"
+              >
+                <Select placeholder="选择客服（可选）" allowClear>
+                  {agents.map(agent => (
+                    <Select.Option key={agent.id} value={agent.id}>
+                      {agent.real_name}
+                    </Select.Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item
+            name="notes"
+            label="备注"
+          >
+            <Input.TextArea rows={3} placeholder="请输入备注信息" />
           </Form.Item>
         </Form>
       </Modal>
