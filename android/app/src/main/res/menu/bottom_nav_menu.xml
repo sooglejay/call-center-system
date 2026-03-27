@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/nav_customers"
+        android:icon="@android:drawable/ic_menu_myplaces"
+        android:title="客户列表" />
+    <item
+        android:id="@+id/nav_dialer"
+        android:icon="@android:drawable/ic_menu_call"
+        android:title="拨号" />
+    <item
+        android:id="@+id/nav_records"
+        android:icon="@android:drawable/ic_menu_recent_history"
+        android:title="通话记录" />
+    <item
+        android:id="@+id/nav_profile"
+        android:icon="@android:drawable/ic_menu_manage"
+        android:title="我的" />
+</menu>
