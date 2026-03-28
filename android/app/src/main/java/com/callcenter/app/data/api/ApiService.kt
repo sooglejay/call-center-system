@@ -36,6 +36,70 @@ interface ApiService {
     @PUT("auth/password")
     suspend fun changePassword(@Body map: Map<String, String>): Response<ApiResponse<Unit>>
 
+    // ==================== 用户/客服管理 ====================
+    
+    /**
+     * 获取用户列表（管理员）
+     */
+    @GET("users")
+    suspend fun getUsers(
+        @Query("role") role: String? = null,
+        @Query("status") status: String? = null,
+        @Query("page") page: Int = 1,
+        @Query("pageSize") pageSize: Int = 20
+    ): Response<UserListResponse>
+
+    /**
+     * 获取单个用户
+     */
+    @GET("users/{id}")
+    suspend fun getUser(@Path("id") id: Int): Response<User>
+
+    /**
+     * 创建用户（管理员）
+     */
+    @POST("users")
+    suspend fun createUser(@Body request: CreateUserRequest): Response<User>
+
+    /**
+     * 更新用户（管理员）
+     */
+    @PUT("users/{id}")
+    suspend fun updateUser(
+        @Path("id") id: Int,
+        @Body user: User
+    ): Response<User>
+
+    /**
+     * 删除用户（管理员）
+     */
+    @DELETE("users/{id}")
+    suspend fun deleteUser(@Path("id") id: Int): Response<ApiResponse<Unit>>
+
+    /**
+     * 重置用户密码（管理员）
+     */
+    @POST("users/{id}/reset-password")
+    suspend fun resetPassword(
+        @Path("id") id: Int,
+        @Body request: ResetPasswordRequest
+    ): Response<ApiResponse<Unit>>
+
+    /**
+     * 更新用户数据权限
+     */
+    @PUT("users/{id}/data-access")
+    suspend fun updateDataAccess(
+        @Path("id") id: Int,
+        @Body request: UpdateDataAccessRequest
+    ): Response<User>
+
+    /**
+     * 获取客服列表
+     */
+    @GET("users/agents")
+    suspend fun getAgents(): Response<List<User>>
+
     // ==================== 客户管理 ====================
     
     /**
@@ -59,6 +123,12 @@ interface ApiService {
     suspend fun getCustomer(@Path("id") id: Int): Response<Customer>
 
     /**
+     * 创建客户（管理员）
+     */
+    @POST("customers")
+    suspend fun createCustomer(@Body customer: Customer): Response<Customer>
+
+    /**
      * 更新客户信息
      */
     @PUT("customers/{id}")
@@ -68,6 +138,12 @@ interface ApiService {
     ): Response<Customer>
 
     /**
+     * 删除客户（管理员）
+     */
+    @DELETE("customers/{id}")
+    suspend fun deleteCustomer(@Path("id") id: Int): Response<ApiResponse<Unit>>
+
+    /**
      * 更新客户状态
      */
     @PATCH("customers/{id}/status")
@@ -75,6 +151,14 @@ interface ApiService {
         @Path("id") id: Int,
         @Body request: UpdateCustomerStatusRequest
     ): Response<Customer>
+
+    /**
+     * 批量分配客服
+     */
+    @POST("customers/batch-assign")
+    suspend fun batchAssignCustomers(
+        @Body request: BatchAssignRequest
+    ): Response<BatchAssignResponse>
 
     /**
      * 获取待拨打客户列表
@@ -90,6 +174,23 @@ interface ApiService {
     @GET("customers/next")
     suspend fun getNextCustomer(): Response<Customer?>
 
+    /**
+     * 按姓氏首字母获取客户
+     */
+    @GET("customers/by-name-letter")
+    suspend fun getCustomersByNameLetter(
+        @Query("letters") letters: String? = null,
+        @Query("unassigned_only") unassignedOnly: Boolean = false
+    ): Response<CustomerLetterGroupResponse>
+
+    /**
+     * 获取姓氏首字母统计
+     */
+    @GET("customers/name-letter-stats")
+    suspend fun getNameLetterStats(
+        @Query("unassigned_only") unassignedOnly: Boolean = false
+    ): Response<Map<String, Int>>
+
     // ==================== 通话记录 ====================
     
     /**
@@ -100,7 +201,10 @@ interface ApiService {
         @Query("page") page: Int = 1,
         @Query("pageSize") pageSize: Int = 20,
         @Query("customer_id") customerId: Int? = null,
-        @Query("agent_id") agentId: Int? = null
+        @Query("agent_id") agentId: Int? = null,
+        @Query("status") status: String? = null,
+        @Query("start_date") startDate: String? = null,
+        @Query("end_date") endDate: String? = null
     ): Response<CallRecordListResponse>
 
     /**
@@ -144,13 +248,25 @@ interface ApiService {
         @Query("pageSize") pageSize: Int = 20,
         @Query("status") status: String? = null,
         @Query("assigned_to") assignedTo: Int? = null
-    ): Response<List<Task>>
+    ): Response<TaskListResponse>
+
+    /**
+     * 获取我的任务
+     */
+    @GET("tasks/my/list")
+    suspend fun getMyTasks(): Response<List<Task>>
+
+    /**
+     * 获取任务详情
+     */
+    @GET("tasks/{id}")
+    suspend fun getTask(@Path("id") id: Int): Response<Task>
 
     /**
      * 创建任务
      */
     @POST("tasks")
-    suspend fun createTask(@Body task: Task): Response<Task>
+    suspend fun createTask(@Body task: CreateTaskRequest): Response<Task>
 
     /**
      * 更新任务
@@ -170,10 +286,16 @@ interface ApiService {
     // ==================== 统计数据 ====================
     
     /**
-     * 获取仪表盘统计数据
+     * 获取仪表盘统计数据（管理员）
      */
     @GET("stats/dashboard")
-    suspend fun getDashboardStats(): Response<Stats>
+    suspend fun getDashboardStats(): Response<DashboardStats>
+
+    /**
+     * 获取我的统计数据
+     */
+    @GET("stats/my")
+    suspend fun getMyStats(): Response<Stats>
 
     /**
      * 获取客服统计数据
@@ -181,11 +303,12 @@ interface ApiService {
     @GET("stats/agent/{agentId}")
     suspend fun getAgentStats(@Path("agentId") agentId: Int): Response<Stats>
 
-    // ==================== 用户管理 ====================
-    
     /**
-     * 获取客服列表
+     * 获取客服排行榜
      */
-    @GET("users/agents")
-    suspend fun getAgents(): Response<List<User>>
+    @GET("stats/ranking")
+    suspend fun getAgentRanking(
+        @Query("period") period: String = "today",
+        @Query("limit") limit: Int = 10
+    ): Response<List<AgentRanking>>
 }

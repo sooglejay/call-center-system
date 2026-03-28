@@ -4,7 +4,9 @@ import { query } from '../config/database';
 
 export const getUsers = async (req: Request, res: Response) => {
   try {
-    const { role, status, search } = req.query;
+    const { role, status, search, page = 1, pageSize = 20 } = req.query;
+    const offset = (parseInt(page as string) - 1) * parseInt(pageSize as string);
+    
     let sql = 'SELECT id, username, real_name, role, phone, email, status, data_access_type, created_at FROM users WHERE 1=1';
     const params: any[] = [];
     
@@ -19,15 +21,29 @@ export const getUsers = async (req: Request, res: Response) => {
     }
     
     if (search) {
-      // SQLite 使用 LIKE（默认大小写不敏感）
       sql += ` AND (username LIKE $${params.length + 1} OR real_name LIKE $${params.length + 1})`;
       params.push(`%${search}%`);
     }
     
+    // 获取总数
+    const countResult = await query(`SELECT COUNT(*) as count FROM (${sql}) as t`, params);
+    const total = countResult.rows[0]?.count || 0;
+    
+    // 添加分页
     sql += ' ORDER BY created_at DESC';
+    sql += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    params.push(parseInt(pageSize as string));
+    params.push(offset);
     
     const result = await query(sql, params);
-    res.json(result.rows);
+    
+    res.json({
+      data: result.rows,
+      total: parseInt(total.toString()),
+      page: parseInt(page as string),
+      page_size: parseInt(pageSize as string),
+      total_pages: Math.ceil(parseInt(total.toString()) / parseInt(pageSize as string))
+    });
   } catch (error) {
     console.error('获取用户列表错误:', error);
     res.status(500).json({ error: '服务器错误' });

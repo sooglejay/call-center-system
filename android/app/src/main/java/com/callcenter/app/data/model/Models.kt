@@ -145,12 +145,33 @@ data class Stats(
     val totalDuration: Int,
     @SerializedName("successful_calls")
     val successfulCalls: Int,
+    @SerializedName("connected_calls")
+    val connectedCalls: Int = 0, // 兼容 Web 端字段名
     @SerializedName("failed_calls")
     val failedCalls: Int,
     @SerializedName("pending_customers")
     val pendingCustomers: Int,
     @SerializedName("completed_customers")
-    val completedCustomers: Int
+    val completedCustomers: Int,
+    @SerializedName("avg_duration")
+    val avgDuration: Int = 0,
+    @SerializedName("connection_rate")
+    val connectionRate: Double = 0.0,
+    // 扩展字段
+    @SerializedName("today_calls")
+    val todayCalls: Int = 0,
+    @SerializedName("today_duration")
+    val todayDuration: Int = 0,
+    @SerializedName("today_successful")
+    val todaySuccessful: Int = 0,
+    @SerializedName("week_calls")
+    val weekCalls: Int = 0,
+    @SerializedName("week_duration")
+    val weekDuration: Int = 0,
+    @SerializedName("month_calls")
+    val monthCalls: Int = 0,
+    @SerializedName("month_duration")
+    val monthDuration: Int = 0
 )
 
 /**
@@ -187,4 +208,204 @@ data class UpdateCustomerStatusRequest(
  */
 data class AddCallNoteRequest(
     val notes: String
+)
+
+// ==================== 用户/客服管理相关 ====================
+
+/**
+ * 用户列表响应
+ */
+data class UserListResponse(
+    val data: List<User>,
+    val total: Int,
+    val page: Int,
+    @SerializedName("page_size")
+    val pageSize: Int,
+    @SerializedName("total_pages")
+    val totalPages: Int
+)
+
+/**
+ * 创建用户请求
+ */
+data class CreateUserRequest(
+    val username: String,
+    val password: String,
+    @SerializedName("real_name")
+    val realName: String,
+    val role: String = "agent",
+    val phone: String? = null,
+    val email: String? = null,
+    @SerializedName("data_access_type")
+    val dataAccessType: String = "all"
+)
+
+/**
+ * 重置密码请求
+ */
+data class ResetPasswordRequest(
+    @SerializedName("new_password")
+    val newPassword: String? = null // 不传则使用默认密码
+)
+
+/**
+ * 更新数据权限请求
+ */
+data class UpdateDataAccessRequest(
+    @SerializedName("data_access_type")
+    val dataAccessType: String
+)
+
+// ==================== 任务管理相关 ====================
+
+/**
+ * 任务列表响应
+ */
+data class TaskListResponse(
+    val data: List<Task>,
+    val total: Int,
+    val page: Int,
+    @SerializedName("page_size")
+    val pageSize: Int,
+    @SerializedName("total_pages")
+    val totalPages: Int
+)
+
+/**
+ * 创建任务请求
+ */
+data class CreateTaskRequest(
+    val title: String,
+    val description: String? = null,
+    val priority: Int = 1,
+    @SerializedName("assigned_to")
+    val assignedTo: Int? = null,
+    @SerializedName("due_date")
+    val dueDate: String? = null,
+    @SerializedName("customer_ids")
+    val customerIds: List<Int>? = null // 关联的客户ID列表
+)
+
+// ==================== 统计相关 ====================
+
+/**
+ * 仪表盘统计数据（管理员）
+ */
+data class DashboardStats(
+    // Web 端字段
+    @SerializedName("total_customers")
+    val totalCustomers: Int,
+    @SerializedName("total_calls")
+    val totalCalls: Int,
+    @SerializedName("connection_rate")
+    val connectionRate: Double,
+    @SerializedName("active_agents")
+    val activeAgents: Int,
+    // Android 扩展字段
+    @SerializedName("today_calls")
+    val todayCalls: Int = 0,
+    @SerializedName("today_duration")
+    val todayDuration: Int = 0,
+    @SerializedName("today_success_rate")
+    val todaySuccessRate: Double = 0.0,
+    @SerializedName("pending_customers")
+    val pendingCustomers: Int = 0,
+    @SerializedName("total_agents")
+    val totalAgents: Int = 0,
+    @SerializedName("agent_ranking")
+    val agentRanking: List<AgentRanking> = emptyList(),
+    @SerializedName("recent_calls")
+    val recentCalls: List<CallRecord> = emptyList(),
+    @SerializedName("trend")
+    val trend: List<TrendData> = emptyList()
+)
+
+/**
+ * 趋势数据
+ */
+data class TrendData(
+    val date: String,
+    @SerializedName("total_calls")
+    val totalCalls: Int,
+    @SerializedName("connected_calls")
+    val connectedCalls: Int
+)
+
+/**
+ * 客服排行榜
+ */
+data class AgentRanking(
+    @SerializedName("agent_id")
+    val agentId: Int,
+    @SerializedName("agent_name")
+    val agentName: String,
+    @SerializedName("total_calls")
+    val totalCalls: Int,
+    @SerializedName("successful_calls")
+    val successfulCalls: Int = 0,
+    @SerializedName("connected_calls")
+    val connectedCalls: Int = 0, // 兼容 Web 端
+    @SerializedName("total_duration")
+    val totalDuration: Int,
+    @SerializedName("success_rate")
+    val successRate: Double = 0.0,
+    @SerializedName("connection_rate")
+    val connectionRate: Double = 0.0 // 兼容 Web 端
+)
+
+/**
+ * 客服详细统计
+ */
+data class AgentStats(
+    @SerializedName("agent_id")
+    val agentId: Int,
+    @SerializedName("agent_name")
+    val agentName: String,
+    @SerializedName("today_calls")
+    val todayCalls: Int,
+    @SerializedName("today_duration")
+    val todayDuration: Int,
+    @SerializedName("today_successful")
+    val todaySuccessful: Int,
+    @SerializedName("week_calls")
+    val weekCalls: Int,
+    @SerializedName("week_duration")
+    val weekDuration: Int,
+    @SerializedName("month_calls")
+    val monthCalls: Int,
+    @SerializedName("month_duration")
+    val monthDuration: Int,
+    @SerializedName("pending_customers")
+    val pendingCustomers: Int,
+    @SerializedName("completed_customers")
+    val completedCustomers: Int
+)
+
+// ==================== 批量操作相关 ====================
+
+/**
+ * 批量分配请求
+ */
+data class BatchAssignRequest(
+    @SerializedName("customer_ids")
+    val customerIds: List<Int>,
+    @SerializedName("assigned_to")
+    val assignedTo: Int
+)
+
+/**
+ * 批量分配响应
+ */
+data class BatchAssignResponse(
+    val success: Boolean,
+    @SerializedName("assigned_count")
+    val assignedCount: Int,
+    val message: String
+)
+
+/**
+ * 客户按首字母分组响应
+ */
+data class CustomerLetterGroupResponse(
+    val groups: Map<String, List<Customer>>
 )

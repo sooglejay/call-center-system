@@ -123,12 +123,10 @@ export const getCustomers = async (req: any, res: Response) => {
     
     res.json({
       data,
-      pagination: {
-        total,
-        page: parseInt(page as string),
-        pageSize: parseInt(pageSize as string),
-        totalPages: Math.ceil(total / parseInt(pageSize as string))
-      },
+      total,
+      page: parseInt(page as string),
+      page_size: parseInt(pageSize as string),
+      total_pages: Math.ceil(total / parseInt(pageSize as string)),
       name_groups: nameGroups
     });
   } catch (error) {
@@ -147,17 +145,38 @@ export const getCustomerById = async (req: Request, res: Response) => {
       return res.status(404).json({ error: '客户不存在' });
     }
     
-    // 获取导入人和分配客服名称
-    const users = await query('SELECT id, real_name FROM users');
-    const userMap = new Map(users.rows.map((u: any) => [u.id, u.real_name]));
+    const customer = result.rows[0];
+    
+    // 获取导入人和分配客服信息
+    const users = await query('SELECT id, username, real_name, role, phone, email, status, data_access_type FROM users');
+    const userMap = new Map(users.rows.map((u: any) => [u.id, u]));
     
     // 获取通话统计
     const calls = await query('SELECT * FROM calls WHERE customer_id = $1', [id]);
     
+    // 构建分配客服对象
+    let assignedAgent = null;
+    if (customer.assigned_to) {
+      const agent = userMap.get(customer.assigned_to);
+      if (agent) {
+        assignedAgent = {
+          id: agent.id,
+          username: agent.username,
+          real_name: agent.real_name,
+          role: agent.role,
+          phone: agent.phone,
+          email: agent.email,
+          status: agent.status,
+          data_access_type: agent.data_access_type
+        };
+      }
+    }
+    
     res.json({
-      ...result.rows[0],
-      imported_by_name: userMap.get(result.rows[0].imported_by) || '',
-      assigned_to_name: userMap.get(result.rows[0].assigned_to) || '未分配',
+      ...customer,
+      imported_by_name: userMap.get(customer.imported_by)?.real_name || '',
+      assigned_to_name: assignedAgent?.real_name || '未分配',
+      assigned_agent: assignedAgent,
       call_count: calls.rows.length,
       last_call_time: calls.rows.length > 0 
         ? calls.rows.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0].created_at

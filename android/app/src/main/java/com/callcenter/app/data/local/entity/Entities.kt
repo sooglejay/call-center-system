@@ -62,3 +62,38 @@ data class AutoDialConfigEntity(
     val pauseAfterCall: Boolean = true,
     val pauseDuration: Int = 5
 )
+
+/**
+ * 任务实体
+ */
+@Entity(tableName = "tasks")
+data class TaskEntity(
+    @PrimaryKey
+    val id: Int,
+    val title: String,
+    val description: String? = null,
+    val status: String = "pending",
+    val priority: Int = 1,
+    val assignedTo: Int? = null,
+    val dueDate: String? = null,
+    val createdAt: String? = null,
+    val updatedAt: String? = null,
+    val syncStatus: String = "synced"
+)
+
+/**
+ * 用户实体
+ */
+@Entity(tableName = "users")
+data class UserEntity(
+    @PrimaryKey
+    val id: Int,
+    val username: String,
+    val realName: String,
+    val role: String,
+    val phone: String? = null,
+    val email: String? = null,
+    val avatarUrl: String? = null,
+    val dataAccessType: String? = "all",
+    val syncStatus: String = "synced"
+)
