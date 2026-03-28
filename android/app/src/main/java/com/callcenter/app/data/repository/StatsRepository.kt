@@ -41,14 +41,14 @@ class StatsRepository @Inject constructor(
     private suspend fun getLocalStats(): Result<Stats> {
         return try {
             // 这里可以基于本地数据库计算统计数据
-            val callRecords = callRecordDao.getAllCallRecords()
+            val callRecords = callRecordDao.getAllRecords()
             val customers = customerDao.getAllCustomers()
 
             val totalCalls = callRecords.size
-            val successfulCalls = callRecords.count { it.status == "completed" }
-            val totalDuration = callRecords.sumOf { it.duration }
-            val pendingCustomers = customers.count { it.status == "pending" }
-            val completedCustomers = customers.count { it.status == "completed" }
+            val successfulCalls = callRecords.count { record -> record.status == "completed" }
+            val totalDuration = callRecords.sumOf { record -> record.duration }
+            val pendingCustomers = customers.count { customer -> customer.status == "pending" }
+            val completedCustomers = customers.count { customer -> customer.status == "completed" }
 
             Result.success(
                 Stats(

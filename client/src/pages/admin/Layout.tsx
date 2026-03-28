@@ -11,7 +11,9 @@ import {
   LogoutOutlined,
   DownOutlined,
   PhoneOutlined,
-  DatabaseOutlined
+  DatabaseOutlined,
+  QuestionCircleOutlined,
+  MobileOutlined
 } from '@ant-design/icons';
 import { useAuthStore } from '../../stores';
 
@@ -38,18 +40,22 @@ export default function AdminLayout() {
     { key: '/admin/tasks', icon: <FileTextOutlined />, label: '任务分配' },
     { key: '/admin/stats', icon: <BarChartOutlined />, label: '监控统计' },
     { key: '/admin/data-permission', icon: <DatabaseOutlined />, label: '数据权限' },
+    { key: '/admin/version', icon: <MobileOutlined />, label: 'App版本' },
     { key: '/admin/config', icon: <SettingOutlined />, label: '系统配置' },
     { key: '/admin/twilio-test', icon: <PhoneOutlined />, label: 'Twilio测试' },
   ];
 
   const userMenuItems = [
     { key: 'profile', label: '个人设置' },
+    { key: 'help', label: '使用说明', icon: <QuestionCircleOutlined /> },
     { key: 'logout', label: '退出登录', icon: <LogoutOutlined />, danger: true }
   ];
 
   const handleUserMenuClick = ({ key }: { key: string }) => {
     if (key === 'logout') {
       handleLogout();
+    } else if (key === 'help') {
+      window.open('/help', '_blank');
     }
   };
 

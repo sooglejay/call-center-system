@@ -63,7 +63,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     private suspend fun loadStats() {
-        val result = statsRepository.getDashboardStats()
+        val result = statsRepository.getMyStats()
         result.fold(
             onSuccess = { stats ->
                 _stats.value = stats

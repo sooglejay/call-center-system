@@ -29,6 +29,7 @@ import com.callcenter.app.ui.viewmodel.TaskListViewModel
 fun TaskListScreen(
     onNavigateBack: () -> Unit,
     onCreateTask: () -> Unit,
+    onTaskClick: (Int) -> Unit,
     viewModel: TaskListViewModel = hiltViewModel()
 ) {
     val tasks by viewModel.tasks.collectAsState()
@@ -181,7 +182,7 @@ fun TaskListScreen(
                         items(filteredTasks, key = { it.id }) { task ->
                             TaskListItem(
                                 task = task,
-                                onClick = { /* TODO: 跳转任务详情 */ }
+                                onClick = { onTaskClick(task.id) }
                             )
                         }
                     }
@@ -293,7 +294,7 @@ private fun TaskListItem(
                         .size(32.dp)
                         .clip(CircleShape)
                         .background(
-                            when (task.priority) {
+                            when (task.getPriorityValue()) {
                                 3 -> Color(0xFFE91E63)
                                 2 -> Color(0xFFFF9800)
                                 else -> Color(0xFF4CAF50)
@@ -302,7 +303,7 @@ private fun TaskListItem(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "P${task.priority}",
+                        text = "P${task.getPriorityValue()}",
                         style = MaterialTheme.typography.labelSmall,
                         color = Color.White,
                         fontWeight = FontWeight.Bold

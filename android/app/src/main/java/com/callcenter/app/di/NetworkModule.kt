@@ -4,6 +4,7 @@ import android.content.Context
 import com.callcenter.app.BuildConfig
 import com.callcenter.app.data.api.ApiService
 import com.callcenter.app.data.local.preferences.TokenManager
+import com.callcenter.app.data.local.preferences.UserPreferences
 import com.callcenter.app.util.Constants
 import dagger.Module
 import dagger.Provides
@@ -58,6 +59,12 @@ object NetworkModule {
     @Singleton
     fun provideTokenManager(@ApplicationContext context: Context): TokenManager {
         return TokenManager(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideUserPreferences(@ApplicationContext context: Context): UserPreferences {
+        return UserPreferences(context)
     }
 
     @Provides

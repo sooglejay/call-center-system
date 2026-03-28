@@ -2,6 +2,7 @@ package com.callcenter.app.data.repository
 
 import com.callcenter.app.data.api.ApiService
 import com.callcenter.app.data.local.dao.TaskDao
+import com.callcenter.app.data.local.entity.TaskEntity
 import com.callcenter.app.data.model.*
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -14,6 +15,40 @@ class TaskRepository @Inject constructor(
     private val apiService: ApiService,
     private val taskDao: TaskDao
 ) {
+
+    /**
+     * 将 TaskEntity 转换为 Task
+     */
+    private fun TaskEntity.toTask(): Task {
+        return Task(
+            id = this.id,
+            title = this.title,
+            description = this.description,
+            status = this.status,
+            priority = this.priority,
+            assignedTo = this.assignedTo,
+            dueDate = this.dueDate,
+            createdAt = this.createdAt,
+            updatedAt = this.updatedAt
+        )
+    }
+
+    /**
+     * 将 Task 转换为 TaskEntity
+     */
+    private fun Task.toEntity(): TaskEntity {
+        return TaskEntity(
+            id = this.id,
+            title = this.title,
+            description = this.description,
+            status = this.status,
+            priority = this.priority,
+            assignedTo = this.assignedTo,
+            dueDate = this.dueDate,
+            createdAt = this.createdAt,
+            updatedAt = this.updatedAt
+        )
+    }
 
     /**
      * 获取任务列表
@@ -34,18 +69,18 @@ class TaskRepository @Inject constructor(
             if (response.isSuccessful && response.body() != null) {
                 val tasks = response.body()!!.data
                 // 缓存到本地
-                taskDao.insertTasks(tasks)
+                taskDao.insertTasks(tasks.map { it.toEntity() })
                 Result.success(tasks)
             } else {
                 // 从本地获取
                 val localTasks = taskDao.getAllTasks()
-                Result.success(localTasks)
+                Result.success(localTasks.map { it.toTask() })
             }
         } catch (e: Exception) {
             // 网络异常，从本地获取
             val localTasks = taskDao.getAllTasks()
             if (localTasks.isNotEmpty()) {
-                Result.success(localTasks)
+                Result.success(localTasks.map { it.toTask() })
             } else {
                 Result.failure(e)
             }
@@ -79,7 +114,7 @@ class TaskRepository @Inject constructor(
             } else {
                 val localTask = taskDao.getTaskById(taskId)
                 if (localTask != null) {
-                    Result.success(localTask)
+                    Result.success(localTask.toTask())
                 } else {
                     Result.failure(Exception("任务不存在"))
                 }
@@ -87,7 +122,7 @@ class TaskRepository @Inject constructor(
         } catch (e: Exception) {
             val localTask = taskDao.getTaskById(taskId)
             if (localTask != null) {
-                Result.success(localTask)
+                Result.success(localTask.toTask())
             } else {
                 Result.failure(e)
             }
@@ -102,7 +137,7 @@ class TaskRepository @Inject constructor(
             val response = apiService.createTask(request)
             if (response.isSuccessful && response.body() != null) {
                 val task = response.body()!!
-                taskDao.insertTask(task)
+                taskDao.insertTask(task.toEntity())
                 Result.success(task)
             } else {
                 val errorMsg = response.errorBody()?.string() ?: "创建任务失败"
@@ -121,7 +156,7 @@ class TaskRepository @Inject constructor(
             val response = apiService.updateTask(taskId, task)
             if (response.isSuccessful && response.body() != null) {
                 val updatedTask = response.body()!!
-                taskDao.insertTask(updatedTask)
+                taskDao.insertTask(updatedTask.toEntity())
                 Result.success(updatedTask)
             } else {
                 val errorMsg = response.errorBody()?.string() ?: "更新任务失败"

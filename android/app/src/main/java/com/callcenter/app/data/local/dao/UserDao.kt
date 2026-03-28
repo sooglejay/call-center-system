@@ -13,7 +13,7 @@ interface UserDao {
     @Query("SELECT * FROM users ORDER BY id ASC")
     suspend fun getAllUsers(): List<UserEntity>
 
-    @Query("SELECT * FROM users WHERE role = :role ORDER BY real_name ASC")
+    @Query("SELECT * FROM users WHERE role = :role ORDER BY realName ASC")
     suspend fun getUsersByRole(role: String): List<UserEntity>
 
     @Query("SELECT * FROM users WHERE id = :userId")
@@ -43,6 +43,6 @@ interface UserDao {
     @Query("SELECT COUNT(*) FROM users WHERE role = 'agent'")
     fun getAgentCount(): Flow<Int>
 
-    @Query("SELECT COUNT(*) FROM users WHERE data_access_type != 'disabled'")
+    @Query("SELECT COUNT(*) FROM users WHERE dataAccessType != 'disabled'")
     fun getActiveUserCount(): Flow<Int>
 }

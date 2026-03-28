@@ -10,11 +10,13 @@ import Stats from './pages/admin/Stats';
 import SystemConfig from './pages/admin/SystemConfig';
 import TwilioTest from './pages/admin/TwilioTest';
 import DataPermission from './pages/admin/DataPermission';
+import VersionManagement from './pages/admin/VersionManagement';
 import AgentDashboard from './pages/agent/Dashboard';
 import CallList from './pages/agent/CallList';
 import CommunicationRecords from './pages/agent/CommunicationRecords';
 import MyStats from './pages/agent/MyStats';
 import Settings from './pages/agent/Settings';
+import HelpDocumentation from './pages/HelpDocumentation';
 import PrivateRoute, { getAuth } from './components/PrivateRoute';
 
 // 获取基础路径（子路径部署时使用）
@@ -50,6 +52,9 @@ function App() {
               <LoginPage />
           } 
         />
+
+        {/* 帮助文档 - 公开访问 */}
+        <Route path="/help" element={<HelpDocumentation />} />
         
         {/* 管理员路由 - 使用 /admin 前缀 */}
         <Route 
@@ -69,6 +74,7 @@ function App() {
           <Route path="config" element={<SystemConfig />} />
           <Route path="twilio-test" element={<TwilioTest />} />
           <Route path="data-permission" element={<DataPermission />} />
+          <Route path="version" element={<VersionManagement />} />
         </Route>
 
         {/* 客服路由 - 使用 /agent 前缀 */}

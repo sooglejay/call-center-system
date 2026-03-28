@@ -171,7 +171,7 @@ fun LoginScreen(
                     onDone = {
                         focusManager.clearFocus()
                         if (validateInput(serverUrl, username, password)) {
-                            viewModel.login(username, password, serverUrl)
+                            viewModel.login(username.trim(), password.trim(), serverUrl.trim())
                         }
                     }
                 )
@@ -213,7 +213,7 @@ fun LoginScreen(
             Button(
                 onClick = {
                     focusManager.clearFocus()
-                    viewModel.login(username, password, serverUrl)
+                    viewModel.login(username.trim(), password.trim(), serverUrl.trim())
                 },
                 modifier = Modifier
                     .fillMaxWidth()

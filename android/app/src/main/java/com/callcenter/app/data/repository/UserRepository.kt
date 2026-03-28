@@ -2,8 +2,9 @@ package com.callcenter.app.data.repository
 
 import com.callcenter.app.data.api.ApiService
 import com.callcenter.app.data.local.dao.UserDao
+import com.callcenter.app.data.local.entity.UserEntity
 import com.callcenter.app.data.model.*
-import com.callcenter.app.data.preferences.UserPreferences
+import com.callcenter.app.data.local.preferences.UserPreferences
 import kotlinx.coroutines.flow.first
 import retrofit2.Response
 import javax.inject.Inject
@@ -18,6 +19,38 @@ class UserRepository @Inject constructor(
     private val userDao: UserDao,
     private val userPreferences: UserPreferences
 ) {
+
+    /**
+     * 将 UserEntity 转换为 User
+     */
+    private fun UserEntity.toUser(): User {
+        return User(
+            id = this.id,
+            username = this.username,
+            realName = this.realName,
+            role = this.role,
+            phone = this.phone,
+            email = this.email,
+            avatarUrl = this.avatarUrl,
+            dataAccessType = this.dataAccessType
+        )
+    }
+
+    /**
+     * 将 User 转换为 UserEntity
+     */
+    private fun User.toEntity(): UserEntity {
+        return UserEntity(
+            id = this.id,
+            username = this.username,
+            realName = this.realName,
+            role = this.role,
+            phone = this.phone,
+            email = this.email,
+            avatarUrl = this.avatarUrl,
+            dataAccessType = this.dataAccessType
+        )
+    }
 
     /**
      * 获取用户列表
@@ -38,7 +71,7 @@ class UserRepository @Inject constructor(
             if (response.isSuccessful && response.body() != null) {
                 val users = response.body()!!.data
                 // 缓存到本地
-                userDao.insertUsers(users)
+                userDao.insertUsers(users.map { it.toEntity() })
                 Result.success(users)
             } else {
                 // 从本地获取
@@ -46,7 +79,7 @@ class UserRepository @Inject constructor(
                 val filtered = if (role != null) {
                     localUsers.filter { it.role == role }
                 } else localUsers
-                Result.success(filtered)
+                Result.success(filtered.map { it.toUser() })
             }
         } catch (e: Exception) {
             // 网络异常，从本地获取
@@ -55,7 +88,7 @@ class UserRepository @Inject constructor(
                 localUsers.filter { it.role == role }
             } else localUsers
             if (filtered.isNotEmpty()) {
-                Result.success(filtered)
+                Result.success(filtered.map { it.toUser() })
             } else {
                 Result.failure(e)
             }
@@ -73,7 +106,7 @@ class UserRepository @Inject constructor(
             } else {
                 val localUser = userDao.getUserById(userId)
                 if (localUser != null) {
-                    Result.success(localUser)
+                    Result.success(localUser.toUser())
                 } else {
                     Result.failure(Exception("用户不存在"))
                 }
@@ -81,7 +114,7 @@ class UserRepository @Inject constructor(
         } catch (e: Exception) {
             val localUser = userDao.getUserById(userId)
             if (localUser != null) {
-                Result.success(localUser)
+                Result.success(localUser.toUser())
             } else {
                 Result.failure(e)
             }
@@ -96,7 +129,7 @@ class UserRepository @Inject constructor(
             val response = apiService.createUser(request)
             if (response.isSuccessful && response.body() != null) {
                 val user = response.body()!!
-                userDao.insertUser(user)
+                userDao.insertUser(user.toEntity())
                 Result.success(user)
             } else {
                 val errorMsg = response.errorBody()?.string() ?: "创建用户失败"
@@ -115,7 +148,7 @@ class UserRepository @Inject constructor(
             val response = apiService.updateUser(userId, user)
             if (response.isSuccessful && response.body() != null) {
                 val updatedUser = response.body()!!
-                userDao.insertUser(updatedUser)
+                userDao.insertUser(updatedUser.toEntity())
                 Result.success(updatedUser)
             } else {
                 val errorMsg = response.errorBody()?.string() ?: "更新用户失败"
@@ -168,7 +201,8 @@ class UserRepository @Inject constructor(
         return try {
             val response = apiService.updateDataAccess(userId, UpdateDataAccessRequest(dataAccessType))
             if (response.isSuccessful && response.body() != null) {
-                userDao.insertUser(response.body()!!)
+                val user = response.body()!!
+                userDao.insertUser(user.toEntity())
                 Result.success(Unit)
             } else {
                 val errorMsg = response.errorBody()?.string() ?: "更新权限失败"
@@ -190,12 +224,12 @@ class UserRepository @Inject constructor(
             } else {
                 // 从本地过滤
                 val localAgents = userDao.getAllUsers().filter { it.role == "agent" }
-                Result.success(localAgents)
+                Result.success(localAgents.map { it.toUser() })
             }
         } catch (e: Exception) {
             val localAgents = userDao.getAllUsers().filter { it.role == "agent" }
             if (localAgents.isNotEmpty()) {
-                Result.success(localAgents)
+                Result.success(localAgents.map { it.toUser() })
             } else {
                 Result.failure(e)
             }
@@ -205,7 +239,7 @@ class UserRepository @Inject constructor(
     /**
      * 获取客服统计数据
      */
-    suspend fun getAgentStats(agentId: Int): Result<AgentStats> {
+    suspend fun getAgentStats(agentId: Int): Result<Stats> {
         return try {
             val response = apiService.getAgentStats(agentId)
             if (response.isSuccessful && response.body() != null) {
@@ -213,16 +247,11 @@ class UserRepository @Inject constructor(
             } else {
                 // 返回空统计
                 Result.success(
-                    AgentStats(
-                        agentId = agentId,
-                        agentName = "",
-                        todayCalls = 0,
-                        todayDuration = 0,
-                        todaySuccessful = 0,
-                        weekCalls = 0,
-                        weekDuration = 0,
-                        monthCalls = 0,
-                        monthDuration = 0,
+                    Stats(
+                        totalCalls = 0,
+                        totalDuration = 0,
+                        successfulCalls = 0,
+                        failedCalls = 0,
                         pendingCustomers = 0,
                         completedCustomers = 0
                     )

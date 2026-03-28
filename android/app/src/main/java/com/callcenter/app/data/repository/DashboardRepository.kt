@@ -4,7 +4,7 @@ import com.callcenter.app.data.api.ApiService
 import com.callcenter.app.data.local.dao.CallRecordDao
 import com.callcenter.app.data.local.dao.CustomerDao
 import com.callcenter.app.data.model.DashboardStats
-import com.callcenter.app.data.preferences.UserPreferences
+import com.callcenter.app.data.local.preferences.UserPreferences
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -54,6 +54,8 @@ class DashboardRepository @Inject constructor(
                     totalCustomers = 0,
                     totalAgents = 0,
                     activeAgents = 0,
+                    totalCalls = 0,
+                    connectionRate = 0.0,
                     agentRanking = emptyList(),
                     recentCalls = emptyList()
                 )

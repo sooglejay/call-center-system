@@ -9,7 +9,8 @@ import {
   LogoutOutlined,
   DownOutlined,
   CustomerServiceOutlined,
-  AudioOutlined
+  AudioOutlined,
+  QuestionCircleOutlined
 } from '@ant-design/icons';
 import { useAuthStore } from '../../stores';
 
@@ -39,12 +40,15 @@ export default function AgentLayout() {
 
   const userMenuItems = [
     { key: 'profile', label: '个人设置' },
+    { key: 'help', label: '使用说明', icon: <QuestionCircleOutlined /> },
     { key: 'logout', label: '退出登录', icon: <LogoutOutlined />, danger: true }
   ];
 
   const handleUserMenuClick = ({ key }: { key: string }) => {
     if (key === 'logout') {
       handleLogout();
+    } else if (key === 'help') {
+      window.open('/help', '_blank');
     }
   };
 

@@ -2,7 +2,7 @@ package com.callcenter.app.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.callcenter.app.data.model.AgentStats
+import com.callcenter.app.data.model.Stats
 import com.callcenter.app.data.model.CreateUserRequest
 import com.callcenter.app.data.model.User
 import com.callcenter.app.data.repository.UserRepository
@@ -24,8 +24,8 @@ class AgentDetailViewModel @Inject constructor(
     private val _agent = MutableStateFlow<User?>(null)
     val agent: StateFlow<User?> = _agent.asStateFlow()
 
-    private val _stats = MutableStateFlow<AgentStats?>(null)
-    val stats: StateFlow<AgentStats?> = _stats.asStateFlow()
+    private val _stats = MutableStateFlow<Stats?>(null)
+    val stats: StateFlow<Stats?> = _stats.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
