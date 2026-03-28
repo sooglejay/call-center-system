@@ -181,7 +181,9 @@ export default function VersionManagement() {
       title: '版本号',
       dataIndex: 'version_code',
       key: 'version_code',
-      width: 100
+      width: 100,
+      sorter: (a: VersionInfo, b: VersionInfo) => b.version_code - a.version_code,
+      defaultSortOrder: 'descend' as const
     },
     {
       title: '版本名称',
@@ -222,7 +224,8 @@ export default function VersionManagement() {
       dataIndex: 'created_at',
       key: 'created_at',
       width: 180,
-      render: (date: string) => new Date(date).toLocaleString()
+      render: (date: string) => new Date(date).toLocaleString(),
+      sorter: (a: VersionInfo, b: VersionInfo) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     },
     {
       title: '操作',

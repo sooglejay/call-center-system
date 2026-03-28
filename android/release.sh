@@ -151,25 +151,48 @@ if [ ! -f "$APK_PATH" ]; then
     if [ -f "$UNSIGNED_APK" ]; then
         echo -e "${YELLOW}发现未签名 APK，进行签名...${NC}"
 
-        # 检查 apksigner 是否可用
-        if command -v apksigner &> /dev/null; then
-            # 使用 apksigner 进行 v2 签名（推荐）
-            apksigner sign --ks "$KEYSTORE_FILE" \
-                --ks-pass pass:"$KEYSTORE_PASSWORD" \
-                --key-pass pass:"$KEY_PASSWORD" \
-                --ks-key-alias "$KEY_ALIAS" \
-                --out "$APK_PATH" \
-                "$UNSIGNED_APK" 2>&1 | grep -v "^  "
-        else
-            # 降级使用 jarsigner 进行 v1 签名
-            echo -e "${YELLOW}未找到 apksigner，使用 jarsigner 进行 v1 签名...${NC}"
-            jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA256 \
+        # 尝试查找 apksigner 和 zipalign
+        APK_SIGNER=$(find $ANDROID_HOME/build-tools -name "apksigner" -type f 2>/dev/null | sort -V | tail -1)
+        ZIP_ALIGN=$(find $ANDROID_HOME/build-tools -name "zipalign" -type f 2>/dev/null | sort -V | tail -1)
+
+        if [ -n "$APK_SIGNER" ] && [ -n "$ZIP_ALIGN" ]; then
+            echo -e "${GREEN}使用 apksigner 进行 v2 签名: $APK_SIGNER${NC}"
+
+            # 第一步: 使用 jarsigner 进行 v1 签名
+            echo -e "${BLUE}  -> v1 签名...${NC}"
+            jarsigner -sigalg SHA256withRSA -digestalg SHA256 \
                 -keystore "$KEYSTORE_FILE" \
                 -storepass "$KEYSTORE_PASSWORD" \
                 -keypass "$KEY_PASSWORD" \
                 -signedjar "$APK_PATH" \
                 "$UNSIGNED_APK" \
-                "$KEY_ALIAS" 2>&1 | grep -v "^  "
+                "$KEY_ALIAS" 2>&1 | grep -E "(signed|warning|error)" || true
+
+            # 第二步: 对齐 APK
+            echo -e "${BLUE}  -> zipalign 对齐...${NC}"
+            ALIGNED_APK="app/build/outputs/apk/release/app-release-aligned.apk"
+            "$ZIP_ALIGN" -f -v 4 "$APK_PATH" "$ALIGNED_APK" 2>&1 | grep -E "(Verifying|Alignment)" || true
+            mv "$ALIGNED_APK" "$APK_PATH"
+
+            # 第三步: 使用 apksigner 进行 v2 签名
+            echo -e "${BLUE}  -> v2 签名...${NC}"
+            "$APK_SIGNER" sign --ks "$KEYSTORE_FILE" \
+                --ks-pass pass:"$KEYSTORE_PASSWORD" \
+                --key-pass pass:"$KEY_PASSWORD" \
+                --ks-key-alias "$KEY_ALIAS" \
+                --out "$APK_PATH" \
+                "$APK_PATH" 2>&1 | grep -v "^  " || true
+        else
+            # 降级使用 jarsigner 进行 v1 签名
+            echo -e "${YELLOW}未找到 apksigner/zipalign，使用 jarsigner 进行 v1 签名...${NC}"
+            echo -e "${YELLOW}提示: 安装 Android SDK Build-Tools 以获得更好的兼容性${NC}"
+            jarsigner -sigalg SHA256withRSA -digestalg SHA256 \
+                -keystore "$KEYSTORE_FILE" \
+                -storepass "$KEYSTORE_PASSWORD" \
+                -keypass "$KEY_PASSWORD" \
+                -signedjar "$APK_PATH" \
+                "$UNSIGNED_APK" \
+                "$KEY_ALIAS"
         fi
 
         if [ $? -ne 0 ]; then
