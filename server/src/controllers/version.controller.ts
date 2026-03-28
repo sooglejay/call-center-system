@@ -117,7 +117,13 @@ export const createVersion = async (req: Request, res: Response) => {
     );
 
     if (existingVersion.rows.length > 0) {
-      // 版本已存在，更新信息
+      // 版本已存在，先将其他版本设为非活跃，再更新当前版本为活跃
+      query(
+        `UPDATE app_versions SET is_active = 0, updated_at = datetime('now')
+         WHERE platform = ? AND is_active = 1`,
+        [platform]
+      );
+
       const versionId = existingVersion.rows[0].id;
 
       query(
