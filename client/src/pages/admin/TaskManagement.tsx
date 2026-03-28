@@ -75,7 +75,8 @@ export default function TaskManagement() {
     setLoading(true);
     try {
       const response = await taskApi.getTasks();
-      setTasks(response.data.data || []);
+      const tasksData = response.data?.data || response.data || [];
+      setTasks(Array.isArray(tasksData) ? tasksData : []);
     } catch (error: any) {
       message.error(error.response?.data?.error || '获取任务列表失败，请刷新重试');
     } finally {
@@ -86,7 +87,9 @@ export default function TaskManagement() {
   const fetchAgents = async () => {
     try {
       const response = await userApi.getAgents();
-      setAgents(response.data || []);
+      // getAgents 返回直接数组
+      const agentsData = response.data || [];
+      setAgents(Array.isArray(agentsData) ? agentsData : []);
     } catch (error) {
       console.error('获取客服列表失败');
     }
@@ -105,9 +108,11 @@ export default function TaskManagement() {
     try {
       const letters = selectedLetters.join(',');
       const response = await customerApi.getCustomersByNameLetter(letters, unassignedOnly);
-      setCustomers(response.data.data);
+      const customersData = response.data?.data || response.data || [];
+      const customersArray = Array.isArray(customersData) ? customersData : [];
+      setCustomers(customersArray);
       // 自动选中这些客户
-      setSelectedCustomerIds(response.data.data.map((c: Customer) => c.id));
+      setSelectedCustomerIds(customersArray.map((c: Customer) => c.id));
     } catch (error) {
       console.error('获取客户列表失败');
     }
@@ -118,7 +123,8 @@ export default function TaskManagement() {
       const response = await customerApi.getCustomers({ 
         assigned_to: unassignedOnly ? 0 : undefined 
       });
-      setCustomers(response.data.data);
+      const customersData = response.data?.data || response.data || [];
+      setCustomers(Array.isArray(customersData) ? customersData : []);
     } catch (error) {
       console.error('获取客户列表失败');
     }
