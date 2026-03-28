@@ -118,8 +118,9 @@ export default function CustomerManagement() {
       const response = await customerApi.getCustomers({ 
         sort_by: sortBy
       });
-      setCustomers(response.data.data);
-      if (response.data.name_groups) {
+      const customersData = response.data?.data || response.data || [];
+      setCustomers(Array.isArray(customersData) ? customersData : []);
+      if (response.data?.name_groups) {
         setNameGroups(response.data.name_groups);
       }
     } catch (error) {
@@ -133,7 +134,9 @@ export default function CustomerManagement() {
   const fetchAgents = async () => {
     try {
       const response = await userApi.getAgents();
-      setAgents(response.data);
+      // getAgents 返回直接数组
+      const agentsData = response.data || [];
+      setAgents(Array.isArray(agentsData) ? agentsData : []);
     } catch (error) {
       console.error('获取客服列表失败');
     }

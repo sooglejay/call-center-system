@@ -88,7 +88,9 @@ const DataPermission: React.FC = () => {
         userApi.getUsers(),
         dataImportApi.getStats()
       ]);
-      setUsers(usersRes.data || []);
+      // 支持分页格式 { data: [...], total: ... } 和直接数组格式
+      const userData = usersRes.data?.data || usersRes.data || [];
+      setUsers(Array.isArray(userData) ? userData : []);
       setStats(statsRes.data);
     } catch (error: any) {
       message.error(error.response?.data?.error || '加载数据失败，请刷新重试');
