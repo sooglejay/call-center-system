@@ -98,9 +98,9 @@ export const createVersion = async (req: Request, res: Response) => {
     // 检查APK文件是否存在
     const apkFileName = `app-release-${version_code}.apk`;
     const apkPath = path.join(__dirname, '../../uploads/apk', apkFileName);
-    
+
     if (!fs.existsSync(apkPath)) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'APK文件不存在',
         message: `请先上传APK文件: ${apkFileName}`
       });
@@ -110,9 +110,45 @@ export const createVersion = async (req: Request, res: Response) => {
     const baseUrl = `${req.protocol}://${req.get('host')}`;
     const apkUrl = `${baseUrl}/uploads/apk/${apkFileName}`;
 
+    // 检查该版本是否已存在
+    const existingVersion = query(
+      'SELECT id, is_active FROM app_versions WHERE version_code = ? AND platform = ?',
+      [version_code, platform]
+    );
+
+    if (existingVersion.rows.length > 0) {
+      // 版本已存在，更新信息
+      const versionId = existingVersion.rows[0].id;
+
+      query(
+        `UPDATE app_versions SET
+          version_name = ?,
+          apk_url = ?,
+          update_log = ?,
+          force_update = ?,
+          min_version_code = ?,
+          is_active = 1,
+          updated_at = datetime('now')
+         WHERE id = ?`,
+        [version_name, apkUrl, update_log || '', force_update ? 1 : 0, min_version_code || version_code, versionId]
+      );
+
+      return res.json({
+        id: versionId,
+        version_code,
+        version_name,
+        platform,
+        apk_url: apkUrl,
+        update_log,
+        force_update: force_update ? 1 : 0,
+        min_version_code: min_version_code || version_code,
+        message: '版本已覆盖更新'
+      });
+    }
+
     // 将之前的活跃版本设为不活跃
     query(
-      `UPDATE app_versions SET is_active = 0, updated_at = datetime('now') 
+      `UPDATE app_versions SET is_active = 0, updated_at = datetime('now')
        WHERE platform = ? AND is_active = 1`,
       [platform]
     );
@@ -159,22 +195,6 @@ export const uploadApk = async (req: Request, res: Response) => {
       return res.status(400).json({ error: '缺少版本号' });
     }
 
-    // 检查该版本号是否已存在
-    const existingVersion = query(
-      'SELECT id FROM app_versions WHERE version_code = ? AND platform = ?',
-      [version_code, 'android']
-    );
-
-    if (existingVersion.rows.length > 0) {
-      // 版本号已存在，删除上传的文件并返回提示
-      fs.unlinkSync(req.file.path);
-      return res.json({
-        message: '该版本号已存在，跳过上传',
-        skipped: true,
-        version_code: version_code
-      });
-    }
-
     // 重命名文件为规范格式
     const apkDir = path.join(__dirname, '../../uploads/apk');
     if (!fs.existsSync(apkDir)) {
@@ -184,7 +204,7 @@ export const uploadApk = async (req: Request, res: Response) => {
     const newFileName = `app-release-${version_code}.apk`;
     const newPath = path.join(apkDir, newFileName);
 
-    // 如果文件已存在，先删除
+    // 如果文件已存在，先删除（支持覆盖更新）
     if (fs.existsSync(newPath)) {
       fs.unlinkSync(newPath);
     }
@@ -195,6 +215,32 @@ export const uploadApk = async (req: Request, res: Response) => {
     // 构建下载URL
     const baseUrl = `${req.protocol}://${req.get('host')}`;
     const apkUrl = `${baseUrl}/uploads/apk/${newFileName}`;
+
+    // 检查该版本号是否已存在
+    const existingVersion = query(
+      'SELECT id FROM app_versions WHERE version_code = ? AND platform = ?',
+      [version_code, 'android']
+    );
+
+    if (existingVersion.rows.length > 0) {
+      // 版本号已存在，更新 APK 文件和更新时间
+      query(
+        `UPDATE app_versions SET 
+          apk_url = ?, 
+          updated_at = datetime('now') 
+         WHERE version_code = ? AND platform = ?`,
+        [apkUrl, version_code, 'android']
+      );
+
+      return res.json({
+        message: 'APK已覆盖更新',
+        file_name: newFileName,
+        file_size: req.file.size,
+        download_url: apkUrl,
+        updated: true,
+        version_code: version_code
+      });
+    }
 
     res.json({
       message: 'APK上传成功',

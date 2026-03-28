@@ -151,14 +151,26 @@ if [ ! -f "$APK_PATH" ]; then
     if [ -f "$UNSIGNED_APK" ]; then
         echo -e "${YELLOW}发现未签名 APK，进行签名...${NC}"
 
-        # 签名 APK
-        jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA256 \
-            -keystore "$KEYSTORE_FILE" \
-            -storepass "$KEYSTORE_PASSWORD" \
-            -keypass "$KEY_PASSWORD" \
-            -signedjar "$APK_PATH" \
-            "$UNSIGNED_APK" \
-            "$KEY_ALIAS" 2>&1 | grep -v "^  "
+        # 检查 apksigner 是否可用
+        if command -v apksigner &> /dev/null; then
+            # 使用 apksigner 进行 v2 签名（推荐）
+            apksigner sign --ks "$KEYSTORE_FILE" \
+                --ks-pass pass:"$KEYSTORE_PASSWORD" \
+                --key-pass pass:"$KEY_PASSWORD" \
+                --ks-key-alias "$KEY_ALIAS" \
+                --out "$APK_PATH" \
+                "$UNSIGNED_APK" 2>&1 | grep -v "^  "
+        else
+            # 降级使用 jarsigner 进行 v1 签名
+            echo -e "${YELLOW}未找到 apksigner，使用 jarsigner 进行 v1 签名...${NC}"
+            jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA256 \
+                -keystore "$KEYSTORE_FILE" \
+                -storepass "$KEYSTORE_PASSWORD" \
+                -keypass "$KEY_PASSWORD" \
+                -signedjar "$APK_PATH" \
+                "$UNSIGNED_APK" \
+                "$KEY_ALIAS" 2>&1 | grep -v "^  "
+        fi
 
         if [ $? -ne 0 ]; then
             echo -e "${RED}签名失败${NC}"
