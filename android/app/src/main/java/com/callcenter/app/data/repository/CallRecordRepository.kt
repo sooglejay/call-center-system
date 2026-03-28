@@ -107,7 +107,10 @@ class CallRecordRepository @Inject constructor(
     suspend fun updateCallResult(
         recordId: Int,
         status: String,
-        duration: Int
+        duration: Int,
+        customerId: Int = 0,
+        agentId: Int = 0,
+        phone: String = ""
     ): Result<Unit> {
         val now = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
         
@@ -118,6 +121,9 @@ class CallRecordRepository @Inject constructor(
                 recordId,
                 CallRecord(
                     id = recordId,
+                    customerId = customerId,
+                    agentId = agentId,
+                    phone = phone,
                     status = status,
                     duration = duration,
                     endedAt = now
@@ -146,8 +152,26 @@ class CallRecordRepository @Inject constructor(
     /**
      * 获取客户的通话历史
      */
-    suspend fun getCustomerCallHistory(customerId: Int): List<CallRecord> {
-        return callRecordDao.getRecordsByCustomer(customerId).map { it.toModel() }
+    suspend fun getCustomerCalls(customerId: Int): Result<List<CallRecord>> {
+        return try {
+            val response = apiService.getCustomerCalls(customerId)
+            if (response.isSuccessful && response.body() != null) {
+                val records = response.body()!!
+                // 保存到本地
+                records.forEach { record ->
+                    callRecordDao.insert(record.toEntity())
+                }
+                Result.success(records)
+            } else {
+                // 返回本地数据
+                val localRecords = callRecordDao.getRecordsByCustomer(customerId)
+                Result.success(localRecords.map { it.toModel() })
+            }
+        } catch (e: Exception) {
+            // 返回本地数据
+            val localRecords = callRecordDao.getRecordsByCustomer(customerId)
+            Result.success(localRecords.map { it.toModel() })
+        }
     }
 
     /**

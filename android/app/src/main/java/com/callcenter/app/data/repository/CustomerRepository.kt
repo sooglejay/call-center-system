@@ -39,13 +39,14 @@ class CustomerRepository @Inject constructor(
         _isLoading.value = true
         return try {
             // 先从本地数据库读取
-            val localCustomers = if (search != null) {
+            val localEntities = if (search != null) {
                 customerDao.searchCustomers(search)
             } else if (status != null) {
                 customerDao.getCustomersByStatus(status)
             } else {
                 customerDao.getAllCustomers()
-            }.map { it.toModel() }
+            }
+            val localCustomers: List<Customer> = localEntities.map { it.toModel() }
 
             // 如果有本地数据且不需要刷新，直接返回
             if (localCustomers.isNotEmpty() && !forceRefresh) {
@@ -63,7 +64,7 @@ class CustomerRepository @Inject constructor(
             )
 
             if (response.isSuccessful && response.body() != null) {
-                val serverCustomers = response.body()!!.data
+                val serverCustomers: List<Customer> = response.body()!!.data
                 _customers.value = serverCustomers
                 
                 // 保存到本地数据库
@@ -78,7 +79,7 @@ class CustomerRepository @Inject constructor(
             }
         } catch (e: Exception) {
             // 网络错误，返回本地数据
-            val localCustomers = customerDao.getAllCustomers().map { it.toModel() }
+            val localCustomers: List<Customer> = customerDao.getAllCustomers().map { it.toModel() }
             _customers.value = localCustomers
             Result.success(localCustomers)
         } finally {
@@ -153,6 +154,55 @@ class CustomerRepository @Inject constructor(
             } else {
                 Result.failure(Exception("客户不存在"))
             }
+        }
+    }
+
+    /**
+     * 获取单个客户详情
+     */
+    suspend fun getCustomer(customerId: Int): Result<Customer> {
+        return try {
+            // 先尝试从服务器获取
+            val response = apiService.getCustomer(customerId)
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!)
+            } else {
+                // 从本地获取
+                val localCustomer = customerDao.getCustomerById(customerId)?.toModel()
+                if (localCustomer != null) {
+                    Result.success(localCustomer)
+                } else {
+                    Result.failure(Exception("客户不存在"))
+                }
+            }
+        } catch (e: Exception) {
+            // 从本地获取
+            val localCustomer = customerDao.getCustomerById(customerId)?.toModel()
+            if (localCustomer != null) {
+                Result.success(localCustomer)
+            } else {
+                Result.failure(Exception("客户不存在: ${e.message}"))
+            }
+        }
+    }
+
+    /**
+     * 更新客户信息
+     */
+    suspend fun updateCustomer(customerId: Int, customer: Customer): Result<Customer> {
+        return try {
+            val response = apiService.updateCustomer(customerId, customer)
+            if (response.isSuccessful && response.body() != null) {
+                // 更新本地数据库
+                customerDao.update(customer.toEntity())
+                Result.success(response.body()!!)
+            } else {
+                Result.failure(Exception("更新失败"))
+            }
+        } catch (e: Exception) {
+            // 离线模式，只更新本地
+            customerDao.update(customer.toEntity())
+            Result.success(customer)
         }
     }
 

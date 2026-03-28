@@ -1,5 +1,6 @@
 package com.callcenter.app.service
 
+import android.app.NotificationManager
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
@@ -36,6 +37,7 @@ class AutoDialService : Service() {
         const val EXTRA_INTERVAL = "interval_seconds"
         const val EXTRA_TIMEOUT = "timeout_seconds"
         const val EXTRA_RETRY_COUNT = "retry_count"
+        const val EXTRA_CUSTOMERS = "customers"
 
         // 状态流
         private val _isRunning = MutableStateFlow(false)
@@ -46,6 +48,8 @@ class AutoDialService : Service() {
 
         private val _dialedCount = MutableStateFlow(0)
         val dialedCount: StateFlow<Int> = _dialedCount
+
+        private const val NOTIFICATION_ID = 1001
     }
 
     @Inject
@@ -70,6 +74,15 @@ class AutoDialService : Service() {
                 intervalSeconds = intent.getIntExtra(EXTRA_INTERVAL, 10)
                 timeoutSeconds = intent.getIntExtra(EXTRA_TIMEOUT, 30)
                 retryCount = intent.getIntExtra(EXTRA_RETRY_COUNT, 0)
+
+                // 获取客户列表
+                @Suppress("UNCHECKED_CAST")
+                val customers = intent.getSerializableExtra(EXTRA_CUSTOMERS) as? ArrayList<Customer>
+                if (customers != null) {
+                    customerQueue.clear()
+                    customerQueue.addAll(customers)
+                }
+
                 startAutoDial()
             }
             ACTION_STOP -> {
@@ -94,7 +107,6 @@ class AutoDialService : Service() {
         _isRunning.value = true
         startForeground()
         job = serviceScope.launch {
-            loadCustomers()
             processQueue()
         }
     }
@@ -109,11 +121,6 @@ class AutoDialService : Service() {
         isPaused = false
     }
 
-    private suspend fun loadCustomers() {
-        // TODO: 从 ViewModel 或 Repository 获取待拨打客户列表
-        // 这里需要通过 EventBus 或其他方式与 UI 层通信
-    }
-
     private suspend fun processQueue() {
         while (_isRunning.value && currentIndex < customerQueue.size) {
             if (isPaused) {
@@ -124,46 +131,73 @@ class AutoDialService : Service() {
             val customer = customerQueue[currentIndex]
             _currentCustomer.value = customer
 
-            updateNotification("正在拨打: ${customer.name}")
+            updateNotification("正在拨打: ${customer.name} (${currentIndex + 1}/${customerQueue.size})")
 
             // 拨打电话
             callHelper.makeCall(customer.phone)
 
-            // 等待通话结束
-            waitForCallEnd()
+            // 等待通话结束或超时
+            waitForCallEndOrTimeout()
 
             // 更新状态
             _dialedCount.value = _dialedCount.value + 1
             currentIndex++
 
-            // 等待间隔时间
-            updateNotification("等待 ${intervalSeconds} 秒...")
-            delay(intervalSeconds * 1000L)
+            // 如果不是最后一个，等待间隔时间
+            if (currentIndex < customerQueue.size && _isRunning.value) {
+                updateNotification("等待 ${intervalSeconds} 秒后拨打下一个...")
+                delay(intervalSeconds * 1000L)
+            }
         }
 
         // 所有客户拨打完成
-        updateNotification("自动拨号已完成")
-        delay(3000)
+        if (_isRunning.value) {
+            updateNotification("自动拨号已完成，共拨打 ${customerQueue.size} 个客户")
+            delay(3000)
+        }
         stopAutoDial()
         stopSelf()
     }
 
-    private suspend fun waitForCallEnd() {
-        // 监听通话状态，等待通话结束
-        val telephonyManager = getSystemService(TELEPHONY_SERVICE) as TelephonyManager
-        
-        while (true) {
-            val state = telephonyManager.callState
-            if (state == TelephonyManager.CALL_STATE_IDLE) {
-                break
+    private suspend fun waitForCallEndOrTimeout() {
+        var elapsedTime = 0
+
+        // 尝试使用 TelephonyManager，如果没有权限则使用简单的延时
+        try {
+            val telephonyManager = getSystemService(TELEPHONY_SERVICE) as TelephonyManager
+
+            // 等待电话接通
+            while (_isRunning.value && elapsedTime < timeoutSeconds * 1000) {
+                val state = telephonyManager.callState
+                if (state == TelephonyManager.CALL_STATE_OFFHOOK) {
+                    // 电话已接通，等待挂断
+                    while (telephonyManager.callState != TelephonyManager.CALL_STATE_IDLE) {
+                        delay(500)
+                    }
+                    return
+                }
+                if (state == TelephonyManager.CALL_STATE_IDLE) {
+                    // 电话未接通就被挂断了
+                    return
+                }
+                delay(500)
+                elapsedTime += 500
             }
-            delay(500)
+        } catch (e: SecurityException) {
+            // 没有权限，使用简单的延时策略
+            // 等待拨号完成（通常需要几秒钟）
+            delay(2000)
+            // 然后等待用户手动挂断或超时
+            while (_isRunning.value && elapsedTime < timeoutSeconds * 1000) {
+                delay(1000)
+                elapsedTime += 1000
+            }
         }
     }
 
     private fun startForeground() {
         val notification = createNotification("自动拨号准备中...")
-        
+
         ServiceCompat.startForeground(
             this,
             NOTIFICATION_ID,
@@ -187,7 +221,7 @@ class AutoDialService : Service() {
         )
 
         return NotificationCompat.Builder(this, CallCenterApp.CHANNEL_ID_AUTO_DIAL)
-            .setContentTitle("智能呼叫中心")
+            .setContentTitle("智能呼叫中心 - 自动拨号")
             .setContentText(content)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentIntent(pendingIntent)
@@ -213,9 +247,5 @@ class AutoDialService : Service() {
         super.onDestroy()
         stopAutoDial()
         serviceScope.cancel()
-    }
-
-    private companion object {
-        const val NOTIFICATION_ID = 1001
     }
 }

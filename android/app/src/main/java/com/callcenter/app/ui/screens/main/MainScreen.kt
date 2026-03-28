@@ -1,5 +1,10 @@
 package com.callcenter.app.ui.screens.main
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -9,12 +14,18 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.callcenter.app.data.model.Customer
+import com.callcenter.app.service.AutoDialService
 import com.callcenter.app.ui.viewmodel.AuthViewModel
+import com.callcenter.app.ui.viewmodel.AutoDialViewModel
+import com.callcenter.app.ui.viewmodel.CallSettingsViewModel
 import com.callcenter.app.ui.viewmodel.CustomerViewModel
+import com.callcenter.app.util.CallHelper
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -23,18 +34,64 @@ fun MainScreen(
     onNavigateToCustomerDetail: (Int) -> Unit,
     onLogout: () -> Unit,
     authViewModel: AuthViewModel = hiltViewModel(),
-    customerViewModel: CustomerViewModel = hiltViewModel()
+    customerViewModel: CustomerViewModel = hiltViewModel(),
+    autoDialViewModel: AutoDialViewModel = hiltViewModel(),
+    callSettingsViewModel: CallSettingsViewModel = hiltViewModel()
 ) {
-    val customers by customerViewModel.customers
-    val isLoading by customerViewModel.isLoading
-    val searchQuery by customerViewModel.searchQuery
-    val statusFilter by customerViewModel.statusFilter
-    val currentUser by authViewModel.currentUser
+    val context = LocalContext.current
+    val customers by customerViewModel.customers.collectAsState()
+    val isLoading by customerViewModel.isLoading.collectAsState()
+    val searchQuery by customerViewModel.searchQuery.collectAsState()
+    val statusFilter by customerViewModel.statusFilter.collectAsState()
+    val currentUser by authViewModel.currentUser.collectAsState()
+    
+    // 自动拨号状态
+    val autoDialRunning by autoDialViewModel.isRunning.collectAsState()
+    val currentDialCustomer by autoDialViewModel.currentCustomer.collectAsState()
+    val dialedCount by autoDialViewModel.dialedCount.collectAsState()
+    val totalCount by autoDialViewModel.totalCount.collectAsState()
+    
+    // 通话设置
+    val callSettings by callSettingsViewModel.callSettings.collectAsState()
+    
+    val callHelper = remember { CallHelper(context) }
 
     var showSearchBar by remember { mutableStateOf(false) }
     var showFilterMenu by remember { mutableStateOf(false) }
     var showAutoDialDialog by remember { mutableStateOf(false) }
-    var autoDialRunning by remember { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
+
+    // 权限请求
+    val callPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (!isGranted) {
+            Toast.makeText(context, "需要电话权限才能拨打电话", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // 检查并请求权限
+    fun checkAndRequestCallPermission(): Boolean {
+        return when {
+            ContextCompat.checkSelfPermission(
+                context, Manifest.permission.CALL_PHONE
+            ) == PackageManager.PERMISSION_GRANTED -> true
+            else -> {
+                callPermissionLauncher.launch(Manifest.permission.CALL_PHONE)
+                false
+            }
+        }
+    }
+
+    // 拨打电话
+    fun makeCall(phone: String) {
+        if (checkAndRequestCallPermission()) {
+            callHelper.makeCall(phone, directCall = true)
+        } else {
+            // 没有权限时打开拨号界面
+            callHelper.makeCall(phone, directCall = false)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -104,14 +161,32 @@ fun MainScreen(
                             }
                         )
                     }
-                    IconButton(onClick = { showAutoDialDialog = true }) {
-                        Icon(
-                            if (autoDialRunning) Icons.Default.Stop else Icons.Default.PlayArrow,
-                            if (autoDialRunning) "停止自动拨号" else "开始自动拨号"
-                        )
-                    }
                     IconButton(onClick = { customerViewModel.refresh() }) {
                         Icon(Icons.Default.Refresh, "刷新")
+                    }
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(Icons.Default.MoreVert, "更多")
+                    }
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("设置") },
+                            leadingIcon = { Icon(Icons.Default.Settings, null) },
+                            onClick = {
+                                showMenu = false
+                                onNavigateToSettings()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("退出登录") },
+                            leadingIcon = { Icon(Icons.Default.Logout, null) },
+                            onClick = {
+                                showMenu = false
+                                onLogout()
+                            }
+                        )
                     }
                 }
             )
@@ -138,9 +213,9 @@ fun MainScreen(
                     )
                 },
                 text = { Text(if (autoDialRunning) "停止" else "自动拨号") },
-                containerColor = if (autoDialRunning) 
-                    MaterialTheme.colorScheme.error 
-                else 
+                containerColor = if (autoDialRunning)
+                    MaterialTheme.colorScheme.error
+                else
                     MaterialTheme.colorScheme.primaryContainer
             )
         }
@@ -150,6 +225,48 @@ fun MainScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            // 自动拨号进度指示器
+            if (autoDialRunning) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "自动拨号进行中",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                text = "$dialedCount / $totalCount",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        LinearProgressIndicator(
+                            progress = { if (totalCount > 0) dialedCount.toFloat() / totalCount else 0f },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        currentDialCustomer?.let { customer ->
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "当前: ${customer.name} - ${customer.phone}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                }
+            }
+
             // 筛选标签
             if (statusFilter != null) {
                 Surface(
@@ -228,7 +345,7 @@ fun MainScreen(
                         CustomerItem(
                             customer = customer,
                             onCall = {
-                                // TODO: 拨打电话
+                                makeCall(customer.phone)
                             },
                             onClick = {
                                 onNavigateToCustomerDetail(customer.id)
@@ -244,13 +361,26 @@ fun MainScreen(
     if (showAutoDialDialog) {
         AutoDialDialog(
             isRunning = autoDialRunning,
-            onStart = {
-                autoDialRunning = true
+            defaultInterval = callSettings.autoDialInterval,
+            defaultTimeout = callSettings.callTimeout,
+            onStart = { interval, timeout ->
                 showAutoDialDialog = false
+                // 获取待拨打的客户列表
+                val pendingCustomers = customers.filter { it.status == "pending" }
+                if (pendingCustomers.isEmpty()) {
+                    Toast.makeText(context, "没有待拨打的客户", Toast.LENGTH_SHORT).show()
+                } else {
+                    // 检查权限
+                    if (checkAndRequestCallPermission()) {
+                        autoDialViewModel.startAutoDial(pendingCustomers, interval, timeout)
+                    } else {
+                        Toast.makeText(context, "需要电话权限才能自动拨号", Toast.LENGTH_SHORT).show()
+                    }
+                }
             },
             onStop = {
-                autoDialRunning = false
                 showAutoDialDialog = false
+                autoDialViewModel.stopAutoDial()
             },
             onDismiss = { showAutoDialDialog = false }
         )
@@ -368,12 +498,14 @@ fun CustomerItem(
 @Composable
 fun AutoDialDialog(
     isRunning: Boolean,
-    onStart: () -> Unit,
+    defaultInterval: Int,
+    defaultTimeout: Int,
+    onStart: (interval: Int, timeout: Int) -> Unit,
     onStop: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    var intervalSeconds by remember { mutableStateOf(10) }
-    var timeoutSeconds by remember { mutableStateOf(30) }
+    var intervalSeconds by remember { mutableStateOf(defaultInterval) }
+    var timeoutSeconds by remember { mutableStateOf(defaultTimeout) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -407,7 +539,9 @@ fun AutoDialDialog(
         },
         confirmButton = {
             Button(
-                onClick = if (isRunning) onStop else onStart
+                onClick = { 
+                    if (isRunning) onStop() else onStart(intervalSeconds, timeoutSeconds) 
+                }
             ) {
                 Text(if (isRunning) "停止" else "开始")
             }

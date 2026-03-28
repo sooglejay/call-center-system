@@ -1,0 +1,397 @@
+package com.callcenter.app.ui.screens.settings
+
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.callcenter.app.BuildConfig
+import com.callcenter.app.ui.viewmodel.SettingsViewModel
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsScreen(
+    onNavigateBack: () -> Unit,
+    onLogout: () -> Unit,
+    onNavigateToCallSettings: () -> Unit,
+    viewModel: SettingsViewModel = hiltViewModel()
+) {
+    val context = LocalContext.current
+    val serverUrl by viewModel.serverUrl.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsState()
+    val stats by viewModel.stats.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val callSettings by viewModel.callSettings.collectAsState()
+
+    var showServerUrlDialog by remember { mutableStateOf(false) }
+    var showLogoutConfirmDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        viewModel.loadSettings()
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("设置") },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.Default.ArrowBack, "返回")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+        ) {
+            // 用户信息卡片
+            currentUser?.let { user ->
+                UserInfoCard(user)
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 统计信息
+            StatsCard(stats)
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 设置选项
+            SettingsGroup(title = "服务器设置") {
+                SettingsItem(
+                    icon = Icons.Default.Dns,
+                    title = "服务器地址",
+                    subtitle = serverUrl,
+                    onClick = { showServerUrlDialog = true }
+                )
+            }
+
+            SettingsGroup(title = "通话设置") {
+                SettingsItem(
+                    icon = Icons.Default.Phone,
+                    title = "自动拨号间隔",
+                    subtitle = "${callSettings.autoDialInterval}秒",
+                    onClick = onNavigateToCallSettings
+                )
+                SettingsItem(
+                    icon = Icons.Default.Timer,
+                    title = "通话超时时间",
+                    subtitle = "${callSettings.callTimeout}秒",
+                    onClick = onNavigateToCallSettings
+                )
+                SettingsItem(
+                    icon = Icons.Default.Settings,
+                    title = "更多通话设置",
+                    subtitle = "重试次数、自动免提等",
+                    onClick = onNavigateToCallSettings
+                )
+            }
+
+            SettingsGroup(title = "关于") {
+                SettingsItem(
+                    icon = Icons.Default.Info,
+                    title = "版本信息",
+                    subtitle = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                    onClick = {}
+                )
+                SettingsItem(
+                    icon = Icons.Default.Help,
+                    title = "帮助文档",
+                    subtitle = "查看使用说明",
+                    onClick = {
+                        Toast.makeText(context, "功能开发中", Toast.LENGTH_SHORT).show()
+                    }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // 退出登录按钮
+            Button(
+                onClick = { showLogoutConfirmDialog = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Icon(Icons.Default.Logout, null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("退出登录")
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+        }
+    }
+
+    // 服务器地址设置对话框
+    if (showServerUrlDialog) {
+        ServerUrlDialog(
+            currentUrl = serverUrl,
+            onDismiss = { showServerUrlDialog = false },
+            onConfirm = { newUrl ->
+                viewModel.updateServerUrl(newUrl)
+                showServerUrlDialog = false
+                Toast.makeText(context, "服务器地址已更新，请重新登录", Toast.LENGTH_LONG).show()
+            }
+        )
+    }
+
+    // 退出确认对话框
+    if (showLogoutConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutConfirmDialog = false },
+            title = { Text("确认退出") },
+            text = { Text("确定要退出登录吗？") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLogoutConfirmDialog = false
+                        viewModel.logout()
+                        onLogout()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("退出")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogoutConfirmDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun UserInfoCard(user: com.callcenter.app.data.model.User) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                modifier = Modifier.size(64.dp),
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.primaryContainer
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = null,
+                        modifier = Modifier.size(32.dp),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column {
+                Text(
+                    text = user.realName,
+                    style = MaterialTheme.typography.headlineSmall
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "@${user.username}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Text(
+                        text = when (user.role) {
+                            "admin" -> "管理员"
+                            "agent" -> "客服"
+                            else -> user.role
+                        },
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatsCard(stats: com.callcenter.app.data.model.Stats?) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Text(
+                text = "今日统计",
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                StatItem(
+                    value = stats?.totalCalls?.toString() ?: "0",
+                    label = "总通话",
+                    modifier = Modifier.weight(1f)
+                )
+                StatItem(
+                    value = stats?.successfulCalls?.toString() ?: "0",
+                    label = "成功",
+                    modifier = Modifier.weight(1f)
+                )
+                StatItem(
+                    value = formatDuration(stats?.totalDuration ?: 0),
+                    label = "总时长",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatItem(value: String, label: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun SettingsGroup(
+    title: String,
+    content: @Composable () -> Unit
+) {
+    Column {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        )
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+        ) {
+            content()
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun SettingsItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = { Text(subtitle) },
+        leadingContent = {
+            Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
+        },
+        trailingContent = {
+            Icon(Icons.Default.ChevronRight, null)
+        },
+        modifier = Modifier.clickable(onClick = onClick)
+    )
+}
+
+@Composable
+private fun ServerUrlDialog(
+    currentUrl: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var url by remember { mutableStateOf(currentUrl) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("服务器地址") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it },
+                    label = { Text("服务器地址") },
+                    placeholder = { Text("http://192.168.1.100:8081/api/") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "修改后需要重新登录",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(url) },
+                enabled = url.isNotBlank()
+            ) {
+                Text("确定")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+private fun formatDuration(seconds: Int): String {
+    return if (seconds < 60) {
+        "${seconds}s"
+    } else {
+        val minutes = seconds / 60
+        "${minutes}m"
+    }
+}
