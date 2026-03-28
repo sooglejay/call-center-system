@@ -1,7 +1,7 @@
 /**
  * 客户管理模块单元测试
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { query } from '../config/database';
 
 // 中文姓氏拼音首字母映射（复制自种子脚本）
@@ -31,7 +31,12 @@ const getFirstLetter = (name: string): string => {
 
 describe('客户管理模块测试', () => {
   beforeEach(async () => {
-    // 清理测试客户数据（保留id<100的客户）
+    // 清理测试客户数据
+    await query("DELETE FROM customers WHERE name LIKE '测试_%'", []);
+  });
+
+  afterEach(async () => {
+    // 清理测试数据
     await query("DELETE FROM customers WHERE name LIKE '测试_%'", []);
   });
 
@@ -204,6 +209,128 @@ describe('客户管理模块测试', () => {
       );
       
       expect(result.rows.every((c: any) => c.assigned_to === 2)).toBe(true);
+    });
+  });
+
+  describe('数据导入与分配功能', () => {
+    it('导入客户时应该能同时指定分配客服', async () => {
+      // 模拟导入数据并分配客服
+      const result = await query(
+        `INSERT INTO customers (name, phone, email, company, status, assigned_to, data_source, imported_by, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, datetime('now'), datetime('now'))`,
+        ['测试_导入客户A', '13900139001', 'importa@test.com', '导入公司A', 'pending', 2, 'real', 1]
+      );
+      
+      expect(result.rowCount).toBe(1);
+      
+      // 验证数据
+      const customer = await query(
+        'SELECT * FROM customers WHERE phone = $1',
+        ['13900139001']
+      );
+      
+      expect(customer.rows[0].name).toBe('测试_导入客户A');
+      expect(customer.rows[0].assigned_to).toBe(2);
+      expect(customer.rows[0].data_source).toBe('real');
+    });
+
+    it('应该能查询指定客服的客户列表', async () => {
+      // 创建分配给客服ID=2的客户
+      for (let i = 0; i < 3; i++) {
+        await query(
+          `INSERT INTO customers (name, phone, status, assigned_to, data_source, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, datetime('now'), datetime('now'))`,
+          [`测试_客服客户${i}`, `1390013910${i}`, 'pending', 2, 'real']
+        );
+      }
+      
+      // 创建未分配的客户
+      await query(
+        `INSERT INTO customers (name, phone, status, assigned_to, data_source, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, datetime('now'), datetime('now'))`,
+        ['测试_未分配客户', '13900139999', 'pending', null, 'real']
+      );
+      
+      // 查询客服ID=2的客户
+      const result = await query(
+        'SELECT * FROM customers WHERE assigned_to = $1 AND name LIKE $2',
+        [2, '测试_客服%']
+      );
+      
+      expect(result.rows.length).toBe(3);
+      expect(result.rows.every((c: any) => c.assigned_to === 2)).toBe(true);
+    });
+
+    it('应该能正确过滤数据源类型', async () => {
+      // 创建真实数据
+      await query(
+        `INSERT INTO customers (name, phone, status, data_source, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, datetime('now'), datetime('now'))`,
+        ['测试_真实客户', '13900138001', 'pending', 'real']
+      );
+      
+      // 创建测试数据
+      await query(
+        `INSERT INTO customers (name, phone, status, data_source, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, datetime('now'), datetime('now'))`,
+        ['测试_测试客户', '13900138002', 'pending', 'mock']
+      );
+      
+      // 查询真实数据
+      const realResult = await query(
+        "SELECT * FROM customers WHERE data_source = 'real' AND name LIKE '测试_%'"
+      );
+      
+      // 查询测试数据
+      const mockResult = await query(
+        "SELECT * FROM customers WHERE data_source = 'mock' AND name LIKE '测试_%'"
+      );
+      
+      expect(realResult.rows.some((c: any) => c.name === '测试_真实客户')).toBe(true);
+      expect(mockResult.rows.some((c: any) => c.name === '测试_测试客户')).toBe(true);
+    });
+  });
+
+  describe('客户状态管理', () => {
+    it('应该能更新客户状态', async () => {
+      // 创建客户
+      const insertResult = await query(
+        `INSERT INTO customers (name, phone, status)
+         VALUES ($1, $2, $3)`,
+        ['测试_状态客户', '13900138055', 'pending']
+      );
+      
+      const customerId = insertResult.rows[0]?.id;
+      
+      // 更新状态为已联系
+      await query(
+        `UPDATE customers SET status = $1, updated_at = datetime('now') WHERE id = $2`,
+        ['contacted', customerId]
+      );
+      
+      // 验证
+      const result = await query('SELECT * FROM customers WHERE id = $1', [customerId]);
+      expect(result.rows[0].status).toBe('contacted');
+    });
+
+    it('应该能按状态筛选客户', async () => {
+      // 创建不同状态的客户
+      const statuses = ['pending', 'contacted', 'converted', 'not_interested'];
+      for (const status of statuses) {
+        await query(
+          `INSERT INTO customers (name, phone, status)
+           VALUES ($1, $2, $3)`,
+          [`测试_${status}客户`, `13900138${status.slice(0, 2)}01`, status]
+        );
+      }
+      
+      // 查询待跟进客户
+      const pendingResult = await query(
+        "SELECT * FROM customers WHERE status = 'pending' AND name LIKE '测试_%'"
+      );
+      
+      expect(pendingResult.rows.length).toBeGreaterThanOrEqual(1);
+      expect(pendingResult.rows.every((c: any) => c.status === 'pending')).toBe(true);
     });
   });
 });
