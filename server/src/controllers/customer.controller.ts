@@ -242,7 +242,48 @@ export const updateCustomer = async (req: Request, res: Response) => {
       return res.status(404).json({ error: '客户不存在' });
     }
     
-    const customer = { ...result.rows[0], ...updates, updated_at: new Date().toISOString() };
+    // 构建更新字段
+    const allowedFields = ['name', 'phone', 'email', 'company', 'address', 'notes', 'status', 'priority', 'assigned_to', 'remark'];
+    const updateFields: string[] = [];
+    const updateValues: any[] = [];
+    let paramIndex = 1;
+    
+    for (const [key, value] of Object.entries(updates)) {
+      if (allowedFields.includes(key)) {
+        updateFields.push(`${key} = $${paramIndex}`);
+        updateValues.push(value);
+        paramIndex++;
+      }
+    }
+    
+    if (updateFields.length === 0) {
+      return res.status(400).json({ error: '没有有效的更新字段' });
+    }
+    
+    // 添加更新时间
+    updateFields.push(`updated_at = datetime('now')`);
+    
+    // 添加 WHERE 条件的 ID 参数
+    updateValues.push(parseInt(id));
+    
+    // 执行更新
+    const updateResult = await query(
+      `UPDATE customers SET ${updateFields.join(', ')} WHERE id = $${paramIndex}`,
+      updateValues
+    );
+    
+    // 获取更新后的数据
+    const updatedCustomer = await query('SELECT * FROM customers WHERE id = $1', [id]);
+    
+    // 获取关联的用户名称
+    const users = await query('SELECT id, real_name FROM users');
+    const userMap = new Map(users.rows.map((u: any) => [u.id, u.real_name]));
+    
+    const customer = {
+      ...updatedCustomer.rows[0],
+      imported_by_name: userMap.get(updatedCustomer.rows[0].imported_by) || '',
+      assigned_to_name: updatedCustomer.rows[0].assigned_to ? userMap.get(updatedCustomer.rows[0].assigned_to) || '未分配' : '未分配'
+    };
     
     res.json(customer);
   } catch (error) {
@@ -260,7 +301,10 @@ export const deleteCustomer = async (req: Request, res: Response) => {
       return res.status(404).json({ error: '客户不存在' });
     }
     
-    res.json({ message: '客户删除成功' });
+    // 真正删除客户
+    await query('DELETE FROM customers WHERE id = $1', [id]);
+    
+    res.json({ message: '客户删除成功', deleted_id: parseInt(id) });
   } catch (error) {
     console.error('删除客户错误:', error);
     res.status(500).json({ error: '服务器错误' });
@@ -269,7 +313,7 @@ export const deleteCustomer = async (req: Request, res: Response) => {
 
 export const batchImportCustomers = async (req: any, res: Response) => {
   try {
-    const { customers, data_source = 'mock' } = req.body;
+    const { customers, data_source = 'mock', assigned_to } = req.body;
     const importedBy = req.user.id;
     
     // 获取管理员的数据权限类型（只有管理员可以导入数据）
@@ -280,6 +324,25 @@ export const batchImportCustomers = async (req: any, res: Response) => {
       return res.status(403).json({ error: '只有管理员可以导入客户数据' });
     }
     
+    // 解析 assigned_to 参数
+    let assignedToId: number | null = null;
+    if (assigned_to) {
+      assignedToId = parseInt(assigned_to as string);
+      if (isNaN(assignedToId)) {
+        return res.status(400).json({ error: 'assigned_to 参数必须是有效的用户ID' });
+      }
+      
+      // 验证客服是否存在
+      const agentResult = await query('SELECT id, real_name, role FROM users WHERE id = $1', [assignedToId]);
+      if (agentResult.rows.length === 0) {
+        return res.status(400).json({ error: '指定的客服不存在' });
+      }
+      if (agentResult.rows[0].role !== 'agent') {
+        return res.status(400).json({ error: '指定的用户不是客服角色' });
+      }
+      console.log(`[批量导入] 将分配给客服: ${agentResult.rows[0].real_name} (ID=${assignedToId})`);
+    }
+    
     // 管理员导入的数据标记为 real，或者根据传入的 data_source 参数
     const finalDataSource = data_source || 'real';
     
@@ -287,8 +350,10 @@ export const batchImportCustomers = async (req: any, res: Response) => {
     for (const customer of customers || []) {
       try {
         const result = await query(
-          'INSERT INTO customers (name, phone, email, company, status, imported_by, data_source) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-          [customer.name, customer.phone, customer.email || '', customer.company || '', 'pending', importedBy, finalDataSource]
+          `INSERT INTO customers (name, phone, email, company, status, imported_by, data_source, assigned_to, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, datetime('now'), datetime('now'))
+           RETURNING *`,
+          [customer.name, customer.phone, customer.email || '', customer.company || '', 'pending', importedBy, finalDataSource, assignedToId]
         );
         importedCustomers.push(result.rows[0]);
       } catch (err) {
@@ -298,7 +363,8 @@ export const batchImportCustomers = async (req: any, res: Response) => {
     
     res.json({
       message: `成功导入 ${importedCustomers.length} 个客户`,
-      data: importedCustomers
+      data: importedCustomers,
+      assigned_to: assignedToId
     });
   } catch (error) {
     console.error('批量导入客户错误:', error);

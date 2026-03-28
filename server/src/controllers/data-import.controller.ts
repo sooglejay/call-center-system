@@ -334,7 +334,7 @@ const suggestColumnMapping = (csvColumns: string[], compositeFields: Record<stri
 // 执行导入（带列映射）
 export const importWithMapping = async (req: any, res: Response) => {
   try {
-    let { column_mapping, data_source = 'real', composite_fields } = req.body;
+    let { column_mapping, data_source = 'real', composite_fields, assigned_to } = req.body;
     
     // 如果参数是字符串（来自 FormData），尝试解析 JSON
     if (typeof column_mapping === 'string') {
@@ -351,6 +351,25 @@ export const importWithMapping = async (req: any, res: Response) => {
       } catch {
         composite_fields = {};
       }
+    }
+    
+    // 解析 assigned_to 参数
+    let assignedToId: number | null = null;
+    if (assigned_to) {
+      assignedToId = parseInt(assigned_to as string);
+      if (isNaN(assignedToId)) {
+        return res.status(400).json({ error: 'assigned_to 参数必须是有效的用户ID' });
+      }
+      
+      // 验证客服是否存在
+      const agentResult = await query('SELECT id, real_name, role FROM users WHERE id = $1', [assignedToId]);
+      if (agentResult.rows.length === 0) {
+        return res.status(400).json({ error: '指定的客服不存在' });
+      }
+      if (agentResult.rows[0].role !== 'agent') {
+        return res.status(400).json({ error: '指定的用户不是客服角色' });
+      }
+      console.log(`[CSV导入] 将分配给客服: ${agentResult.rows[0].real_name} (ID=${assignedToId})`);
     }
     
     // 验证列映射
@@ -380,6 +399,7 @@ export const importWithMapping = async (req: any, res: Response) => {
     console.log(`[CSV导入] 解析到 ${data.length} 条记录`);
     console.log(`[CSV导入] 列映射:`, column_mapping);
     console.log(`[CSV导入] 复合字段:`, composite_fields);
+    console.log(`[CSV导入] 分配客服ID:`, assignedToId);
     
     // 导入数据
     let imported = 0;
@@ -443,10 +463,10 @@ export const importWithMapping = async (req: any, res: Response) => {
           continue;
         }
         
-        // 插入数据
+        // 插入数据（包含 assigned_to 字段）
         await query(
-          `INSERT INTO customers (name, phone, email, company, address, notes, status, priority, data_source, imported_by, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, datetime('now'), datetime('now'))`,
+          `INSERT INTO customers (name, phone, email, company, address, notes, status, priority, data_source, imported_by, assigned_to, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, datetime('now'), datetime('now'))`,
           [
             name, 
             phone, 
@@ -457,7 +477,8 @@ export const importWithMapping = async (req: any, res: Response) => {
             customerData.status || 'pending', 
             customerData.priority || 1, 
             data_source, 
-            adminId
+            adminId,
+            assignedToId  // 添加分配客服字段
           ]
         );
         imported++;
@@ -480,7 +501,8 @@ export const importWithMapping = async (req: any, res: Response) => {
         imported,
         duplicates,
         errors,
-        skipped: data.length - imported - duplicates - errors
+        skipped: data.length - imported - duplicates - errors,
+        assigned_to: assignedToId
       },
       error_details: errorDetails.slice(0, 10)
     });
