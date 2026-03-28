@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Table, Button, Modal, Form, Input, Select, DatePicker, message, Tag, Tabs, Badge, Checkbox, Transfer, Space, Divider, Typography, Empty, Alert } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, TeamOutlined, ScheduleOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { Table, Button, Modal, Form, Input, Select, DatePicker, message, Tag, Tabs, Badge, Checkbox, Transfer, Space, Divider, Typography, Empty, Alert, Progress, Card, Descriptions, Tooltip, Statistic, Row, Col } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, TeamOutlined, ScheduleOutlined, InfoCircleOutlined, EyeOutlined, PhoneOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { taskApi, userApi, customerApi } from '../../services/api';
 import type { Task, User, Customer } from '../../services/api';
 import dayjs from 'dayjs';
@@ -43,11 +43,37 @@ const getFirstLetter = (name: string): string => {
 // 字母表
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ#'.split('');
 
+// 任务详情类型
+interface TaskDetail extends Task {
+  customer_count: number;
+  completed_count: number;
+  called_count: number;
+  progress: number;
+  customers?: Array<{
+    task_customer_id: number;
+    id: number;
+    name: string;
+    phone: string;
+    email?: string;
+    company?: string;
+    customer_status: string;
+    call_status: string;
+    call_result?: string;
+    called_at?: string;
+    call_id?: number;
+    call_duration?: number;
+    is_connected?: boolean;
+    call_time?: string;
+  }>;
+}
+
 export default function TaskManagement() {
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasks, setTasks] = useState<TaskDetail[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
-  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [editingTask, setEditingTask] = useState<TaskDetail | null>(null);
+  const [selectedTask, setSelectedTask] = useState<TaskDetail | null>(null);
   const [agents, setAgents] = useState<User[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [nameLetterStats, setNameLetterStats] = useState<Record<string, number>>({});
@@ -55,6 +81,7 @@ export default function TaskManagement() {
   const [selectedCustomerIds, setSelectedCustomerIds] = useState<number[]>([]);
   const [customerSelectMode, setCustomerSelectMode] = useState<'id' | 'letter'>('id');
   const [unassignedOnly, setUnassignedOnly] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [form] = Form.useForm();
 
   useEffect(() => {
@@ -87,7 +114,6 @@ export default function TaskManagement() {
   const fetchAgents = async () => {
     try {
       const response = await userApi.getAgents();
-      // getAgents 返回直接数组
       const agentsData = response.data || [];
       setAgents(Array.isArray(agentsData) ? agentsData : []);
     } catch (error) {
@@ -111,7 +137,6 @@ export default function TaskManagement() {
       const customersData = response.data?.data || response.data || [];
       const customersArray = Array.isArray(customersData) ? customersData : [];
       setCustomers(customersArray);
-      // 自动选中这些客户
       setSelectedCustomerIds(customersArray.map((c: Customer) => c.id));
     } catch (error) {
       console.error('获取客户列表失败');
@@ -130,6 +155,18 @@ export default function TaskManagement() {
     }
   };
 
+  const fetchTaskDetail = async (taskId: number) => {
+    setDetailLoading(true);
+    try {
+      const response = await taskApi.getTaskById(taskId);
+      setSelectedTask(response.data);
+    } catch (error: any) {
+      message.error(error.response?.data?.error || '获取任务详情失败');
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
   const handleAdd = () => {
     setEditingTask(null);
     setSelectedLetters([]);
@@ -138,6 +175,25 @@ export default function TaskManagement() {
     form.resetFields();
     setModalVisible(true);
     fetchAllCustomers();
+  };
+
+  const handleViewDetail = (task: TaskDetail) => {
+    setSelectedTask(task);
+    setDetailModalVisible(true);
+    fetchTaskDetail(task.id);
+  };
+
+  const handleEdit = (task: TaskDetail) => {
+    setEditingTask(task);
+    form.setFieldsValue({
+      title: task.title,
+      description: task.description,
+      assigned_to: task.assigned_to,
+      priority: task.priority,
+      status: task.status,
+      due_date: task.due_date ? dayjs(task.due_date) : undefined
+    });
+    setModalVisible(true);
   };
 
   const handleDelete = async (id: number) => {
@@ -152,30 +208,39 @@ export default function TaskManagement() {
 
   const handleSubmit = async (values: any) => {
     try {
-      const customerIds = customerSelectMode === 'letter' && selectedLetters.length > 0
-        ? customers.filter(c => selectedLetters.includes(getFirstLetter(c.name || ''))).map(c => c.id)
-        : selectedCustomerIds;
+      if (editingTask) {
+        // 编辑模式：只更新任务基本信息
+        await taskApi.updateTask(editingTask.id, {
+          title: values.title,
+          description: values.description,
+          assigned_to: values.assigned_to,
+          priority: values.priority,
+          status: values.status,
+          due_date: values.due_date?.format('YYYY-MM-DD')
+        });
+        message.success('任务更新成功');
+      } else {
+        // 创建模式：创建任务并关联客户
+        const customerIds = customerSelectMode === 'letter' && selectedLetters.length > 0
+          ? customers.filter(c => selectedLetters.includes(getFirstLetter(c.name || ''))).map(c => c.id)
+          : selectedCustomerIds;
 
-      if (customerIds.length === 0) {
-        message.error('请至少选择一个客户');
-        return;
-      }
+        if (customerIds.length === 0) {
+          message.error('请至少选择一个客户');
+          return;
+        }
 
-      // 创建多个任务（每个客户一个任务）
-      const promises = customerIds.map((customerId: number) => {
-        const data = {
+        await taskApi.createTask({
           title: values.title,
           description: values.description || '',
           assigned_to: values.assigned_to,
-          customer_id: customerId,
+          customer_ids: customerIds,
           priority: values.priority || 'normal',
-          due_date: values.due_date?.format('YYYY-MM-DD'),
-        };
-        return taskApi.createTask(data);
-      });
-
-      await Promise.all(promises);
-      message.success(`成功创建 ${customerIds.length} 个任务`);
+          due_date: values.due_date?.format('YYYY-MM-DD')
+        });
+        message.success(`成功创建任务，包含 ${customerIds.length} 个客户`);
+      }
+      
       setModalVisible(false);
       fetchTasks();
     } catch (error: any) {
@@ -191,35 +256,138 @@ export default function TaskManagement() {
     );
   };
 
+  // 任务状态标签
+  const renderStatusTag = (status: string) => {
+    const statusConfig: Record<string, { color: string; text: string }> = {
+      pending: { color: 'warning', text: '待处理' },
+      in_progress: { color: 'processing', text: '进行中' },
+      completed: { color: 'success', text: '已完成' },
+      cancelled: { color: 'default', text: '已取消' }
+    };
+    const config = statusConfig[status] || statusConfig.pending;
+    return <Tag color={config.color}>{config.text}</Tag>;
+  };
+
+  // 拨打状态标签
+  const renderCallStatusTag = (status: string) => {
+    const statusConfig: Record<string, { color: string; text: string; icon: React.ReactNode }> = {
+      pending: { color: 'default', text: '待拨打', icon: <ClockCircleOutlined /> },
+      called: { color: 'processing', text: '已拨打', icon: <PhoneOutlined /> },
+      connected: { color: 'success', text: '已接通', icon: <CheckCircleOutlined /> },
+      completed: { color: 'success', text: '已完成', icon: <CheckCircleOutlined /> },
+      failed: { color: 'error', text: '未接通', icon: <CloseCircleOutlined /> }
+    };
+    const config = statusConfig[status] || statusConfig.pending;
+    return <Tag color={config.color} icon={config.icon}>{config.text}</Tag>;
+  };
+
+  // 任务列表列定义
   const columns = [
-    { title: '任务名称', dataIndex: 'title', key: 'title' },
-    { title: '分配客服', dataIndex: 'agent_name', key: 'agent_name' },
-    { title: '客户', dataIndex: 'customer_id', key: 'customer_id', render: (id: number) => `客户 #${id}` },
-    { title: '优先级', dataIndex: 'priority', key: 'priority', render: (p: string) => (
-      <Tag color={p === 'urgent' ? 'red' : p === 'high' ? 'orange' : p === 'normal' ? 'blue' : 'default'}>
-        {p === 'urgent' ? '紧急' : p === 'high' ? '高' : p === 'normal' ? '普通' : '低'}
-      </Tag>
-    )},
-    { title: '截止日期', dataIndex: 'due_date', key: 'due_date' },
-    { title: '状态', dataIndex: 'status', key: 'status', render: (status: string) => (
-      <Tag color={status === 'completed' ? 'success' : status === 'in_progress' ? 'processing' : status === 'pending' ? 'warning' : 'default'}>
-        {status === 'completed' ? '已完成' : status === 'in_progress' ? '进行中' : status === 'pending' ? '待处理' : '已取消'}
-      </Tag>
-    )},
+    { 
+      title: '任务名称', 
+      dataIndex: 'title', 
+      key: 'title',
+      render: (title: string) => <Text strong>{title}</Text>
+    },
+    { 
+      title: '分配客服', 
+      key: 'agent',
+      render: (_: any, record: TaskDetail) => (
+        <Space>
+          <UserOutlined />
+          {record.assigned_agent?.real_name || '未分配'}
+        </Space>
+      )
+    },
+    { 
+      title: '客户数量', 
+      key: 'customers',
+      render: (_: any, record: TaskDetail) => (
+        <Space>
+          <TeamOutlined />
+          <Text>{record.customer_count || 0} 人</Text>
+        </Space>
+      )
+    },
+    { 
+      title: '完成进度', 
+      key: 'progress',
+      render: (_: any, record: TaskDetail) => {
+        const progress = record.progress || 0;
+        return (
+          <div style={{ width: 120 }}>
+            <Progress 
+              percent={progress} 
+              size="small" 
+              status={progress === 100 ? 'success' : 'active'}
+              format={() => `${record.completed_count || 0}/${record.customer_count || 0}`}
+            />
+          </div>
+        );
+      }
+    },
+    { 
+      title: '优先级', 
+      dataIndex: 'priority', 
+      key: 'priority', 
+      render: (p: string) => {
+        const priorityConfig: Record<string, { color: string; text: string }> = {
+          urgent: { color: 'red', text: '紧急' },
+          high: { color: 'orange', text: '高' },
+          normal: { color: 'blue', text: '普通' },
+          low: { color: 'default', text: '低' }
+        };
+        const config = priorityConfig[p] || priorityConfig.normal;
+        return <Tag color={config.color}>{config.text}</Tag>;
+      }
+    },
+    { 
+      title: '截止日期', 
+      dataIndex: 'due_date', 
+      key: 'due_date',
+      render: (date: string) => date || '-'
+    },
+    { 
+      title: '状态', 
+      dataIndex: 'status', 
+      key: 'status', 
+      render: (status: string) => renderStatusTag(status)
+    },
     {
       title: '操作',
       key: 'action',
-      render: (_: any, record: Task) => (
+      render: (_: any, record: TaskDetail) => (
         <Space>
-          <Button icon={<EditOutlined />} size="small" onClick={() => {
-            setEditingTask(record);
-            form.setFieldsValue({
-              ...record,
-              due_date: record.due_date ? dayjs(record.due_date) : undefined
-            });
-            setModalVisible(true);
-          }}>编辑</Button>
-          <Button danger icon={<DeleteOutlined />} size="small" onClick={() => handleDelete(record.id)}>删除</Button>
+          <Tooltip title="查看详情">
+            <Button 
+              icon={<EyeOutlined />} 
+              size="small" 
+              onClick={() => handleViewDetail(record)}
+            >
+              详情
+            </Button>
+          </Tooltip>
+          <Tooltip title="编辑">
+            <Button 
+              icon={<EditOutlined />} 
+              size="small" 
+              onClick={() => handleEdit(record)}
+            />
+          </Tooltip>
+          <Tooltip title="删除">
+            <Button 
+              danger 
+              icon={<DeleteOutlined />} 
+              size="small" 
+              onClick={() => {
+                Modal.confirm({
+                  title: '确认删除',
+                  content: `确定要删除任务「${record.title}」吗？`,
+                  onOk: () => handleDelete(record.id)
+                });
+              }}
+            />
+          </Tooltip>
         </Space>
       ),
     },
@@ -236,7 +404,7 @@ export default function TaskManagement() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <h2><ScheduleOutlined style={{ marginRight: 8 }} />任务分配</h2>
+        <h2><ScheduleOutlined style={{ marginRight: 8 }} />任务管理</h2>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
           创建任务
         </Button>
@@ -279,6 +447,7 @@ export default function TaskManagement() {
         />
       )}
 
+      {/* 创建/编辑任务弹窗 */}
       <Modal
         title={editingTask ? '编辑任务' : '创建任务'}
         open={modalVisible}
@@ -288,11 +457,11 @@ export default function TaskManagement() {
         destroyOnClose
       >
         <Form form={form} layout="vertical" onFinish={handleSubmit}>
-          <Form.Item name="title" label="任务名称" rules={[{ required: true }]}>
-            <Input placeholder="例如：跟进意向客户" />
+          <Form.Item name="title" label="任务名称" rules={[{ required: true, message: '请输入任务名称' }]}>
+            <Input placeholder="例如：本周回访任务" />
           </Form.Item>
           
-          <Form.Item name="assigned_to" label="分配客服" rules={[{ required: true }]}>
+          <Form.Item name="assigned_to" label="分配客服" rules={[{ required: true, message: '请选择客服' }]}>
             <Select placeholder="选择客服">
               {agents.map(agent => (
                 <Select.Option key={agent.id} value={agent.id}>
@@ -322,10 +491,23 @@ export default function TaskManagement() {
             <Input.TextArea rows={2} placeholder="可选：添加任务详细说明" />
           </Form.Item>
 
-          <Divider orientation="left">选择客户</Divider>
+          {/* 编辑模式显示状态选择 */}
+          {editingTask && (
+            <Form.Item name="status" label="任务状态">
+              <Select>
+                <Select.Option value="pending">待处理</Select.Option>
+                <Select.Option value="in_progress">进行中</Select.Option>
+                <Select.Option value="completed">已完成</Select.Option>
+                <Select.Option value="cancelled">已取消</Select.Option>
+              </Select>
+            </Form.Item>
+          )}
 
+          {/* 创建模式显示客户选择 */}
           {!editingTask && (
             <>
+              <Divider orientation="left">选择客户</Divider>
+
               <div style={{ marginBottom: 16 }}>
                 <Space>
                   <Checkbox 
@@ -341,7 +523,7 @@ export default function TaskManagement() {
               </div>
 
               <Tabs activeKey={customerSelectMode} onChange={(k) => setCustomerSelectMode(k as 'id' | 'letter')}>
-                <TabPane tab="按客户ID选择" key="id">
+                <TabPane tab="按客户选择" key="id">
                   <Transfer
                     dataSource={transferData}
                     titles={['可选客户', '已选客户']}
@@ -423,39 +605,162 @@ export default function TaskManagement() {
                       </Space>
                     </div>
                   )}
-
-                  {customers.length > 0 && selectedLetters.length > 0 && (
-                    <div style={{ maxHeight: 200, overflow: 'auto', border: '1px solid #d9d9d9', borderRadius: 4, padding: 8 }}>
-                      <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
-                        预览匹配的客户：
-                      </Text>
-                      <Space wrap>
-                        {customers
-                          .filter(c => selectedLetters.includes(getFirstLetter(c.name || '')))
-                          .map(c => (
-                            <Tag key={c.id} icon={<TeamOutlined />}>
-                              {c.name || '未命名'} ({c.phone})
-                            </Tag>
-                          ))}
-                      </Space>
-                    </div>
-                  )}
                 </TabPane>
               </Tabs>
             </>
           )}
-
-          {editingTask && (
-            <Form.Item name="status" label="任务状态">
-              <Select>
-                <Select.Option value="pending">待处理</Select.Option>
-                <Select.Option value="in_progress">进行中</Select.Option>
-                <Select.Option value="completed">已完成</Select.Option>
-                <Select.Option value="cancelled">已取消</Select.Option>
-              </Select>
-            </Form.Item>
-          )}
         </Form>
+      </Modal>
+
+      {/* 任务详情弹窗 */}
+      <Modal
+        title={
+          <Space>
+            <ScheduleOutlined />
+            {selectedTask?.title || '任务详情'}
+          </Space>
+        }
+        open={detailModalVisible}
+        onCancel={() => {
+          setDetailModalVisible(false);
+          setSelectedTask(null);
+        }}
+        footer={null}
+        width={900}
+      >
+        {detailLoading ? (
+          <div style={{ textAlign: 'center', padding: 40 }}>加载中...</div>
+        ) : selectedTask ? (
+          <div>
+            {/* 任务基本信息 */}
+            <Card size="small" style={{ marginBottom: 16 }}>
+              <Descriptions column={4} size="small">
+                <Descriptions.Item label="分配客服">
+                  <Space>
+                    <UserOutlined />
+                    {selectedTask.assigned_agent?.real_name || '未分配'}
+                  </Space>
+                </Descriptions.Item>
+                <Descriptions.Item label="优先级">
+                  <Tag color={selectedTask.priority === 'urgent' ? 'red' : selectedTask.priority === 'high' ? 'orange' : 'blue'}>
+                    {selectedTask.priority === 'urgent' ? '紧急' : selectedTask.priority === 'high' ? '高' : '普通'}
+                  </Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label="截止日期">{selectedTask.due_date || '-'}</Descriptions.Item>
+                <Descriptions.Item label="状态">{renderStatusTag(selectedTask.status)}</Descriptions.Item>
+              </Descriptions>
+              {selectedTask.description && (
+                <div style={{ marginTop: 12 }}>
+                  <Text type="secondary">任务描述：{selectedTask.description}</Text>
+                </div>
+              )}
+            </Card>
+
+            {/* 统计概览 */}
+            <Row gutter={16} style={{ marginBottom: 16 }}>
+              <Col span={6}>
+                <Card size="small">
+                  <Statistic 
+                    title="客户总数" 
+                    value={selectedTask.customer_count || 0}
+                    prefix={<TeamOutlined />}
+                  />
+                </Card>
+              </Col>
+              <Col span={6}>
+                <Card size="small">
+                  <Statistic 
+                    title="已拨打" 
+                    value={selectedTask.called_count || 0}
+                    prefix={<PhoneOutlined />}
+                    valueStyle={{ color: '#1890ff' }}
+                  />
+                </Card>
+              </Col>
+              <Col span={6}>
+                <Card size="small">
+                  <Statistic 
+                    title="已完成" 
+                    value={selectedTask.completed_count || 0}
+                    prefix={<CheckCircleOutlined />}
+                    valueStyle={{ color: '#52c41a' }}
+                  />
+                </Card>
+              </Col>
+              <Col span={6}>
+                <Card size="small">
+                  <Statistic 
+                    title="完成率" 
+                    value={selectedTask.progress || 0}
+                    suffix="%"
+                    valueStyle={{ color: selectedTask.progress === 100 ? '#52c41a' : '#1890ff' }}
+                  />
+                </Card>
+              </Col>
+            </Row>
+
+            {/* 客户列表 */}
+            <Card title="客户列表及拨打情况" size="small">
+              <Table
+                dataSource={selectedTask.customers || []}
+                rowKey="task_customer_id"
+                size="small"
+                pagination={{ pageSize: 10 }}
+                columns={[
+                  { 
+                    title: '客户姓名', 
+                    dataIndex: 'name', 
+                    key: 'name',
+                    render: (name: string) => <Text strong>{name}</Text>
+                  },
+                  { 
+                    title: '电话', 
+                    dataIndex: 'phone', 
+                    key: 'phone' 
+                  },
+                  { 
+                    title: '公司', 
+                    dataIndex: 'company', 
+                    key: 'company',
+                    render: (company: string) => company || '-'
+                  },
+                  { 
+                    title: '拨打状态', 
+                    dataIndex: 'call_status', 
+                    key: 'call_status',
+                    render: (status: string) => renderCallStatusTag(status)
+                  },
+                  { 
+                    title: '通话时长', 
+                    dataIndex: 'call_duration', 
+                    key: 'call_duration',
+                    render: (duration: number) => duration ? `${duration}秒` : '-'
+                  },
+                  { 
+                    title: '拨打时间', 
+                    dataIndex: 'called_at', 
+                    key: 'called_at',
+                    render: (time: string) => time ? dayjs(time).format('MM-DD HH:mm') : '-'
+                  },
+                  { 
+                    title: '备注', 
+                    dataIndex: 'call_result', 
+                    key: 'call_result',
+                    render: (result: string) => result || '-'
+                  }
+                ]}
+                locale={{
+                  emptyText: (
+                    <Empty
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      description="暂无客户"
+                    />
+                  )
+                }}
+              />
+            </Card>
+          </div>
+        ) : null}
       </Modal>
     </div>
   );
