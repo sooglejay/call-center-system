@@ -1238,7 +1238,7 @@ export default function CustomerManagement() {
         onOk={async () => {
           try {
             const values = await addForm.validateFields();
-            const response = await customerApi.createCustomer(values);
+            await customerApi.createCustomer(values);
             message.success('客户添加成功');
             setAddModalVisible(false);
             addForm.resetFields();

@@ -22,7 +22,9 @@ export default function UserManagement() {
     setLoading(true);
     try {
       const response = await userApi.getUsers();
-      setUsers(response.data || []);
+      // 支持分页格式 { data: [...], total: ... } 和直接数组格式
+      const userData = response.data?.data || response.data || [];
+      setUsers(Array.isArray(userData) ? userData : []);
     } catch (error: any) {
       message.error(error.response?.data?.error || '获取用户列表失败');
     } finally {
