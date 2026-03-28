@@ -283,7 +283,7 @@ export const updateCustomer = async (req: Request, res: Response) => {
     updateFields.push(`updated_at = datetime('now')`);
     
     // 添加 WHERE 条件的 ID 参数
-    updateValues.push(parseInt(id));
+    updateValues.push(parseInt(id as string));
     
     // 执行更新
     const updateResult = await query(
@@ -323,7 +323,7 @@ export const deleteCustomer = async (req: Request, res: Response) => {
     // 真正删除客户
     await query('DELETE FROM customers WHERE id = $1', [id]);
     
-    res.json({ message: '客户删除成功', deleted_id: parseInt(id) });
+    res.json({ message: '客户删除成功', deleted_id: parseInt(id as string) });
   } catch (error) {
     console.error('删除客户错误:', error);
     res.status(500).json({ error: '服务器错误' });

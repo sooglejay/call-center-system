@@ -192,7 +192,9 @@ class AppUpdateManager @Inject constructor(
     fun getCurrentVersionCode(): Int {
         return try {
             val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            packageInfo.longVersionCode.toInt()
+            // 兼容 API 26-27，使用 versionCode 而不是 longVersionCode
+            @Suppress("DEPRECATION")
+            packageInfo.versionCode
         } catch (e: Exception) {
             1
         }
