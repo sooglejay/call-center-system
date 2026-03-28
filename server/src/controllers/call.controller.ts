@@ -30,27 +30,53 @@ export const getCallRecords = async (req: any, res: Response) => {
     
     const total = data.length;
     
-    // 获取客户和客服名称
-    const customers = await query('SELECT id, name FROM customers');
-    const users = await query('SELECT id, real_name FROM users');
-    const customerMap = new Map(customers.rows.map((c: any) => [c.id, c.name]));
-    const userMap = new Map(users.rows.map((u: any) => [u.id, u.real_name]));
+    // 获取客户和客服信息
+    const customers = await query('SELECT id, name, phone FROM customers');
+    const users = await query('SELECT id, username, real_name, role, phone, email, status, data_access_type FROM users');
+    const customerMap = new Map(customers.rows.map((c: any) => [c.id, c]));
+    const userMap = new Map(users.rows.map((u: any) => [u.id, u]));
     
-    // 分页并添加名称
-    data = data.slice(offset, offset + parseInt(pageSize as string)).map((c: any) => ({
-      ...c,
-      customer_name: customerMap.get(c.customer_id) || '',
-      agent_name: userMap.get(c.agent_id) || ''
-    }));
+    // 分页并添加完整信息
+    data = data.slice(offset, offset + parseInt(pageSize as string)).map((c: any) => {
+      const customer = customerMap.get(c.customer_id);
+      const agent = userMap.get(c.agent_id);
+      
+      return {
+        id: c.id,
+        customer_id: c.customer_id,
+        customer: customer ? {
+          id: customer.id,
+          name: customer.name,
+          phone: customer.phone
+        } : null,
+        agent_id: c.agent_id,
+        agent: agent ? {
+          id: agent.id,
+          username: agent.username,
+          real_name: agent.real_name,
+          role: agent.role,
+          phone: agent.phone,
+          email: agent.email
+        } : null,
+        phone: c.customer_phone || customer?.phone || '',
+        direction: 'outbound',
+        status: c.status,
+        duration: c.call_duration || 0,
+        notes: c.call_notes || '',
+        recording: c.recording_url || '',
+        call_sid: c.twilio_call_sid || '',
+        dialed_at: c.started_at || null,
+        connected_at: c.connected_at || null,
+        ended_at: c.ended_at || null,
+        created_at: c.created_at
+      };
+    });
     
     res.json({
       data,
-      pagination: {
-        total,
-        page: parseInt(page as string),
-        pageSize: parseInt(pageSize as string),
-        totalPages: Math.ceil(total / parseInt(pageSize as string))
-      }
+      total,
+      page: parseInt(page as string),
+      page_size: parseInt(pageSize as string)
     });
   } catch (error) {
     console.error('获取通话记录错误:', error);

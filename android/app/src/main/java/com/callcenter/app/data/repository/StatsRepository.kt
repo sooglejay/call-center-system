@@ -1,41 +1,65 @@
 package com.callcenter.app.data.repository
 
 import com.callcenter.app.data.api.ApiService
+import com.callcenter.app.data.local.dao.CallRecordDao
+import com.callcenter.app.data.local.dao.CustomerDao
 import com.callcenter.app.data.model.Stats
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * 统计数据仓库
+ */
 @Singleton
 class StatsRepository @Inject constructor(
-    private val apiService: ApiService
+    private val apiService: ApiService,
+    private val callRecordDao: CallRecordDao,
+    private val customerDao: CustomerDao
 ) {
+
     /**
-     * 获取仪表盘统计数据
+     * 获取我的统计数据
      */
-    suspend fun getDashboardStats(): Result<Stats> {
+    suspend fun getMyStats(): Result<Stats> {
         return try {
-            val response = apiService.getDashboardStats()
+            val response = apiService.getMyStats()
             if (response.isSuccessful && response.body() != null) {
                 Result.success(response.body()!!)
             } else {
-                Result.failure(Exception("获取统计数据失败"))
+                // 从本地数据计算
+                getLocalStats()
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            // 网络异常，从本地计算
+            getLocalStats()
         }
     }
 
     /**
-     * 获取客服统计数据
+     * 从本地数据计算统计
      */
-    suspend fun getAgentStats(agentId: Int): Result<Stats> {
+    private suspend fun getLocalStats(): Result<Stats> {
         return try {
-            val response = apiService.getAgentStats(agentId)
-            if (response.isSuccessful && response.body() != null) {
-                Result.success(response.body()!!)
-            } else {
-                Result.failure(Exception("获取统计数据失败"))
-            }
+            // 这里可以基于本地数据库计算统计数据
+            val callRecords = callRecordDao.getAllCallRecords()
+            val customers = customerDao.getAllCustomers()
+
+            val totalCalls = callRecords.size
+            val successfulCalls = callRecords.count { it.status == "completed" }
+            val totalDuration = callRecords.sumOf { it.duration }
+            val pendingCustomers = customers.count { it.status == "pending" }
+            val completedCustomers = customers.count { it.status == "completed" }
+
+            Result.success(
+                Stats(
+                    totalCalls = totalCalls,
+                    totalDuration = totalDuration,
+                    successfulCalls = successfulCalls,
+                    failedCalls = totalCalls - successfulCalls,
+                    pendingCustomers = pendingCustomers,
+                    completedCustomers = completedCustomers
+                )
+            )
         } catch (e: Exception) {
             Result.failure(e)
         }

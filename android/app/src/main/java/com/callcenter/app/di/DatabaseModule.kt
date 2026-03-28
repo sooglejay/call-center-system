@@ -5,6 +5,8 @@ import androidx.room.Room
 import com.callcenter.app.data.local.AppDatabase
 import com.callcenter.app.data.local.dao.CallRecordDao
 import com.callcenter.app.data.local.dao.CustomerDao
+import com.callcenter.app.data.local.dao.TaskDao
+import com.callcenter.app.data.local.dao.UserDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -38,5 +40,15 @@ object DatabaseModule {
     @Provides
     fun provideCallRecordDao(database: AppDatabase): CallRecordDao {
         return database.callRecordDao()
+    }
+
+    @Provides
+    fun provideTaskDao(database: AppDatabase): TaskDao {
+        return database.taskDao()
+    }
+
+    @Provides
+    fun provideUserDao(database: AppDatabase): UserDao {
+        return database.userDao()
     }
 }

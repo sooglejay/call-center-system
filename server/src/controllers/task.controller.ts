@@ -20,9 +20,9 @@ export const getTasks = async (req: Request, res: Response) => {
     
     const total = data.length;
     
-    // 获取用户名称
-    const users = await query('SELECT id, real_name FROM users');
-    const userMap = new Map(users.rows.map((u: any) => [u.id, u.real_name]));
+    // 获取用户信息
+    const users = await query('SELECT id, username, real_name, role, phone, email, status, data_access_type FROM users');
+    const userMap = new Map(users.rows.map((u: any) => [u.id, u]));
     
     // 获取通话统计
     const calls = await query('SELECT * FROM calls');
@@ -37,22 +37,39 @@ export const getTasks = async (req: Request, res: Response) => {
     });
     
     // 分页并添加信息
-    data = data.slice(offset, offset + parseInt(pageSize as string)).map((t: any) => ({
-      ...t,
-      agent_name: userMap.get(t.assigned_to) || '',
-      created_by_name: userMap.get(t.created_by) || '',
-      customer_count: t.customer_id ? 1 : 0,
-      completed_count: callsByCustomer.get(t.customer_id) || 0
-    }));
+    data = data.slice(offset, offset + parseInt(pageSize as string)).map((t: any) => {
+      const agent = userMap.get(t.assigned_to);
+      return {
+        id: t.id,
+        title: t.title || t.name || '',
+        description: t.description || '',
+        status: t.status || 'pending',
+        priority: t.priority || 1,
+        assigned_to: t.assigned_to,
+        assigned_agent: agent ? {
+          id: agent.id,
+          username: agent.username,
+          real_name: agent.real_name,
+          role: agent.role,
+          phone: agent.phone,
+          email: agent.email
+        } : null,
+        due_date: t.due_date || null,
+        created_at: t.created_at,
+        updated_at: t.updated_at,
+        agent_name: agent?.real_name || '',
+        created_by_name: userMap.get(t.created_by)?.real_name || '',
+        customer_count: t.customer_id ? 1 : 0,
+        completed_count: callsByCustomer.get(t.customer_id) || 0
+      };
+    });
     
     res.json({
       data,
-      pagination: {
-        total,
-        page: parseInt(page as string),
-        pageSize: parseInt(pageSize as string),
-        totalPages: Math.ceil(total / parseInt(pageSize as string))
-      }
+      total,
+      page: parseInt(page as string),
+      page_size: parseInt(pageSize as string),
+      total_pages: Math.ceil(total / parseInt(pageSize as string))
     });
   } catch (error) {
     console.error('获取任务列表错误:', error);
@@ -64,9 +81,13 @@ export const createTask = async (req: any, res: Response) => {
   try {
     const { title, description, assigned_to, customer_id, priority } = req.body;
     
+    // 将 undefined 转为 null
+    const customerIdValue = customer_id ?? null;
+    const priorityValue = priority || 1;
+    
     await query(
       'INSERT INTO tasks (title, description, assigned_to, customer_id, priority, status, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-      [title, description, assigned_to, customer_id, priority || 'normal', 'pending', req.user.id]
+      [title, description, assigned_to, customerIdValue, priorityValue, 'pending', req.user.id]
     );
     
     // 获取插入的记录
@@ -120,6 +141,10 @@ export const getMyTasks = async (req: any, res: Response) => {
     const agentId = req.user.id;
     const result = await query('SELECT * FROM tasks WHERE assigned_to = $1 ORDER BY created_at DESC', [agentId]);
     
+    // 获取用户信息
+    const users = await query('SELECT id, username, real_name, role, phone, email FROM users');
+    const userMap = new Map(users.rows.map((u: any) => [u.id, u]));
+    
     // 获取通话统计
     const calls = await query('SELECT * FROM calls');
     const callsByCustomer = new Map();
@@ -132,11 +157,30 @@ export const getMyTasks = async (req: any, res: Response) => {
       }
     });
     
-    const data = result.rows.map((t: any) => ({
-      ...t,
-      customer_count: t.customer_id ? 1 : 0,
-      completed_count: callsByCustomer.get(t.customer_id) || 0
-    }));
+    const data = result.rows.map((t: any) => {
+      const agent = userMap.get(t.assigned_to);
+      return {
+        id: t.id,
+        title: t.title || t.name || '',
+        description: t.description || '',
+        status: t.status || 'pending',
+        priority: t.priority || 1,
+        assigned_to: t.assigned_to,
+        assigned_agent: agent ? {
+          id: agent.id,
+          username: agent.username,
+          real_name: agent.real_name,
+          role: agent.role,
+          phone: agent.phone,
+          email: agent.email
+        } : null,
+        due_date: t.due_date || null,
+        created_at: t.created_at,
+        updated_at: t.updated_at,
+        customer_count: t.customer_id ? 1 : 0,
+        completed_count: callsByCustomer.get(t.customer_id) || 0
+      };
+    });
     
     res.json(data);
   } catch (error) {
