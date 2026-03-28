@@ -1,3 +1,5 @@
+/// <reference types="express-serve-static-core" />
+
 import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
