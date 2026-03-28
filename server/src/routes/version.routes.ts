@@ -12,7 +12,7 @@ import {
 } from '../controllers/version.controller';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
 
-const router = Router();
+const router: Router = Router();
 
 // 确保上传目录存在
 const uploadDir = path.join(__dirname, '../../uploads/apk');
