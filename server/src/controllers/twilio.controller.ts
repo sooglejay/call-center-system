@@ -300,7 +300,7 @@ export const getCallStatus = async (req: Request, res: Response) => {
     const { callSid } = req.params;
     
     const client = await getTwilioClient();
-    const call = await client.calls(callSid).fetch();
+    const call = await client.calls(callSid as string).fetch();
     
     res.json({
       success: true,
@@ -323,7 +323,7 @@ export const endCall = async (req: Request, res: Response) => {
     const { callSid } = req.params;
     
     const client = await getTwilioClient();
-    await client.calls(callSid).update({ status: 'completed' });
+    await client.calls(callSid as string).update({ status: 'completed' });
     
     res.json({
       success: true,
@@ -633,7 +633,7 @@ export const checkSmsStatus = async (req: Request, res: Response) => {
     }
     
     const client = twilio(configs.twilio_account_sid, configs.twilio_auth_token);
-    const message = await client.messages(messageSid).fetch();
+    const message = await client.messages(messageSid as string).fetch();
     
     res.json({
       success: true,

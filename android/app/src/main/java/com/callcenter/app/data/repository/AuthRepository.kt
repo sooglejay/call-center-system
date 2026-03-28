@@ -26,8 +26,11 @@ class AuthRepository @Inject constructor(
      */
     suspend fun login(username: String, password: String, serverUrl: String): Result<User> {
         return try {
-            // 先保存服务器地址
+            // 先保存服务器地址，确保 DynamicBaseUrlInterceptor 能获取到正确的地址
             tokenManager.saveServerUrl(serverUrl)
+            
+            // 延迟一下，确保 DataStore 写入完成
+            kotlinx.coroutines.delay(100)
             
             val response = apiService.login(LoginRequest(username, password))
             if (response.isSuccessful && response.body() != null) {

@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Android App 自动打包并发布脚本
-# 用法: ./release.sh
-# 脚本会自动从 app/build.gradle.kts 读取版本号信息
+# 用法: ./release.sh [服务器地址]
+# 示例: ./release.sh http://192.168.1.100:8081
 
 set -e
 
@@ -21,25 +21,24 @@ KEY_PASSWORD="callcenter123"
 ADMIN_USERNAME="${ADMIN_USERNAME:-admin}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin123}"
 
-# 从 Constants.kt 读取默认服务器地址
-parse_server_url() {
-    local constants_file="app/src/main/java/com/callcenter/app/util/Constants.kt"
+# 从 local.properties 读取默认服务器地址
+parse_server_url_from_local_properties() {
+    local local_props_file="local.properties"
 
-    if [ ! -f "$constants_file" ]; then
-        echo -e "${YELLOW}警告: 找不到 $constants_file，使用默认服务器地址${NC}"
-        SERVER_URL="http://localhost:8081"
-        return
+    if [ ! -f "$local_props_file" ]; then
+        echo -e "${YELLOW}警告: 找不到 $local_props_file${NC}"
+        return 1
     fi
 
     # 提取 DEFAULT_SERVER_URL (去掉 /api/ 后缀)
-    local full_url=$(grep -E 'DEFAULT_SERVER_URL\s*=\s*"[^"]+"' "$constants_file" | grep -oE '"[^"]+"' | tr -d '"' | head -1)
+    local full_url=$(grep -E 'DEFAULT_SERVER_URL\s*=\s*[^[:space:]]+' "$local_props_file" | cut -d'=' -f2 | tr -d ' ' | head -1)
 
     if [ -z "$full_url" ]; then
-        echo -e "${YELLOW}警告: 无法从 Constants.kt 解析服务器地址，使用默认服务器地址${NC}"
-        SERVER_URL="http://localhost:8081"
+        return 1
     else
         # 去掉 /api/ 后缀，因为 API 路径会在请求时自动添加
         SERVER_URL=$(echo "$full_url" | sed 's|/api/$||; s|/api$||')
+        return 0
     fi
 }
 
@@ -48,18 +47,21 @@ show_help() {
     echo -e "${BLUE}Android App 自动打包发布脚本${NC}"
     echo ""
     echo "用法:"
-    echo "  ./release.sh"
+    echo "  ./release.sh [服务器地址]"
     echo ""
-    echo "说明:"
-    echo "  脚本会自动从 app/build.gradle.kts 读取 versionCode 和 versionName"
+    echo "参数:"
+    echo "  服务器地址  可选，指定服务器地址（如 http://192.168.1.100:8081）"
+    echo "              如果不指定，将从 local.properties 读取"
     echo ""
     echo "环境变量 (可选，用于覆盖默认配置):"
-    echo "  SERVER_URL      服务器地址 (默认: 从 Constants.kt 读取)"
+    echo "  SERVER_URL      服务器地址（优先级最高）"
     echo "  ADMIN_USERNAME  管理员账号 (默认: admin)"
     echo "  ADMIN_PASSWORD  管理员密码 (默认: admin123)"
     echo ""
     echo "示例:"
-    echo "  ./release.sh"
+    echo "  ./release.sh                              # 从 local.properties 读取服务器地址"
+    echo "  ./release.sh http://192.168.1.100:8081    # 指定服务器地址"
+    echo "  SERVER_URL=http://example.com:8081 ./release.sh  # 使用环境变量"
 }
 
 # 解析 build.gradle.kts 获取版本号
@@ -104,14 +106,33 @@ fi
 # 从 build.gradle.kts 读取版本号
 parse_version_from_gradle
 
-# 从 Constants.kt 读取服务器地址
-parse_server_url
+# 确定服务器地址（优先级：环境变量 > 命令行参数 > local.properties）
+if [ -n "$SERVER_URL" ]; then
+    # 环境变量优先级最高
+    echo -e "${YELLOW}使用环境变量指定的服务器地址:${NC} $SERVER_URL"
+elif [ -n "$1" ]; then
+    # 命令行参数
+    SERVER_URL="$1"
+    echo -e "${YELLOW}使用命令行指定的服务器地址:${NC} $SERVER_URL"
+else
+    # 从 local.properties 读取
+    if parse_server_url_from_local_properties; then
+        echo -e "${YELLOW}从 local.properties 读取服务器地址:${NC} $SERVER_URL"
+    else
+        echo -e "${RED}错误: 无法确定服务器地址${NC}"
+        echo "请使用以下方式之一指定:"
+        echo "  1. 设置 SERVER_URL 环境变量"
+        echo "  2. 命令行参数: ./release.sh http://example.com:8081"
+        echo "  3. 在 local.properties 中设置 DEFAULT_SERVER_URL"
+        exit 1
+    fi
+fi
 
+echo ""
 echo -e "${YELLOW}版本信息 (从 build.gradle.kts 读取):${NC}"
 echo "  版本号 (versionCode): $VERSION_CODE"
 echo "  版本名称 (versionName): $VERSION_NAME"
-echo -e "${YELLOW}服务器地址 (从 Constants.kt 读取):${NC}"
-echo "  服务器: $SERVER_URL"
+echo -e "${YELLOW}服务器地址:${NC} $SERVER_URL"
 echo ""
 
 # 确认发布

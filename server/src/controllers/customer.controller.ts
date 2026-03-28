@@ -283,7 +283,7 @@ export const updateCustomer = async (req: Request, res: Response) => {
     updateFields.push(`updated_at = datetime('now')`);
     
     // 添加 WHERE 条件的 ID 参数
-    updateValues.push(parseInt(id));
+    updateValues.push(parseInt(id as string));
     
     // 执行更新
     const updateResult = await query(
@@ -323,7 +323,7 @@ export const deleteCustomer = async (req: Request, res: Response) => {
     // 真正删除客户
     await query('DELETE FROM customers WHERE id = $1', [id]);
     
-    res.json({ message: '客户删除成功', deleted_id: parseInt(id) });
+    res.json({ message: '客户删除成功', deleted_id: parseInt(id as string) });
   } catch (error) {
     console.error('删除客户错误:', error);
     res.status(500).json({ error: '服务器错误' });
@@ -438,10 +438,11 @@ export const batchAssignAgents = async (req: any, res: Response) => {
         console.log(`[批量分配] 找到客户: ${customer.name} (ID=${customerId}), 原分配: ${customer.assigned_to_name || '未分配'}`);
         
         try {
-          // 更新客户分配（只更新assigned_to，assigned_to_name通过JOIN查询）
+          // 更新客户分配（同时更新 assigned_to 和 data_source，确保客服能看到）
+          // 将 data_source 设置为 'real'，与管理员导入的数据保持一致
           await query(
-            'UPDATE customers SET assigned_to = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-            [assigned_to, customerId]
+            'UPDATE customers SET assigned_to = $1, data_source = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
+            [assigned_to, 'real', customerId]
           );
           console.log(`[批量分配] 成功更新客户 ${customerId}`);
           updatedCount++;
