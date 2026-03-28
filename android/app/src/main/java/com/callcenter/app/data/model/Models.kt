@@ -122,7 +122,7 @@ data class Task(
     val title: String,
     val description: String? = null,
     val status: String = "pending",
-    val priority: Int = 1,
+    val priority: String = "normal",
     @SerializedName("assigned_to")
     val assignedTo: Int? = null,
     @SerializedName("assigned_agent")
@@ -132,7 +132,60 @@ data class Task(
     @SerializedName("created_at")
     val createdAt: String? = null,
     @SerializedName("updated_at")
-    val updatedAt: String? = null
+    val updatedAt: String? = null,
+    // 任务统计字段
+    @SerializedName("customer_count")
+    val customerCount: Int = 0,
+    @SerializedName("completed_count")
+    val completedCount: Int = 0,
+    @SerializedName("called_count")
+    val calledCount: Int = 0,
+    @SerializedName("progress")
+    val progress: Int = 0,
+    // 任务客户列表（仅在详情时返回）
+    @SerializedName("customers")
+    val customers: List<TaskCustomer>? = null
+) {
+    /**
+     * 获取优先级数值（用于UI显示）
+     * normal -> 1, high -> 2, urgent -> 3
+     */
+    fun getPriorityValue(): Int {
+        return when (priority.lowercase()) {
+            "urgent" -> 3
+            "high" -> 2
+            else -> 1
+        }
+    }
+}
+
+/**
+ * 任务中的客户信息
+ */
+data class TaskCustomer(
+    @SerializedName("task_customer_id")
+    val taskCustomerId: Int,
+    val id: Int,
+    val name: String,
+    val phone: String,
+    val email: String? = null,
+    val company: String? = null,
+    @SerializedName("customer_status")
+    val customerStatus: String? = null,
+    @SerializedName("call_status")
+    val callStatus: String = "pending",
+    @SerializedName("call_result")
+    val callResult: String? = null,
+    @SerializedName("called_at")
+    val calledAt: String? = null,
+    @SerializedName("call_id")
+    val callId: Int? = null,
+    @SerializedName("call_duration")
+    val callDuration: Int? = null,
+    @SerializedName("is_connected")
+    val isConnected: Boolean = false,
+    @SerializedName("call_time")
+    val callTime: String? = null
 )
 
 /**
@@ -277,7 +330,7 @@ data class TaskListResponse(
 data class CreateTaskRequest(
     val title: String,
     val description: String? = null,
-    val priority: Int = 1,
+    val priority: String = "normal",
     @SerializedName("assigned_to")
     val assignedTo: Int? = null,
     @SerializedName("due_date")
@@ -408,4 +461,24 @@ data class BatchAssignResponse(
  */
 data class CustomerLetterGroupResponse(
     val groups: Map<String, List<Customer>>
+)
+
+// ==================== 版本更新相关 ====================
+
+/**
+ * 版本信息响应
+ */
+data class VersionInfo(
+    @SerializedName("version_code")
+    val versionCode: Int,
+    @SerializedName("version_name")
+    val versionName: String,
+    @SerializedName("apk_url")
+    val apkUrl: String,
+    @SerializedName("update_log")
+    val updateLog: String? = null,
+    @SerializedName("force_update")
+    val forceUpdate: Boolean = false,
+    @SerializedName("min_version_code")
+    val minVersionCode: Int? = null
 )

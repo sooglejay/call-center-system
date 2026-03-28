@@ -163,7 +163,6 @@ fun SettingsScreen(
                 Button(
                     onClick = {
                         showLogoutConfirmDialog = false
-                        viewModel.logout()
                         onLogout()
                     },
                     colors = ButtonDefaults.buttonColors(

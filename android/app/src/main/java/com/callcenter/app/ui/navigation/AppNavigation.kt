@@ -1,8 +1,10 @@
 package com.callcenter.app.ui.navigation
 
+import android.content.Intent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -10,9 +12,12 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.callcenter.app.service.AutoDialService
 import com.callcenter.app.ui.screens.admin.AgentDetailScreen
 import com.callcenter.app.ui.screens.admin.AgentListScreen
+import com.callcenter.app.ui.screens.admin.CreateTaskScreen
 import com.callcenter.app.ui.screens.admin.DashboardScreen
+import com.callcenter.app.ui.screens.admin.TaskDetailScreen
 import com.callcenter.app.ui.screens.admin.TaskListScreen
 import com.callcenter.app.ui.screens.auth.LoginScreen
 import com.callcenter.app.ui.screens.customer.CustomerDetailScreen
@@ -55,6 +60,9 @@ sealed class Screen(val route: String) {
     }
     object TaskList : Screen("admin/tasks")
     object CreateTask : Screen("admin/tasks/create")
+    object TaskDetail : Screen("admin/tasks/{taskId}") {
+        fun createRoute(taskId: Int) = "admin/tasks/$taskId"
+    }
 }
 
 /**
@@ -65,8 +73,19 @@ fun AppNavigation(
     navController: NavHostController = rememberNavController(),
     authViewModel: AuthViewModel = hiltViewModel()
 ) {
+    val context = LocalContext.current
     val isLoggedIn by authViewModel.isLoggedIn.collectAsState()
-    val currentUser by authViewModel.currentUser.collectAsState()
+
+    // 退出登录时停止自动拨号
+    fun stopAutoDialAndLogout() {
+        // 停止自动拨号服务
+        val intent = Intent(context, AutoDialService::class.java).apply {
+            action = AutoDialService.ACTION_STOP
+        }
+        context.startService(intent)
+        // 执行退出登录
+        authViewModel.logout()
+    }
 
     NavHost(
         navController = navController,
@@ -104,8 +123,11 @@ fun AppNavigation(
                 onNavigateToTasks = {
                     navController.navigate(Screen.TaskList.route)
                 },
+                onNavigateToTaskDetail = { taskId ->
+                    navController.navigate(Screen.TaskDetail.createRoute(taskId))
+                },
                 onLogout = {
-                    authViewModel.logout()
+                    stopAutoDialAndLogout()
                     navController.navigate(Screen.Login.route) {
                         popUpTo(Screen.Main.route) { inclusive = true }
                     }
@@ -147,7 +169,7 @@ fun AppNavigation(
                     navController.navigate(Screen.AutoDialSettings.route)
                 },
                 onLogout = {
-                    authViewModel.logout()
+                    stopAutoDialAndLogout()
                     navController.navigate(Screen.Login.route) {
                         popUpTo(Screen.Main.route) { inclusive = true }
                     }
@@ -212,12 +234,28 @@ fun AppNavigation(
                 onNavigateBack = { navController.popBackStack() },
                 onCreateTask = {
                     navController.navigate(Screen.CreateTask.route)
+                },
+                onTaskClick = { taskId ->
+                    navController.navigate(Screen.TaskDetail.createRoute(taskId))
                 }
             )
         }
 
+        composable(
+            route = Screen.TaskDetail.route,
+            arguments = listOf(navArgument("taskId") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val taskId = backStackEntry.arguments?.getInt("taskId") ?: 0
+            TaskDetailScreen(
+                taskId = taskId,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
         composable(Screen.CreateTask.route) {
-            // TODO: 实现创建任务页面
+            CreateTaskScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
         }
     }
 }

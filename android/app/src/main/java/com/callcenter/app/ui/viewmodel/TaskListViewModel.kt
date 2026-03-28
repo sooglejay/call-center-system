@@ -2,6 +2,7 @@ package com.callcenter.app.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.callcenter.app.data.model.CreateTaskRequest
 import com.callcenter.app.data.model.Task
 import com.callcenter.app.data.repository.TaskRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -97,6 +98,29 @@ class TaskListViewModel @Inject constructor(
                 },
                 onFailure = { exception ->
                     _error.value = exception.message ?: "更新任务状态失败"
+                }
+            )
+        }
+    }
+
+    /**
+     * 创建任务
+     */
+    fun createTask(
+        request: CreateTaskRequest,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            val result = taskRepository.createTask(request)
+
+            result.fold(
+                onSuccess = { newTask ->
+                    _tasks.value = _tasks.value + newTask
+                    onSuccess()
+                },
+                onFailure = { exception ->
+                    onError(exception.message ?: "创建任务失败")
                 }
             )
         }

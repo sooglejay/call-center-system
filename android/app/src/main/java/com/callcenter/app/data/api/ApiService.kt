@@ -311,4 +311,15 @@ interface ApiService {
         @Query("period") period: String = "today",
         @Query("limit") limit: Int = 10
     ): Response<List<AgentRanking>>
+
+    // ==================== 版本更新 ====================
+
+    /**
+     * 检查版本更新
+     */
+    @GET("version/check")
+    suspend fun checkVersion(
+        @Query("version_code") versionCode: Int,
+        @Query("platform") platform: String = "android"
+    ): Response<VersionInfo>
 }

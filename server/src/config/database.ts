@@ -153,6 +153,27 @@ CREATE TABLE IF NOT EXISTS unanswered_records (
   reason TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- App版本管理表
+CREATE TABLE IF NOT EXISTS app_versions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  version_code INTEGER NOT NULL,
+  version_name TEXT NOT NULL,
+  platform TEXT NOT NULL DEFAULT 'android',
+  apk_url TEXT NOT NULL,
+  update_log TEXT,
+  force_update INTEGER DEFAULT 0,
+  min_version_code INTEGER,
+  is_active INTEGER DEFAULT 1,
+  created_by INTEGER REFERENCES users(id),
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 创建唯一索引：每个平台只保留一个活跃版本
+CREATE UNIQUE INDEX IF NOT EXISTS idx_app_versions_active_platform 
+ON app_versions(platform) 
+WHERE is_active = 1;
 `;
 
 // 默认系统配置

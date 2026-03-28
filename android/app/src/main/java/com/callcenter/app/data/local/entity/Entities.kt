@@ -73,7 +73,7 @@ data class TaskEntity(
     val title: String,
     val description: String? = null,
     val status: String = "pending",
-    val priority: Int = 1,
+    val priority: String = "normal",
     val assignedTo: Int? = null,
     val dueDate: String? = null,
     val createdAt: String? = null,

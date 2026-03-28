@@ -161,37 +161,47 @@ class AutoDialService : Service() {
 
     private suspend fun waitForCallEndOrTimeout() {
         var elapsedTime = 0
+        var callConnected = false
 
         // 尝试使用 TelephonyManager，如果没有权限则使用简单的延时
         try {
             val telephonyManager = getSystemService(TELEPHONY_SERVICE) as TelephonyManager
 
-            // 等待电话接通
+            // 等待电话接通或失败
             while (_isRunning.value && elapsedTime < timeoutSeconds * 1000) {
                 val state = telephonyManager.callState
-                if (state == TelephonyManager.CALL_STATE_OFFHOOK) {
-                    // 电话已接通，等待挂断
-                    while (telephonyManager.callState != TelephonyManager.CALL_STATE_IDLE) {
-                        delay(500)
+                
+                when (state) {
+                    TelephonyManager.CALL_STATE_OFFHOOK -> {
+                        // 电话已接通，标记为已连接
+                        callConnected = true
+                        updateNotification("通话中...")
                     }
-                    return
+                    TelephonyManager.CALL_STATE_IDLE -> {
+                        if (callConnected) {
+                            // 之前已接通，现在挂断了
+                            return
+                        }
+                        // 电话未接通就被挂断了（如无法连接到移动网络）
+                        // 等待一小段时间确保状态稳定
+                        delay(500)
+                        // 再次检查，如果仍然是IDLE，说明确实已结束
+                        if (telephonyManager.callState == TelephonyManager.CALL_STATE_IDLE) {
+                            return
+                        }
+                    }
+                    TelephonyManager.CALL_STATE_RINGING -> {
+                        // 响铃中，继续等待
+                    }
                 }
-                if (state == TelephonyManager.CALL_STATE_IDLE) {
-                    // 电话未接通就被挂断了
-                    return
-                }
+                
                 delay(500)
                 elapsedTime += 500
             }
         } catch (e: SecurityException) {
             // 没有权限，使用简单的延时策略
             // 等待拨号完成（通常需要几秒钟）
-            delay(2000)
-            // 然后等待用户手动挂断或超时
-            while (_isRunning.value && elapsedTime < timeoutSeconds * 1000) {
-                delay(1000)
-                elapsedTime += 1000
-            }
+            delay(3000)
         }
     }
 

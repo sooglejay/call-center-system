@@ -19,7 +19,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.callcenter.app.data.model.AgentStats
+import com.callcenter.app.data.model.Stats
 import com.callcenter.app.data.model.User
 import com.callcenter.app.ui.viewmodel.AgentDetailViewModel
 
@@ -454,7 +454,7 @@ private fun AgentHeader(agent: User) {
  * 客服统计卡片
  */
 @Composable
-private fun AgentStatsCard(stats: AgentStats) {
+private fun AgentStatsCard(stats: Stats) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -477,7 +477,7 @@ private fun AgentStatsCard(stats: AgentStats) {
             ) {
                 StatColumn("今日通话", stats.todayCalls.toString())
                 StatColumn("今日时长", formatDuration(stats.todayDuration))
-                StatColumn("今日接通", stats.todaySuccessful.toString())
+                StatColumn("今日成功", stats.todaySuccessful.toString())
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -505,6 +505,7 @@ private fun AgentStatsCard(stats: AgentStats) {
             ) {
                 StatColumn("待跟进客户", stats.pendingCustomers.toString())
                 StatColumn("已完成客户", stats.completedCustomers.toString())
+                StatColumn("总通话", stats.totalCalls.toString())
             }
         }
     }

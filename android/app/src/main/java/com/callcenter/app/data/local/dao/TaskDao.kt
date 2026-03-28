@@ -10,13 +10,13 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface TaskDao {
 
-    @Query("SELECT * FROM tasks ORDER BY priority DESC, created_at DESC")
+    @Query("SELECT * FROM tasks ORDER BY priority DESC, createdAt DESC")
     suspend fun getAllTasks(): List<TaskEntity>
 
-    @Query("SELECT * FROM tasks WHERE status = :status ORDER BY priority DESC, created_at DESC")
+    @Query("SELECT * FROM tasks WHERE status = :status ORDER BY priority DESC, createdAt DESC")
     suspend fun getTasksByStatus(status: String): List<TaskEntity>
 
-    @Query("SELECT * FROM tasks WHERE assigned_to = :agentId ORDER BY priority DESC, created_at DESC")
+    @Query("SELECT * FROM tasks WHERE assignedTo = :agentId ORDER BY priority DESC, createdAt DESC")
     suspend fun getTasksByAgent(agentId: Int): List<TaskEntity>
 
     @Query("SELECT * FROM tasks WHERE id = :taskId")
