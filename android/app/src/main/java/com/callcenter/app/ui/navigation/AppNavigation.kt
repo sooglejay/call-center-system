@@ -1,13 +1,20 @@
 package com.callcenter.app.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.callcenter.app.ui.screens.auth.LoginScreen
+import com.callcenter.app.ui.screens.customer.CustomerDetailScreen
 import com.callcenter.app.ui.screens.main.MainScreen
+import com.callcenter.app.ui.screens.settings.CallSettingsScreen
+import com.callcenter.app.ui.screens.settings.SettingsScreen
 import com.callcenter.app.ui.viewmodel.AuthViewModel
 
 sealed class Screen(val route: String) {
@@ -28,7 +35,7 @@ fun AppNavigation(
     navController: NavHostController = rememberNavController(),
     authViewModel: AuthViewModel = hiltViewModel()
 ) {
-    val isLoggedIn = authViewModel.isLoggedIn.value
+    val isLoggedIn by authViewModel.isLoggedIn.collectAsState()
 
     NavHost(
         navController = navController,
@@ -53,6 +60,7 @@ fun AppNavigation(
                     navController.navigate(Screen.CustomerDetail.createRoute(customerId))
                 },
                 onLogout = {
+                    authViewModel.logout()
                     navController.navigate(Screen.Login.route) {
                         popUpTo(Screen.Main.route) { inclusive = true }
                     }
@@ -60,19 +68,50 @@ fun AppNavigation(
             )
         }
 
-        composable(Screen.CustomerDetail.route) { backStackEntry ->
-            val customerId = backStackEntry.arguments?.getString("customerId")?.toIntOrNull()
-            if (customerId != null) {
-                // CustomerDetailScreen(customerId = customerId, ...)
-            }
+        composable(
+            route = Screen.CustomerDetail.route,
+            arguments = listOf(navArgument("customerId") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val customerId = backStackEntry.arguments?.getInt("customerId") ?: 0
+            CustomerDetailScreen(
+                customerId = customerId,
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToCallHistory = {
+                    navController.navigate(Screen.CallHistory.createRoute(customerId))
+                },
+                onCallCustomer = { phone ->
+                    // 拨打电话的逻辑将在 MainScreen 中处理
+                }
+            )
+        }
+
+        composable(
+            route = Screen.CallHistory.route,
+            arguments = listOf(navArgument("customerId") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val customerId = backStackEntry.arguments?.getInt("customerId") ?: 0
+            // TODO: 实现通话历史页面
         }
 
         composable(Screen.Settings.route) {
-            // SettingsScreen(...)
+            SettingsScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToCallSettings = {
+                    navController.navigate(Screen.AutoDialSettings.route)
+                },
+                onLogout = {
+                    authViewModel.logout()
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(Screen.Main.route) { inclusive = true }
+                    }
+                }
+            )
         }
 
         composable(Screen.AutoDialSettings.route) {
-            // AutoDialSettingsScreen(...)
+            CallSettingsScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
         }
     }
 }

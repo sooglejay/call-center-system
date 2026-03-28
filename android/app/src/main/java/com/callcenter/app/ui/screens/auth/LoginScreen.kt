@@ -20,17 +20,18 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.callcenter.app.ui.viewmodel.AuthViewModel
+import com.callcenter.app.util.Constants
 
 @Composable
 fun LoginScreen(
     onLoginSuccess: () -> Unit,
     viewModel: AuthViewModel = hiltViewModel()
 ) {
-    val isLoading by viewModel.isLoading
-    val error by viewModel.error
-    val savedServerUrl by viewModel.savedServerUrl
-    val savedUsername by viewModel.savedUsername
-    val isLoggedIn by viewModel.isLoggedIn
+    val isLoading by viewModel.isLoading.collectAsState()
+    val error by viewModel.error.collectAsState()
+    val savedServerUrl by viewModel.savedServerUrl.collectAsState()
+    val savedUsername by viewModel.savedUsername.collectAsState()
+    val isLoggedIn by viewModel.isLoggedIn.collectAsState()
 
     var serverUrl by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
@@ -44,7 +45,7 @@ fun LoginScreen(
         if (savedServerUrl.isNotBlank()) {
             serverUrl = savedServerUrl
         } else {
-            serverUrl = "http://10.0.2.2:8081/api/"
+            serverUrl = Constants.DEFAULT_SERVER_URL
         }
         if (savedUsername.isNotBlank()) {
             username = savedUsername
@@ -262,20 +263,16 @@ fun LoginScreen(
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "• Android 模拟器访问本机：10.0.2.2",
+                        text = "• 管理员账号：admin / admin123",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "• 真机访问：使用电脑局域网 IP",
+                        text = "• 普通客服账号：agent / agent123",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Text(
-                        text = "• 默认账号：admin / admin123",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+
                 }
             }
         }

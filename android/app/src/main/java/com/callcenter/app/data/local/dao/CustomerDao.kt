@@ -7,20 +7,20 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface CustomerDao {
 
-    @Query("SELECT * FROM customers ORDER BY priority DESC, created_at DESC")
-    fun getAllCustomers(): List<CustomerEntity>
+    @Query("SELECT * FROM customers ORDER BY priority DESC, createdAt DESC")
+    suspend fun getAllCustomers(): List<CustomerEntity>
 
     @Query("SELECT * FROM customers WHERE id = :id")
     suspend fun getCustomerById(id: Int): CustomerEntity?
 
-    @Query("SELECT * FROM customers WHERE status = :status ORDER BY priority DESC, created_at DESC")
-    fun getCustomersByStatus(status: String): List<CustomerEntity>
+    @Query("SELECT * FROM customers WHERE status = :status ORDER BY priority DESC, createdAt DESC")
+    suspend fun getCustomersByStatus(status: String): List<CustomerEntity>
 
-    @Query("SELECT * FROM customers WHERE status = 'pending' ORDER BY priority DESC, created_at ASC LIMIT 1")
+    @Query("SELECT * FROM customers WHERE status = 'pending' ORDER BY priority DESC, createdAt ASC LIMIT 1")
     suspend fun getNextPendingCustomer(): CustomerEntity?
 
-    @Query("SELECT * FROM customers WHERE name LIKE '%' || :query || '%' OR phone LIKE '%' || :query || '%' ORDER BY created_at DESC")
-    fun searchCustomers(query: String): List<CustomerEntity>
+    @Query("SELECT * FROM customers WHERE name LIKE '%' || :query || '%' OR phone LIKE '%' || :query || '%' ORDER BY createdAt DESC")
+    suspend fun searchCustomers(query: String): List<CustomerEntity>
 
     @Query("SELECT COUNT(*) FROM customers WHERE status = 'pending'")
     fun getPendingCount(): Flow<Int>

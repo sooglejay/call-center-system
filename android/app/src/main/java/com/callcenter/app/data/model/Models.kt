@@ -1,6 +1,7 @@
 package com.callcenter.app.data.model
 
 import com.google.gson.annotations.SerializedName
+import java.io.Serializable
 
 /**
  * 登录请求
@@ -33,7 +34,7 @@ data class User(
     val avatarUrl: String?,
     @SerializedName("data_access_type")
     val dataAccessType: String? = "all"
-)
+) : Serializable
 
 /**
  * 客户信息
@@ -58,7 +59,7 @@ data class Customer(
     val createdAt: String? = null,
     @SerializedName("updated_at")
     val updatedAt: String? = null
-)
+) : Serializable
 
 /**
  * 客户列表响应
@@ -77,7 +78,7 @@ data class CustomerListResponse(
  * 通话记录
  */
 data class CallRecord(
-    val id: Int,
+    val id: Int = 0,
     @SerializedName("customer_id")
     val customerId: Int,
     val customer: Customer? = null,
