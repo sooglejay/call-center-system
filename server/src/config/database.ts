@@ -256,6 +256,28 @@ const runMigrations = () => {
     db.run("ALTER TABLE customers ADD COLUMN source TEXT");
   }
   
+  // 创建 task_customers 关联表（如果不存在）
+  const taskCustomersTable = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='task_customers'");
+  if (taskCustomersTable.length === 0 || taskCustomersTable[0].values.length === 0) {
+    console.log('  ➕ 创建 task_customers 关联表');
+    db.run(`
+      CREATE TABLE IF NOT EXISTS task_customers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        customer_id INTEGER NOT NULL REFERENCES customers(id),
+        status TEXT DEFAULT 'pending',
+        call_id INTEGER REFERENCES calls(id),
+        call_result TEXT,
+        called_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(task_id, customer_id)
+      )
+    `);
+    // 创建索引
+    db.run('CREATE INDEX IF NOT EXISTS idx_task_customers_task_id ON task_customers(task_id)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_task_customers_customer_id ON task_customers(customer_id)');
+  }
+  
   console.log('✅ 数据库迁移完成');
 };
 

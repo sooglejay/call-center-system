@@ -99,10 +99,17 @@ export const callApi = {
 // 任务API
 export const taskApi = {
   getTasks: (params?: any) => api.get('/tasks', { params }),
+  getTaskById: (id: number) => api.get(`/tasks/${id}`),
   createTask: (data: any) => api.post('/tasks', data),
   updateTask: (id: number, data: any) => api.put(`/tasks/${id}`, data),
   deleteTask: (id: number) => api.delete(`/tasks/${id}`),
-  getMyTasks: () => api.get('/tasks/my/list')
+  getMyTasks: () => api.get('/tasks/my/list'),
+  addCustomers: (taskId: number, customer_ids: number[]) => 
+    api.post(`/tasks/${taskId}/customers`, { customer_ids }),
+  removeCustomer: (taskId: number, customerId: number) => 
+    api.delete(`/tasks/${taskId}/customers/${customerId}`),
+  updateCustomerStatus: (taskId: number, customerId: number, data: any) => 
+    api.put(`/tasks/${taskId}/customers/${customerId}/status`, data)
 };
 
 // 统计API

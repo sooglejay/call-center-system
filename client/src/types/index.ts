@@ -62,24 +62,46 @@ export interface CallRecord {
 
 export interface Task {
   id: number;
-  name: string;
+  name?: string;
   title?: string;
   description?: string;
-  agent_id: number;
+  agent_id?: number;
   agent_name?: string;
-  customer_ids: number[];
+  assigned_to?: number;
+  assigned_agent?: User;
+  customer_ids?: number[];
   customer_count?: number;
   completed_count?: number;
-  task_type: 'daily' | 'weekly';
+  called_count?: number;
+  progress?: number;
+  task_type?: 'daily' | 'weekly';
   status: 'active' | 'completed' | 'cancelled' | 'pending' | 'in_progress';
   priority?: 'low' | 'normal' | 'high' | 'urgent';
   due_date?: string;
-  start_date: string;
-  end_date: string;
+  start_date?: string;
+  end_date?: string;
   created_by?: number;
   created_by_name?: string;
   created_at: string;
   updated_at: string;
+  customers?: TaskCustomer[];
+}
+
+export interface TaskCustomer {
+  task_customer_id: number;
+  id: number;
+  name: string;
+  phone: string;
+  email?: string;
+  company?: string;
+  customer_status: string;
+  call_status: string;
+  call_result?: string;
+  called_at?: string;
+  call_id?: number;
+  call_duration?: number;
+  is_connected?: boolean;
+  call_time?: string;
 }
 
 export interface AgentConfig {
