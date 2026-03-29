@@ -1787,9 +1787,15 @@ private fun AgentCustomersTab(
             contentAlignment = Alignment.BottomEnd
         ) {
             ExtendedFloatingActionButton(
-                onClick = { showAutoDialDialog = true },
+                onClick = {
+                    if (autoDialRunning) {
+                        autoDialViewModel.stopAutoDial()
+                    } else {
+                        showAutoDialDialog = true
+                    }
+                },
                 icon = { Icon(if (autoDialRunning) Icons.Default.Stop else Icons.Default.PlayArrow, null) },
-                text = { Text(if (autoDialRunning) "停止" else "自动拨号") },
+                text = { Text(if (autoDialRunning) "停止拨号" else "自动拨号") },
                 containerColor = if (autoDialRunning) MaterialTheme.colorScheme.error
                 else MaterialTheme.colorScheme.primaryContainer,
                 modifier = Modifier.padding(end = 16.dp)
