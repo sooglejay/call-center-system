@@ -203,6 +203,7 @@ fun LoginScreen(
                                 username = savedUser
                                 password = savedPass
                                 showAccountDropdown = false
+                                focusManager.clearFocus() // 隐藏键盘
                             }
                         )
                     }

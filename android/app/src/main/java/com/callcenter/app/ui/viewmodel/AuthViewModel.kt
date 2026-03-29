@@ -27,6 +27,9 @@ class AuthViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _isCheckingAuth = MutableStateFlow(true)
+    val isCheckingAuth: StateFlow<Boolean> = _isCheckingAuth.asStateFlow()
+
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
@@ -49,11 +52,13 @@ class AuthViewModel @Inject constructor(
 
     private fun checkLoginState() {
         viewModelScope.launch {
+            _isCheckingAuth.value = true
             _isLoggedIn.value = authRepository.isLoggedIn()
             _currentUser.value = authRepository.currentUser.value
             _savedServerUrl.value = authRepository.getServerUrl() ?: ""
             _savedUsername.value = authRepository.getSavedUsername() ?: ""
             _savedPassword.value = authRepository.getSavedPassword() ?: ""
+            _isCheckingAuth.value = false
         }
     }
 
