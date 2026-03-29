@@ -940,6 +940,9 @@ private fun AgentWorkTab(
             .padding(padding)
             .verticalScroll(rememberScrollState())
     ) {
+        // 顶部统一间距
+        Spacer(modifier = Modifier.height(12.dp))
+
         // 顶部欢迎区域
         Surface(
             modifier = Modifier.fillMaxWidth(),
@@ -972,7 +975,6 @@ private fun AgentWorkTab(
                 currentCustomer = currentDialCustomer,
                 onStop = { autoDialViewModel.stopAutoDial() }
             )
-            Spacer(modifier = Modifier.height(16.dp))
         }
 
         // 客户跟进进度（从myStats获取数据）
@@ -983,7 +985,6 @@ private fun AgentWorkTab(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
-                        .padding(top = if (!autoDialRunning) 16.dp else 0.dp)
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp)
