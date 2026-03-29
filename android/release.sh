@@ -2,7 +2,7 @@
 
 # Android App 自动打包并发布脚本
 # 用法: ./release.sh [服务器地址]
-# 示例: ./release.sh http://192.168.1.100:8081
+# 示例: ./release.sh http://localhost:8081
 
 set -e
 
@@ -50,7 +50,7 @@ show_help() {
     echo "  ./release.sh [服务器地址]"
     echo ""
     echo "参数:"
-    echo "  服务器地址  可选，指定服务器地址（如 http://192.168.1.100:8081）"
+    echo "  服务器地址  可选，指定服务器地址（如 http://localhost:8081）"
     echo "              如果不指定，将从 local.properties 读取"
     echo ""
     echo "环境变量 (可选，用于覆盖默认配置):"
@@ -60,7 +60,7 @@ show_help() {
     echo ""
     echo "示例:"
     echo "  ./release.sh                              # 从 local.properties 读取服务器地址"
-    echo "  ./release.sh http://192.168.1.100:8081    # 指定服务器地址"
+    echo "  ./release.sh http://localhost:8081    # 指定服务器地址"
     echo "  SERVER_URL=http://example.com:8081 ./release.sh  # 使用环境变量"
 }
 

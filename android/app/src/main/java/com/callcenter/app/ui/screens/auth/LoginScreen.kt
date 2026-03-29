@@ -100,7 +100,7 @@ fun LoginScreen(
                 value = serverUrl,
                 onValueChange = { serverUrl = it },
                 label = { Text("服务器地址") },
-                placeholder = { Text("http://192.168.1.100:8081/api/") },
+                placeholder = { Text("http://localhost:8081/api/") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 leadingIcon = {

@@ -424,7 +424,8 @@ export const batchAssignAgents = async (req: any, res: Response) => {
     }
     
     const agentName = agentResult.rows[0].real_name;
-    console.log(`[批量分配] 找到客服: ${agentName} (ID=${assigned_to})`);
+    const agentDataAccessType = agentResult.rows[0].data_access_type || 'mock';
+    console.log(`[批量分配] 找到客服: ${agentName} (ID=${assigned_to}), 数据权限: ${agentDataAccessType}`);
     
     // 批量更新客户
     let updatedCount = 0;
@@ -439,12 +440,12 @@ export const batchAssignAgents = async (req: any, res: Response) => {
         
         try {
           // 更新客户分配（同时更新 assigned_to 和 data_source，确保客服能看到）
-          // 将 data_source 设置为 'real'，与管理员导入的数据保持一致
+          // data_source 必须与客服的 data_access_type 匹配
           await query(
             'UPDATE customers SET assigned_to = $1, data_source = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
-            [assigned_to, 'real', customerId]
+            [assigned_to, agentDataAccessType, customerId]
           );
-          console.log(`[批量分配] 成功更新客户 ${customerId}`);
+          console.log(`[批量分配] 成功更新客户 ${customerId}, data_source=${agentDataAccessType}`);
           updatedCount++;
         } catch (updateError) {
           console.error(`[批量分配] 更新客户 ${customerId} 失败:`, updateError);

@@ -32,7 +32,7 @@ android {
         }
 
         // 从 local.properties 读取默认服务器地址
-        val defaultServerUrl = localProperties.getProperty("DEFAULT_SERVER_URL", "http://192.168.101.235:8081/api/")
+        val defaultServerUrl = localProperties.getProperty("DEFAULT_SERVER_URL", "http://localhost:8081/api/")
         buildConfigField("String", "DEFAULT_SERVER_URL", "\"$defaultServerUrl\"")
     }
 

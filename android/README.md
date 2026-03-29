@@ -95,7 +95,7 @@ app/src/main/java/com/callcenter/app/
 
 在登录页面输入服务器地址，例如：
 - 模拟器访问本机：`http://10.0.2.2:8081/api/`
-- 局域网访问：`http://192.168.1.100:8081/api/`
+- 局域网访问：`http://localhost:8081/api/`
 
 ### 编译运行
 
