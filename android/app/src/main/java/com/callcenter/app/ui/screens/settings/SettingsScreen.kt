@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,6 +25,7 @@ import com.callcenter.app.ui.viewmodel.SettingsViewModel
 fun SettingsScreen(
     onNavigateBack: () -> Unit,
     onLogout: () -> Unit,
+    onSwitchAccount: () -> Unit,
     onNavigateToCallSettings: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
@@ -36,6 +38,7 @@ fun SettingsScreen(
 
     var showServerUrlDialog by remember { mutableStateOf(false) }
     var showLogoutConfirmDialog by remember { mutableStateOf(false) }
+    var showSwitchAccountConfirmDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.loadSettings()
@@ -121,19 +124,38 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // 退出登录按钮
-            Button(
-                onClick = { showLogoutConfirmDialog = true },
+            // 切换账号和退出登录按钮
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error
-                )
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Icon(Icons.Default.Logout, null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("退出登录")
+                // 切换账号按钮
+                OutlinedButton(
+                    onClick = { showSwitchAccountConfirmDialog = true },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Icon(Icons.Default.SwitchAccount, null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("切换账号")
+                }
+
+                // 退出登录按钮
+                Button(
+                    onClick = { showLogoutConfirmDialog = true },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.Logout, null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("退出登录")
+                }
             }
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -174,6 +196,30 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showLogoutConfirmDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    // 切换账号确认对话框
+    if (showSwitchAccountConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showSwitchAccountConfirmDialog = false },
+            title = { Text("切换账号") },
+            text = { Text("切换到其他账号登录？") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showSwitchAccountConfirmDialog = false
+                        onSwitchAccount()
+                    }
+                ) {
+                    Text("切换")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSwitchAccountConfirmDialog = false }) {
                     Text("取消")
                 }
             }
@@ -359,7 +405,7 @@ private fun ServerUrlDialog(
                     value = url,
                     onValueChange = { url = it },
                     label = { Text("服务器地址") },
-                    placeholder = { Text("http://localhost:8081/api/") },
+                    placeholder = { Text("http://localhost:8081") },
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.height(8.dp))

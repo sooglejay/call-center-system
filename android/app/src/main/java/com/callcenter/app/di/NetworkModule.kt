@@ -31,12 +31,29 @@ class DynamicBaseUrlInterceptor(private val tokenManager: TokenManager) : Interc
         val originalRequest = chain.request()
         val serverUrl = runBlocking { tokenManager.getServerUrl() } ?: Constants.DEFAULT_SERVER_URL
 
-        // 如果 URL 是相对于 baseUrl 的，则使用动态 serverUrl
+        // 解析服务器地址
+        val serverHttpUrl = serverUrl.toHttpUrlOrDefault()
+        val originalPath = originalRequest.url.encodedPath
+
+        // 构建新的 URL：服务器基础地址 + 原始请求路径（去掉可能重复的 /api 前缀）
+        // 如果服务器地址已包含 /api/，而原始路径以 /api/ 开头，需要避免重复
+        val serverPath = serverHttpUrl.encodedPath
+        val newPath = if (serverPath.endsWith("/api/") && originalPath.startsWith("/api/")) {
+            // 服务器地址已包含 /api/，去掉原始路径的 /api 前缀
+            serverPath + originalPath.removePrefix("/api/").removePrefix("/")
+        } else if (serverPath.endsWith("/api") && originalPath.startsWith("/api/")) {
+            // 服务器地址以 /api 结尾（没有斜杠），原始路径以 /api/ 开头
+            serverPath + originalPath.removePrefix("/api")
+        } else {
+            // 正常拼接
+            serverPath + originalPath.removePrefix("/")
+        }
+
         val newUrl = originalRequest.url.newBuilder()
-            .scheme("http")
-            .host(serverUrl.toHttpUrlOrDefault().host)
-            .port(serverUrl.toHttpUrlOrDefault().port)
-            .encodedPath(serverUrl.toHttpUrlOrDefault().encodedPath + originalRequest.url.encodedPath.removePrefix("/"))
+            .scheme(serverHttpUrl.scheme)
+            .host(serverHttpUrl.host)
+            .port(serverHttpUrl.port)
+            .encodedPath(newPath)
             .build()
 
         val newRequest = originalRequest.newBuilder()
@@ -89,9 +106,11 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideOkHttpClient(
-        authInterceptor: Interceptor
+        authInterceptor: Interceptor,
+        dynamicBaseUrlInterceptor: DynamicBaseUrlInterceptor
     ): OkHttpClient {
         return OkHttpClient.Builder()
+            .addInterceptor(dynamicBaseUrlInterceptor)  // 先添加动态URL拦截器
             .addInterceptor(authInterceptor)
             .apply {
                 if (BuildConfig.DEBUG) {
@@ -106,6 +125,12 @@ object NetworkModule {
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideDynamicBaseUrlInterceptor(tokenManager: TokenManager): DynamicBaseUrlInterceptor {
+        return DynamicBaseUrlInterceptor(tokenManager)
     }
 
     @Provides

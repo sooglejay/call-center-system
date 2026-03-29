@@ -5,17 +5,14 @@ import android.content.Context
 import android.content.Intent
 import android.telephony.TelephonyManager
 import com.callcenter.app.service.AutoDialService
-import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 /**
  * 电话状态接收器
  * 监听来电和去电状态
  */
-@AndroidEntryPoint
 class PhoneStateReceiver : BroadcastReceiver() {
 
     companion object {
@@ -28,6 +25,7 @@ class PhoneStateReceiver : BroadcastReceiver() {
         if (intent.action != TelephonyManager.ACTION_PHONE_STATE_CHANGED) return
 
         val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE)
+        @Suppress("DEPRECATION")
         val phoneNumber = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER)
 
         when (state) {

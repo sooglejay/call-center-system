@@ -3,6 +3,7 @@ package com.callcenter.app.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.callcenter.app.data.model.Customer
+import com.callcenter.app.data.repository.AuthRepository
 import com.callcenter.app.data.repository.CustomerRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,7 +14,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class CustomerViewModel @Inject constructor(
-    private val customerRepository: CustomerRepository
+    private val customerRepository: CustomerRepository,
+    private val authRepository: AuthRepository
 ) : ViewModel() {
 
     private val _customers = MutableStateFlow<List<Customer>>(emptyList())
@@ -43,11 +45,25 @@ class CustomerViewModel @Inject constructor(
             _isLoading.value = true
             _error.value = null
 
-            val result = customerRepository.getCustomers(
-                search = _searchQuery.value.ifBlank { null },
-                status = _statusFilter.value,
-                forceRefresh = forceRefresh
-            )
+            // 获取当前用户角色
+            val currentUser = authRepository.currentUser.value
+            val isAgent = currentUser?.role == "agent"
+
+            val result = if (isAgent) {
+                // 客服使用专属接口
+                customerRepository.getAgentCustomers(
+                    search = _searchQuery.value.ifBlank { null },
+                    status = _statusFilter.value,
+                    forceRefresh = forceRefresh
+                )
+            } else {
+                // 管理员使用通用接口
+                customerRepository.getCustomers(
+                    search = _searchQuery.value.ifBlank { null },
+                    status = _statusFilter.value,
+                    forceRefresh = forceRefresh
+                )
+            }
 
             result.fold(
                 onSuccess = { customers ->

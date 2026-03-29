@@ -26,8 +26,11 @@ class AuthRepository @Inject constructor(
      */
     suspend fun login(username: String, password: String, serverUrl: String): Result<User> {
         return try {
+            // 确保服务器地址以 /api/ 结尾
+            val normalizedUrl = if (serverUrl.endsWith("/api/")) serverUrl else "$serverUrl/api/"
+            
             // 先保存服务器地址，确保 DynamicBaseUrlInterceptor 能获取到正确的地址
-            tokenManager.saveServerUrl(serverUrl)
+            tokenManager.saveServerUrl(normalizedUrl)
             
             // 延迟一下，确保 DataStore 写入完成
             kotlinx.coroutines.delay(100)
@@ -42,6 +45,9 @@ class AuthRepository @Inject constructor(
                     role = loginResponse.user.role,
                     realName = loginResponse.user.realName
                 )
+                // 保存登录凭证用于自动填充
+                tokenManager.saveCredentials(username, password)
+                tokenManager.saveAccountHistory(username, password)
                 _currentUser.value = loginResponse.user
                 Result.success(loginResponse.user)
             } else {
@@ -82,10 +88,18 @@ class AuthRepository @Inject constructor(
     }
 
     /**
-     * 登出
+     * 登出（清除所有认证信息）
      */
     suspend fun logout() {
         tokenManager.clearAuth()
+        _currentUser.value = null
+    }
+
+    /**
+     * 仅清除认证令牌（切换账号时使用，保留历史账号记录）
+     */
+    suspend fun clearAuthOnly() {
+        tokenManager.clearAuthOnly()
         _currentUser.value = null
     }
 
@@ -101,5 +115,26 @@ class AuthRepository @Inject constructor(
      */
     suspend fun getSavedUsername(): String? {
         return tokenManager.getUsername()
+    }
+
+    /**
+     * 获取保存的密码
+     */
+    suspend fun getSavedPassword(): String? {
+        return tokenManager.getPassword()
+    }
+
+    /**
+     * 获取保存的账号历史
+     */
+    suspend fun getSavedAccounts(): List<Pair<String, String>> {
+        return tokenManager.getSavedAccounts()
+    }
+
+    /**
+     * 删除保存的账号
+     */
+    suspend fun removeSavedAccount(username: String) {
+        tokenManager.removeSavedAccount(username)
     }
 }

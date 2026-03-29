@@ -30,13 +30,13 @@ parse_server_url_from_local_properties() {
         return 1
     fi
 
-    # 提取 DEFAULT_SERVER_URL (去掉 /api/ 后缀)
+    # 提取 DEFAULT_SERVER_URL
     local full_url=$(grep -E 'DEFAULT_SERVER_URL\s*=\s*[^[:space:]]+' "$local_props_file" | cut -d'=' -f2 | tr -d ' ' | head -1)
 
     if [ -z "$full_url" ]; then
         return 1
     else
-        # 去掉 /api/ 后缀，因为 API 路径会在请求时自动添加
+        # 添加 /api 后缀用于 API 调用
         SERVER_URL=$(echo "$full_url" | sed 's|/api/$||; s|/api$||')
         return 0
     fi
@@ -64,24 +64,24 @@ show_help() {
     echo "  SERVER_URL=http://example.com:8081 ./release.sh  # 使用环境变量"
 }
 
-# 解析 build.gradle.kts 获取版本号
-parse_version_from_gradle() {
-    local gradle_file="app/build.gradle.kts"
+# 从 local.properties 读取版本号
+parse_version_from_local_properties() {
+    local local_props_file="local.properties"
 
-    if [ ! -f "$gradle_file" ]; then
-        echo -e "${RED}错误: 找不到 $gradle_file${NC}"
+    if [ ! -f "$local_props_file" ]; then
+        echo -e "${RED}错误: 找不到 $local_props_file${NC}"
         exit 1
     fi
 
-    # 提取 versionCode
-    VERSION_CODE=$(grep -E "versionCode\s*=\s*[0-9]+" "$gradle_file" | grep -oE "[0-9]+" | head -1)
+    # 提取 VERSION_CODE
+    VERSION_CODE=$(grep -E 'VERSION_CODE\s*=\s*[0-9]+' "$local_props_file" | cut -d'=' -f2 | tr -d ' ' | head -1)
 
-    # 提取 versionName (支持双引号字符串)
-    VERSION_NAME=$(grep -E "versionName\s*=\s*\"[^\"]+\"" "$gradle_file" | grep -oE '"[^"]+"' | tr -d '"' | head -1)
+    # 提取 VERSION_NAME
+    VERSION_NAME=$(grep -E 'VERSION_NAME\s*=\s*[^[:space:]]+' "$local_props_file" | cut -d'=' -f2 | tr -d ' ' | head -1)
 
     if [ -z "$VERSION_CODE" ] || [ -z "$VERSION_NAME" ]; then
-        echo -e "${RED}错误: 无法从 $gradle_file 解析版本号${NC}"
-        echo "请确保文件中包含 versionCode = X 和 versionName = \"X.X.X\""
+        echo -e "${RED}错误: 无法从 $local_props_file 解析版本号${NC}"
+        echo "请确保文件中包含 VERSION_CODE=3 和 VERSION_NAME=1.0.3"
         exit 1
     fi
 }
@@ -103,8 +103,8 @@ if [ ! -f "$KEYSTORE_FILE" ]; then
     exit 1
 fi
 
-# 从 build.gradle.kts 读取版本号
-parse_version_from_gradle
+# 从 local.properties 读取版本号
+parse_version_from_local_properties
 
 # 确定服务器地址（优先级：环境变量 > 命令行参数 > local.properties）
 if [ -n "$SERVER_URL" ]; then
@@ -129,7 +129,7 @@ else
 fi
 
 echo ""
-echo -e "${YELLOW}版本信息 (从 build.gradle.kts 读取):${NC}"
+echo -e "${YELLOW}版本信息 (从 local.properties 读取):${NC}"
 echo "  版本号 (versionCode): $VERSION_CODE"
 echo "  版本名称 (versionName): $VERSION_NAME"
 echo -e "${YELLOW}服务器地址:${NC} $SERVER_URL"

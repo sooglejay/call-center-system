@@ -128,8 +128,11 @@ fun AppNavigation(
                 },
                 onLogout = {
                     stopAutoDialAndLogout()
-                    navController.navigate(Screen.Login.route) {
-                        popUpTo(Screen.Main.route) { inclusive = true }
+                    authViewModel.logout {
+                        // 在退出完成后导航
+                        navController.navigate(Screen.Login.route) {
+                            popUpTo(Screen.Main.route) { inclusive = true }
+                        }
                     }
                 }
             )
@@ -170,8 +173,21 @@ fun AppNavigation(
                 },
                 onLogout = {
                     stopAutoDialAndLogout()
-                    navController.navigate(Screen.Login.route) {
-                        popUpTo(Screen.Main.route) { inclusive = true }
+                    authViewModel.logout {
+                        // 在退出完成后导航
+                        navController.navigate(Screen.Login.route) {
+                            popUpTo(Screen.Main.route) { inclusive = true }
+                        }
+                    }
+                },
+                onSwitchAccount = {
+                    // 切换账号：只清除认证信息，保留历史账号记录
+                    stopAutoDialAndLogout()
+                    authViewModel.switchAccount {
+                        // 导航到登录页
+                        navController.navigate(Screen.Login.route) {
+                            popUpTo(Screen.Main.route) { inclusive = true }
+                        }
                     }
                 }
             )

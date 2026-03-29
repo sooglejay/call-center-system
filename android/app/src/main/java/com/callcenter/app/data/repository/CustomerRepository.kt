@@ -1,7 +1,10 @@
 package com.callcenter.app.data.repository
 
 import com.callcenter.app.data.api.ApiService
+import com.callcenter.app.data.local.dao.CallRecordDao
 import com.callcenter.app.data.local.dao.CustomerDao
+import com.callcenter.app.data.local.dao.TaskDao
+import com.callcenter.app.data.local.dao.UserDao
 import com.callcenter.app.data.local.entity.CustomerEntity
 import com.callcenter.app.data.model.Customer
 import com.callcenter.app.data.model.UpdateCustomerStatusRequest
@@ -18,7 +21,10 @@ import javax.inject.Singleton
 @Singleton
 class CustomerRepository @Inject constructor(
     private val apiService: ApiService,
-    private val customerDao: CustomerDao
+    private val customerDao: CustomerDao,
+    private val callRecordDao: CallRecordDao,
+    private val taskDao: TaskDao,
+    private val userDao: UserDao
 ) {
     private val _customers = MutableStateFlow<List<Customer>>(emptyList())
     val customers: StateFlow<List<Customer>> = _customers.asStateFlow()
@@ -27,7 +33,7 @@ class CustomerRepository @Inject constructor(
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     /**
-     * 获取客户列表
+     * 获取客户列表（管理员使用）
      */
     suspend fun getCustomers(
         page: Int = 1,
@@ -57,6 +63,67 @@ class CustomerRepository @Inject constructor(
 
             // 从服务器获取
             val response = apiService.getCustomers(
+                page = page,
+                pageSize = pageSize,
+                search = search,
+                status = status
+            )
+
+            if (response.isSuccessful && response.body() != null) {
+                val serverCustomers: List<Customer> = response.body()!!.data
+                _customers.value = serverCustomers
+                
+                // 保存到本地数据库
+                customerDao.deleteAll()
+                customerDao.insertAll(serverCustomers.map { it.toEntity() })
+                
+                Result.success(serverCustomers)
+            } else {
+                // 服务器请求失败，返回本地数据
+                _customers.value = localCustomers
+                Result.success(localCustomers)
+            }
+        } catch (e: Exception) {
+            // 网络错误，返回本地数据
+            val localCustomers: List<Customer> = customerDao.getAllCustomers().map { it.toModel() }
+            _customers.value = localCustomers
+            Result.success(localCustomers)
+        } finally {
+            _isLoading.value = false
+        }
+    }
+
+    /**
+     * 获取客服专属客户列表（客服角色使用）
+     */
+    suspend fun getAgentCustomers(
+        page: Int = 1,
+        pageSize: Int = 20,
+        search: String? = null,
+        status: String? = null,
+        forceRefresh: Boolean = false
+    ): Result<List<Customer>> {
+        _isLoading.value = true
+        return try {
+            // 先从本地数据库读取
+            val localEntities = if (search != null) {
+                customerDao.searchCustomers(search)
+            } else if (status != null) {
+                customerDao.getCustomersByStatus(status)
+            } else {
+                customerDao.getAllCustomers()
+            }
+            val localCustomers: List<Customer> = localEntities.map { it.toModel() }
+
+            // 如果有本地数据且不需要刷新，直接返回
+            if (localCustomers.isNotEmpty() && !forceRefresh) {
+                _customers.value = localCustomers
+                _isLoading.value = false
+                return Result.success(localCustomers)
+            }
+
+            // 从服务器获取客服专属客户
+            val response = apiService.getAgentCustomers(
                 page = page,
                 pageSize = pageSize,
                 search = search,
@@ -211,6 +278,17 @@ class CustomerRepository @Inject constructor(
      */
     suspend fun refresh() {
         getCustomers(forceRefresh = true)
+    }
+
+    /**
+     * 清空所有用户相关数据（退出登录时调用）
+     */
+    suspend fun clearAllData() {
+        _customers.value = emptyList()
+        customerDao.deleteAll()
+        callRecordDao.deleteAll()
+        taskDao.deleteAllTasks()
+        userDao.deleteAllUsers()
     }
 }
 

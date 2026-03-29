@@ -117,6 +117,17 @@ interface ApiService {
     ): Response<CustomerListResponse>
 
     /**
+     * 获取客服专属客户列表（用于客服角色）
+     */
+    @GET("customers/agent/list")
+    suspend fun getAgentCustomers(
+        @Query("page") page: Int = 1,
+        @Query("pageSize") pageSize: Int = 20,
+        @Query("search") search: String? = null,
+        @Query("status") status: String? = null
+    ): Response<CustomerListResponse>
+
+    /**
      * 获取客户详情
      */
     @GET("customers/{id}")

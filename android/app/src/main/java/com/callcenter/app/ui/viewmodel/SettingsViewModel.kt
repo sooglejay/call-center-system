@@ -76,8 +76,10 @@ class SettingsViewModel @Inject constructor(
 
     fun updateServerUrl(url: String) {
         viewModelScope.launch {
-            tokenManager.saveServerUrl(url)
-            _serverUrl.value = url
+            // 确保服务器地址以 /api/ 结尾
+            val normalizedUrl = if (url.endsWith("/api/")) url else "$url/api/"
+            tokenManager.saveServerUrl(normalizedUrl)
+            _serverUrl.value = normalizedUrl
         }
     }
 

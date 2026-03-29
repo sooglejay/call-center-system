@@ -23,16 +23,20 @@ android {
         applicationId = "com.callcenter.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 3
-        versionName = "1.0.3"
+
+        // 从 local.properties 读取版本号，默认为 3
+        versionCode = localProperties.getProperty("VERSION_CODE", "3").toInt()
+        // 从 local.properties 读取版本名称，默认为 1.0.3
+        versionName = localProperties.getProperty("VERSION_NAME", "1.0.3")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
         }
 
-        // 从 local.properties 读取默认服务器地址
-        val defaultServerUrl = localProperties.getProperty("DEFAULT_SERVER_URL", "http://localhost:8081/api/")
+        // 从 local.properties 读取默认服务器地址，自动添加 /api/ 后缀
+        val serverUrl = localProperties.getProperty("DEFAULT_SERVER_URL", "http://localhost:8081")
+        val defaultServerUrl = if (serverUrl.endsWith("/api/")) serverUrl else "$serverUrl/api/"
         buildConfigField("String", "DEFAULT_SERVER_URL", "\"$defaultServerUrl\"")
     }
 

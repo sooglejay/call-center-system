@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.callcenter.app.data.model.User
 import com.callcenter.app.data.repository.AuthRepository
+import com.callcenter.app.data.repository.CustomerRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -13,7 +14,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class AuthViewModel @Inject constructor(
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val customerRepository: CustomerRepository
 ) : ViewModel() {
 
     private val _isLoggedIn = MutableStateFlow(false)
@@ -34,8 +36,15 @@ class AuthViewModel @Inject constructor(
     private val _savedUsername = MutableStateFlow("")
     val savedUsername: StateFlow<String> = _savedUsername.asStateFlow()
 
+    private val _savedPassword = MutableStateFlow("")
+    val savedPassword: StateFlow<String> = _savedPassword.asStateFlow()
+
+    private val _savedAccounts = MutableStateFlow<List<Pair<String, String>>>(emptyList())
+    val savedAccounts: StateFlow<List<Pair<String, String>>> = _savedAccounts.asStateFlow()
+
     init {
         checkLoginState()
+        loadSavedAccounts()
     }
 
     private fun checkLoginState() {
@@ -44,6 +53,13 @@ class AuthViewModel @Inject constructor(
             _currentUser.value = authRepository.currentUser.value
             _savedServerUrl.value = authRepository.getServerUrl() ?: ""
             _savedUsername.value = authRepository.getSavedUsername() ?: ""
+            _savedPassword.value = authRepository.getSavedPassword() ?: ""
+        }
+    }
+
+    private fun loadSavedAccounts() {
+        viewModelScope.launch {
+            _savedAccounts.value = authRepository.getSavedAccounts()
         }
     }
 
@@ -59,6 +75,8 @@ class AuthViewModel @Inject constructor(
                     _isLoggedIn.value = true
                     _currentUser.value = user
                     _error.value = null
+                    // 刷新保存的账号列表
+                    loadSavedAccounts()
                 },
                 onFailure = { exception ->
                     _error.value = when {
@@ -81,11 +99,39 @@ class AuthViewModel @Inject constructor(
         }
     }
 
-    fun logout() {
+    fun logout(onLogoutComplete: (() -> Unit)? = null) {
         viewModelScope.launch {
+            // 先清空客户数据
+            customerRepository.clearAllData()
+            // 执行退出登录（清除所有认证信息）
             authRepository.logout()
             _isLoggedIn.value = false
             _currentUser.value = null
+            // 回调通知退出完成
+            onLogoutComplete?.invoke()
+        }
+    }
+
+    /**
+     * 切换账号：只清除认证状态，保留历史账号记录
+     */
+    fun switchAccount(onSwitchComplete: (() -> Unit)? = null) {
+        viewModelScope.launch {
+            // 清空客户数据
+            customerRepository.clearAllData()
+            // 只清除认证令牌和当前用户信息，保留历史账号
+            authRepository.clearAuthOnly()
+            _isLoggedIn.value = false
+            _currentUser.value = null
+            // 回调通知切换完成
+            onSwitchComplete?.invoke()
+        }
+    }
+
+    fun removeSavedAccount(username: String) {
+        viewModelScope.launch {
+            authRepository.removeSavedAccount(username)
+            loadSavedAccounts()
         }
     }
 
