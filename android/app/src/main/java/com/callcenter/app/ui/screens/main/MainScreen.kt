@@ -81,6 +81,14 @@ fun MainScreen(
     // 当前选中的底部导航项 - 使用 rememberSaveable 保存状态
     var selectedTab by rememberSaveable { mutableStateOf(0) }
 
+    // 自动拨号对话框显示状态 - 用于客户列表页的自动拨号按钮
+    var showAutoDialDialog by rememberSaveable { mutableStateOf(false) }
+
+    // 获取自动拨号状态，用于浮动按钮显示
+    val autoDialRunning by autoDialViewModel.isRunning.collectAsState()
+    val customers by customerViewModel.customers.collectAsState()
+    val callSettings by callSettingsViewModel.callSettings.collectAsState()
+
     // 在 MainScreen 级别加载任务数据，确保工作台能显示任务
     // 使用 isLoading 标记避免重复加载
     var isInitialLoadDone by rememberSaveable { mutableStateOf(false) }
@@ -136,6 +144,27 @@ fun MainScreen(
                         onClick = { selectedTab = index },
                         icon = { Icon(item.icon, contentDescription = item.label) },
                         label = { Text(item.label) }
+                    )
+                }
+            }
+        },
+        floatingActionButton = {
+            // 只在客服的客户列表页显示自动拨号按钮
+            if (!isAdmin && selectedTab == 2) {
+                FloatingActionButton(
+                    onClick = {
+                        if (autoDialRunning) {
+                            autoDialViewModel.stopAutoDial()
+                        } else {
+                            showAutoDialDialog = true
+                        }
+                    },
+                    containerColor = if (autoDialRunning) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.primary
+                ) {
+                    Icon(
+                        if (autoDialRunning) Icons.Default.Stop else Icons.Default.PlayArrow,
+                        contentDescription = if (autoDialRunning) "停止拨号" else "自动拨号"
                     )
                 }
             }
@@ -209,6 +238,28 @@ fun MainScreen(
                     authViewModel = authViewModel
                 )
             }
+        }
+
+        // 自动拨号对话框（在客户列表页使用）
+        if (showAutoDialDialog) {
+            AutoDialDialog(
+                isRunning = autoDialRunning,
+                defaultInterval = callSettings.autoDialInterval,
+                defaultTimeout = callSettings.callTimeout,
+                onStart = { interval, timeout ->
+                    showAutoDialDialog = false
+                    if (customers.isEmpty()) {
+                        Toast.makeText(context, "没有客户可拨打", Toast.LENGTH_SHORT).show()
+                    } else {
+                        autoDialViewModel.startAutoDial(customers, interval, timeout)
+                    }
+                },
+                onStop = {
+                    showAutoDialDialog = false
+                    autoDialViewModel.stopAutoDial()
+                },
+                onDismiss = { showAutoDialDialog = false }
+            )
         }
     }
 }
@@ -1603,7 +1654,6 @@ private fun AgentCustomersTab(
 
     var showSearchBar by remember { mutableStateOf(false) }
     var showFilterMenu by remember { mutableStateOf(false) }
-    var showAutoDialDialog by remember { mutableStateOf(false) }
 
     val callPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -1698,29 +1748,6 @@ private fun AgentCustomersTab(
                     }
                 }
             )
-        },
-        floatingActionButton = {
-            // 自动拨号浮动按钮
-            if (customers.isNotEmpty()) {
-                ExtendedFloatingActionButton(
-                    onClick = {
-                        if (autoDialRunning) {
-                            autoDialViewModel.stopAutoDial()
-                        } else {
-                            showAutoDialDialog = true
-                        }
-                    },
-                    icon = {
-                        Icon(
-                            if (autoDialRunning) Icons.Default.Stop else Icons.Default.PlayArrow,
-                            null
-                        )
-                    },
-                    text = { Text(if (autoDialRunning) "停止拨号" else "自动拨号") },
-                    containerColor = if (autoDialRunning) MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.primaryContainer
-                )
-            }
         }
     ) { innerPadding ->
         Column(
@@ -1728,104 +1755,82 @@ private fun AgentCustomersTab(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // 自动拨号进度
-            if (autoDialRunning) {
-                val scopeDesc = autoDialViewModel.getScopeDescription(autoDialViewModel.currentConfig.value)
-                AutoDialStatusBar(
-                    dialedCount = dialedCount,
-                    totalCount = totalCount,
-                    scopeDescription = scopeDesc,
-                    currentCustomer = currentDialCustomer,
-                    onStop = { autoDialViewModel.stopAutoDial() }
-                )
-            }
+                // 自动拨号进度
+                if (autoDialRunning) {
+                    val scopeDesc = autoDialViewModel.getScopeDescription(autoDialViewModel.currentConfig.value)
+                    AutoDialStatusBar(
+                        dialedCount = dialedCount,
+                        totalCount = totalCount,
+                        scopeDescription = scopeDesc,
+                        currentCustomer = currentDialCustomer,
+                        onStop = { autoDialViewModel.stopAutoDial() }
+                    )
+                }
 
-            // 筛选标签
-            if (statusFilter != null) {
-                Surface(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    shape = MaterialTheme.shapes.small
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                // 筛选标签
+                if (statusFilter != null) {
+                    Surface(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        shape = MaterialTheme.shapes.small
                     ) {
-                        Text(
-                            text = when (statusFilter) {
-                                "pending" -> "待拨打"
-                                "completed" -> "已完成"
-                                else -> statusFilter ?: ""
-                            },
-                            style = MaterialTheme.typography.labelMedium
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        IconButton(
-                            onClick = { customerViewModel.setStatusFilter(null) },
-                            modifier = Modifier.size(20.dp)
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.Close, "清除", modifier = Modifier.size(16.dp))
-                        }
-                    }
-                }
-            }
-
-            // 客户列表
-            when {
-                isLoading && customers.isEmpty() -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
-                    }
-                }
-                customers.isEmpty() -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(Icons.Default.People, null, modifier = Modifier.size(64.dp))
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text("暂无客户数据", style = MaterialTheme.typography.titleMedium)
-                        }
-                    }
-                }
-                else -> {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(vertical = 8.dp)
-                    ) {
-                        items(customers, key = { it.id }) { customer ->
-                            CustomerItem(
-                                customer = customer,
-                                onCall = { makeCall(customer.phone) },
-                                onClick = { onNavigateToCustomerDetail(customer.id) }
+                            Text(
+                                text = when (statusFilter) {
+                                    "pending" -> "待拨打"
+                                    "completed" -> "已完成"
+                                    else -> statusFilter ?: ""
+                                },
+                                style = MaterialTheme.typography.labelMedium
                             )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            IconButton(
+                                onClick = { customerViewModel.setStatusFilter(null) },
+                                modifier = Modifier.size(20.dp)
+                            ) {
+                                Icon(Icons.Default.Close, "清除", modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                }
+
+                // 客户列表
+                when {
+                    isLoading && customers.isEmpty() -> {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
+                    }
+                    customers.isEmpty() -> {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Default.People, null, modifier = Modifier.size(64.dp))
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text("暂无客户数据", style = MaterialTheme.typography.titleMedium)
+                            }
+                        }
+                    }
+                    else -> {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(vertical = 8.dp)
+                        ) {
+                            items(customers, key = { it.id }) { customer ->
+                                CustomerItem(
+                                    customer = customer,
+                                    onCall = { makeCall(customer.phone) },
+                                    onClick = { onNavigateToCustomerDetail(customer.id) }
+                                )
+                            }
                         }
                     }
                 }
             }
         }
     }
-
-    // 自动拨号对话框
-    if (showAutoDialDialog) {
-        AutoDialDialog(
-            isRunning = autoDialRunning,
-            defaultInterval = callSettings.autoDialInterval,
-            defaultTimeout = callSettings.callTimeout,
-            onStart = { interval, timeout ->
-                showAutoDialDialog = false
-                if (customers.isEmpty()) {
-                    Toast.makeText(context, "没有客户可拨打", Toast.LENGTH_SHORT).show()
-                } else if (checkAndRequestCallPermission()) {
-                    autoDialViewModel.startAutoDial(customers, interval, timeout)
-                }
-            },
-            onStop = {
-                showAutoDialDialog = false
-                autoDialViewModel.stopAutoDial()
-            },
-            onDismiss = { showAutoDialDialog = false }
-        )
-    }
-}
 
 /**
  * 自动拨号状态提示条
