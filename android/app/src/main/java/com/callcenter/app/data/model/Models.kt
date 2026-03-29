@@ -58,7 +58,14 @@ data class Customer(
     @SerializedName("created_at")
     val createdAt: String? = null,
     @SerializedName("updated_at")
-    val updatedAt: String? = null
+    val updatedAt: String? = null,
+    // 任务相关字段
+    @SerializedName("source_type")
+    val sourceType: String? = null, // "task" 或 null(直接分配)
+    @SerializedName("task_id")
+    val taskId: Int? = null,
+    @SerializedName("task_title")
+    val taskTitle: String? = null
 ) : Serializable
 
 /**
@@ -337,6 +344,17 @@ data class CreateTaskRequest(
     val dueDate: String? = null,
     @SerializedName("customer_ids")
     val customerIds: List<Int>? = null // 关联的客户ID列表
+)
+
+/**
+ * 更新任务客户状态请求（客服执行任务时使用）
+ */
+data class UpdateTaskCustomerStatusRequest(
+    val status: String, // pending, called, connected, completed, failed
+    @SerializedName("call_result")
+    val callResult: String? = null,
+    @SerializedName("call_id")
+    val callId: Int? = null
 )
 
 // ==================== 统计相关 ====================

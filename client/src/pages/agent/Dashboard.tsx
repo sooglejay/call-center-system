@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Card, Statistic, Row, Col, List, Tag, Button, message, Modal, Empty } from 'antd';
-import { PhoneOutlined, CheckCircleOutlined, ClockCircleOutlined, RiseOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
+import { Card, Statistic, Row, Col, List, Tag, Button, message, Modal, Empty, Space, Avatar } from 'antd';
+import { PhoneOutlined, CheckCircleOutlined, ClockCircleOutlined, RiseOutlined, ExclamationCircleOutlined, ScheduleOutlined, ArrowRightOutlined, UserOutlined } from '@ant-design/icons';
 import { statsApi, taskApi, customerApi } from '../../services/api';
 import type { Task } from '../../services/api';
-import { useAutoDialStore } from '../../stores';
+import { useAutoDialStore, useAuthStore } from '../../stores';
+import { useNavigate } from 'react-router-dom';
 
 export default function AgentDashboard() {
   const [stats, setStats] = useState<any>(null);
@@ -11,6 +12,8 @@ export default function AgentDashboard() {
   const [customerCount, setCustomerCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const { setAutoDialing } = useAutoDialStore();
+  const { user } = useAuthStore();
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchData();
@@ -89,7 +92,20 @@ export default function AgentDashboard() {
 
   return (
     <div>
-      <h2>工作台</h2>
+      {/* 欢迎区域 */}
+      <Card style={{ marginBottom: 24, background: 'linear-gradient(135deg, #1890ff 0%, #36cfc9 100%)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <Avatar size={64} icon={<UserOutlined />} style={{ backgroundColor: 'rgba(255,255,255,0.3)' }} />
+          <div>
+            <h2 style={{ margin: 0, color: '#fff' }}>欢迎回来，{user?.real_name || user?.username || '客服'}</h2>
+            <p style={{ margin: '4px 0 0 0', color: 'rgba(255,255,255,0.85)' }}>
+              账号: {user?.username} | 角色: {user?.role === 'admin' ? '管理员' : '客服'}
+            </p>
+          </div>
+        </div>
+      </Card>
+
+      <h3 style={{ marginBottom: 16 }}>今日概览</h3>
       
       <Row gutter={16} style={{ marginBottom: 24 }}>
         <Col span={6}>
@@ -139,12 +155,10 @@ export default function AgentDashboard() {
             title="我的任务" 
             extra={
               <Button 
-                type="primary" 
-                icon={<PhoneOutlined />}
-                onClick={handleStartAutoDial}
-                disabled={customerCount === 0}
+                type="link" 
+                onClick={() => navigate('/agent/tasks')}
               >
-                开始自动拨号
+                查看全部 <ArrowRightOutlined />
               </Button>
             }
           >
@@ -159,16 +173,30 @@ export default function AgentDashboard() {
               </Empty>
             ) : (
               <List
-                dataSource={tasks}
+                dataSource={tasks.slice(0, 5)}
                 renderItem={(task) => (
-                  <List.Item>
+                  <List.Item
+                    actions={[
+                      <Button 
+                        type="primary" 
+                        size="small"
+                        onClick={() => navigate(`/agent/tasks/${task.id}`)}
+                      >
+                        执行
+                      </Button>
+                    ]}
+                  >
                     <List.Item.Meta
-                      title={task.name || task.title}
+                      title={
+                        <Space>
+                          {task.name || task.title}
+                          <Tag color={task.status === 'completed' ? 'green' : task.status === 'in_progress' ? 'blue' : 'default'}>
+                            {task.status === 'completed' ? '已完成' : task.status === 'in_progress' ? '进行中' : '待开始'}
+                          </Tag>
+                        </Space>
+                      }
                       description={`${task.completed_count || 0} / ${task.customer_count || 0} 完成`}
                     />
-                    <Tag color={task.status === 'completed' ? 'green' : task.status === 'in_progress' ? 'blue' : 'default'}>
-                      {task.status === 'completed' ? '已完成' : task.status === 'in_progress' ? '进行中' : '待开始'}
-                    </Tag>
                   </List.Item>
                 )}
               />
@@ -178,6 +206,14 @@ export default function AgentDashboard() {
         <Col span={12}>
           <Card title="快速操作">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <Button 
+                type="primary" 
+                size="large" 
+                icon={<ScheduleOutlined />} 
+                onClick={() => navigate('/agent/tasks')}
+              >
+                任务管理
+              </Button>
               <Button 
                 type="primary" 
                 size="large" 

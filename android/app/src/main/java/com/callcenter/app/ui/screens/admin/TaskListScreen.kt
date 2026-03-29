@@ -42,6 +42,11 @@ fun TaskListScreen(
         else tasks.filter { it.status == selectedStatus }
     }
 
+    // 每次进入页面时刷新任务列表
+    LaunchedEffect(Unit) {
+        viewModel.refresh()
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(

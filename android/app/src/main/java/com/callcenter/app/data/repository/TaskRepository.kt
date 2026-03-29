@@ -184,4 +184,25 @@ class TaskRepository @Inject constructor(
             Result.failure(e)
         }
     }
+
+    /**
+     * 更新任务中客户的拨打状态（客服执行任务时使用）
+     */
+    suspend fun updateTaskCustomerStatus(
+        taskId: Int,
+        customerId: Int,
+        request: UpdateTaskCustomerStatusRequest
+    ): Result<Unit> {
+        return try {
+            val response = apiService.updateTaskCustomerStatus(taskId, customerId, request)
+            if (response.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                val errorMsg = response.errorBody()?.string() ?: "更新状态失败"
+                Result.failure(Exception(errorMsg))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }

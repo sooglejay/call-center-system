@@ -83,6 +83,18 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun updateAutoDialInterval(seconds: Int) {
+        viewModelScope.launch {
+            callSettingsManager.saveAutoDialInterval(seconds)
+        }
+    }
+
+    fun updateCallTimeout(seconds: Int) {
+        viewModelScope.launch {
+            callSettingsManager.saveCallTimeout(seconds)
+        }
+    }
+
     fun logout() {
         viewModelScope.launch {
             authRepository.logout()

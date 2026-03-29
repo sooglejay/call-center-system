@@ -1,0 +1,114 @@
+package com.callcenter.app.ui.viewmodel
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.callcenter.app.data.model.Task
+import com.callcenter.app.data.model.UpdateTaskCustomerStatusRequest
+import com.callcenter.app.data.repository.TaskRepository
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+/**
+ * 客服任务视图模型
+ * 处理客服视角的任务列表和任务执行
+ */
+@HiltViewModel
+class AgentTaskViewModel @Inject constructor(
+    private val taskRepository: TaskRepository
+) : ViewModel() {
+
+    private val _tasks = MutableStateFlow<List<Task>>(emptyList())
+    val tasks: StateFlow<List<Task>> = _tasks.asStateFlow()
+
+    private val _task = MutableStateFlow<Task?>(null)
+    val task: StateFlow<Task?> = _task.asStateFlow()
+
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+
+    /**
+     * 加载我的任务列表
+     */
+    fun loadMyTasks() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _error.value = null
+
+            val result = taskRepository.getMyTasks()
+            result.fold(
+                onSuccess = { tasks ->
+                    _tasks.value = tasks
+                },
+                onFailure = { exception ->
+                    _error.value = exception.message ?: "加载任务失败"
+                }
+            )
+
+            _isLoading.value = false
+        }
+    }
+
+    /**
+     * 加载任务详情
+     */
+    fun loadTaskDetail(taskId: Int) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _error.value = null
+
+            val result = taskRepository.getTask(taskId)
+            result.fold(
+                onSuccess = { task ->
+                    _task.value = task
+                },
+                onFailure = { exception ->
+                    _error.value = exception.message ?: "加载任务详情失败"
+                }
+            )
+
+            _isLoading.value = false
+        }
+    }
+
+    /**
+     * 更新任务中客户的拨打状态
+     */
+    fun updateCustomerStatus(
+        taskId: Int,
+        customerId: Int,
+        status: String,
+        callResult: String? = null
+    ) {
+        viewModelScope.launch {
+            _isLoading.value = true
+
+            val request = UpdateTaskCustomerStatusRequest(
+                status = status,
+                callResult = callResult
+            )
+
+            val result = taskRepository.updateTaskCustomerStatus(taskId, customerId, request)
+            result.fold(
+                onSuccess = {
+                    // 刷新任务详情
+                    loadTaskDetail(taskId)
+                },
+                onFailure = { exception ->
+                    _error.value = exception.message ?: "更新状态失败"
+                    _isLoading.value = false
+                }
+            )
+        }
+    }
+
+    fun clearError() {
+        _error.value = null
+    }
+}

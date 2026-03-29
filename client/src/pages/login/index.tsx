@@ -1,14 +1,25 @@
 import { useState, useEffect } from 'react';
-import { Card, Form, Input, Button, message, Typography, Divider, Alert } from 'antd';
-import { PhoneOutlined, LockOutlined, UserOutlined, MailOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
+import { Card, Form, Input, Button, message, Typography, Divider, Alert, Select, Space, Tag } from 'antd';
+import { PhoneOutlined, LockOutlined, UserOutlined, MailOutlined, ExclamationCircleOutlined, GlobalOutlined, PlusOutlined, CloseOutlined } from '@ant-design/icons';
 import { authApi } from '../../services/api';
 
 const { Title, Text, Link } = Typography;
+const { Option } = Select;
 
 interface PublicConfig {
   allowRegister: boolean;
   registerDefaultRole: string;
 }
+
+interface ServerAddress {
+  url: string;
+  name: string;
+  lastUsed: number;
+}
+
+// 服务器地址存储键
+const SERVER_ADDRESSES_KEY = 'server_addresses';
+const CURRENT_SERVER_KEY = 'current_server';
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
@@ -16,6 +27,13 @@ export default function LoginPage() {
   const [config, setConfig] = useState<PublicConfig | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [form] = Form.useForm();
+  
+  // 服务器地址相关状态
+  const [serverAddresses, setServerAddresses] = useState<ServerAddress[]>([]);
+  const [currentServer, setCurrentServer] = useState<string>('');
+  const [showAddServer, setShowAddServer] = useState(false);
+  const [newServerUrl, setNewServerUrl] = useState('');
+  const [newServerName, setNewServerName] = useState('');
 
   useEffect(() => {
     // 获取公开配置
@@ -25,7 +43,123 @@ export default function LoginPage() {
         // 默认允许注册
         setConfig({ allowRegister: true, registerDefaultRole: 'agent' });
       });
+    
+    // 加载保存的服务器地址
+    loadServerAddresses();
   }, []);
+
+  // 加载服务器地址列表
+  const loadServerAddresses = () => {
+    try {
+      const saved = localStorage.getItem(SERVER_ADDRESSES_KEY);
+      const addresses: ServerAddress[] = saved ? JSON.parse(saved) : [];
+      
+      // 添加默认地址（如果没有）
+      const hasDefault = addresses.some(s => s.url === '/api' || s.url === '');
+      if (!hasDefault) {
+        addresses.unshift({
+          url: '',
+          name: '默认服务器',
+          lastUsed: Date.now()
+        });
+      }
+      
+      setServerAddresses(addresses);
+      
+      // 获取当前选中的服务器
+      const current = localStorage.getItem(CURRENT_SERVER_KEY);
+      if (current !== null) {
+        setCurrentServer(current);
+      } else if (addresses.length > 0) {
+        setCurrentServer(addresses[0].url);
+      }
+    } catch (e) {
+      console.error('加载服务器地址失败:', e);
+    }
+  };
+
+  // 保存服务器地址列表
+  const saveServerAddresses = (addresses: ServerAddress[]) => {
+    try {
+      localStorage.setItem(SERVER_ADDRESSES_KEY, JSON.stringify(addresses));
+      setServerAddresses(addresses);
+    } catch (e) {
+      console.error('保存服务器地址失败:', e);
+    }
+  };
+
+  // 切换服务器
+  const handleServerChange = (value: string) => {
+    setCurrentServer(value);
+    localStorage.setItem(CURRENT_SERVER_KEY, value);
+    
+    // 更新最后使用时间
+    const updated = serverAddresses.map(s => 
+      s.url === value ? { ...s, lastUsed: Date.now() } : s
+    );
+    saveServerAddresses(updated);
+    
+    // 刷新页面以应用新的服务器地址
+    window.location.reload();
+  };
+
+  // 添加新服务器
+  const handleAddServer = () => {
+    if (!newServerUrl.trim()) {
+      message.error('请输入服务器地址');
+      return;
+    }
+    
+    // 规范化 URL
+    let url = newServerUrl.trim();
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = 'http://' + url;
+    }
+    
+    // 检查是否已存在
+    if (serverAddresses.some(s => s.url === url)) {
+      message.error('该服务器地址已存在');
+      return;
+    }
+    
+    const newServer: ServerAddress = {
+      url,
+      name: newServerName.trim() || url,
+      lastUsed: Date.now()
+    };
+    
+    const updated = [...serverAddresses, newServer];
+    saveServerAddresses(updated);
+    
+    // 选中新添加的服务器
+    setCurrentServer(url);
+    localStorage.setItem(CURRENT_SERVER_KEY, url);
+    
+    // 重置表单
+    setNewServerUrl('');
+    setNewServerName('');
+    setShowAddServer(false);
+    
+    message.success('服务器地址已添加');
+    
+    // 刷新页面以应用新的服务器地址
+    window.location.reload();
+  };
+
+  // 删除服务器地址
+  const handleDeleteServer = (url: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    const updated = serverAddresses.filter(s => s.url !== url);
+    saveServerAddresses(updated);
+    
+    // 如果删除的是当前选中的，切换到第一个
+    if (currentServer === url && updated.length > 0) {
+      setCurrentServer(updated[0].url);
+      localStorage.setItem(CURRENT_SERVER_KEY, updated[0].url);
+      window.location.reload();
+    }
+  };
 
   const handleLogin = async (values: { username: string; password: string }) => {
     setLoading(true);
@@ -136,6 +270,73 @@ export default function LoginPage() {
           autoComplete="off"
           size="large"
         >
+          {/* 服务器地址选择 */}
+          <Form.Item>
+            <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text type="secondary"><GlobalOutlined /> 服务器地址</Text>
+              <Button 
+                type="link" 
+                size="small" 
+                onClick={() => setShowAddServer(!showAddServer)}
+                icon={<PlusOutlined />}
+              >
+                {showAddServer ? '取消' : '添加'}
+              </Button>
+            </div>
+            
+            {showAddServer ? (
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <Input
+                  placeholder="服务器名称（选填）"
+                  value={newServerName}
+                  onChange={(e) => setNewServerName(e.target.value)}
+                />
+                <Space style={{ width: '100%' }}>
+                  <Input
+                    placeholder="服务器地址，如：192.168.1.100:8081"
+                    value={newServerUrl}
+                    onChange={(e) => setNewServerUrl(e.target.value)}
+                    style={{ width: 280 }}
+                  />
+                  <Button type="primary" onClick={handleAddServer}>
+                    添加
+                  </Button>
+                </Space>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  提示：输入 IP:端口 或完整 URL，如 http://192.168.1.100:8081
+                </Text>
+              </Space>
+            ) : (
+              <Select
+                value={currentServer}
+                onChange={handleServerChange}
+                style={{ width: '100%' }}
+                placeholder="选择服务器"
+              >
+                {serverAddresses.map((server) => (
+                  <Option key={server.url} value={server.url}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>
+                        {server.name}
+                        {server.url && (
+                          <Tag size="small" style={{ marginLeft: 8 }}>
+                            {server.url}
+                          </Tag>
+                        )}
+                      </span>
+                      {server.url !== '' && (
+                        <CloseOutlined
+                          style={{ color: '#999', fontSize: 12 }}
+                          onClick={(e) => handleDeleteServer(server.url, e)}
+                        />
+                      )}
+                    </div>
+                  </Option>
+                ))}
+              </Select>
+            )}
+          </Form.Item>
+
           <Form.Item
             name="username"
             rules={[
@@ -238,19 +439,6 @@ export default function LoginPage() {
               </Link>
             </div>
           </>
-        )}
-        
-        {mode === 'login' && (
-          <div style={{ textAlign: 'center', color: '#999', fontSize: 12, marginTop: 16 }}>
-            <p style={{ margin: 0 }}>默认管理员账号：admin / admin123</p>
-            <p style={{ margin: 0 }}>默认客服账号：agent / agent123</p>
-          </div>
-        )}
-        
-        {mode === 'register' && config?.registerDefaultRole && (
-          <div style={{ textAlign: 'center', color: '#999', fontSize: 12, marginTop: 16 }}>
-            <p style={{ margin: 0 }}>注册账号默认角色：{config.registerDefaultRole === 'agent' ? '客服' : config.registerDefaultRole}</p>
-          </div>
         )}
       </Card>
     </div>

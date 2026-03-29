@@ -163,7 +163,7 @@ export default function CallList() {
     if (!editingRecord) return;
     
     try {
-      await callApi.updateCallNotes(editingRecord.id, values.call_notes, values.call_result);
+      await callApi.updateCallNotes(editingRecord.id, values.call_notes);
       message.success('保存成功');
       setNotesModalVisible(false);
       fetchCustomers();
@@ -327,14 +327,6 @@ export default function CallList() {
         <Form form={noteForm} onFinish={handleSaveNotes}>
           <Form.Item name="call_notes" label="通话备注">
             <Input.TextArea rows={4} />
-          </Form.Item>
-          <Form.Item name="call_result" label="通话结果">
-            <Select placeholder="选择通话结果">
-              <Option value="interested">有意向</Option>
-              <Option value="not_interested">无意向</Option>
-              <Option value="callback">需回访</Option>
-              <Option value="wrong_number">号码错误</Option>
-            </Select>
           </Form.Item>
         </Form>
       </Modal>

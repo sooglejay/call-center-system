@@ -58,6 +58,30 @@ class TaskListViewModel @Inject constructor(
     }
 
     /**
+     * 加载我的任务列表（客服视角）
+     */
+    fun loadMyTasks() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _error.value = null
+
+            val result = taskRepository.getMyTasks()
+
+            result.fold(
+                onSuccess = { taskList ->
+                    _tasks.value = taskList
+                    _error.value = null
+                },
+                onFailure = { exception ->
+                    _error.value = exception.message ?: "加载任务列表失败"
+                }
+            )
+
+            _isLoading.value = false
+        }
+    }
+
+    /**
      * 刷新数据
      */
     fun refresh() {

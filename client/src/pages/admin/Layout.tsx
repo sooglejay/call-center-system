@@ -13,7 +13,9 @@ import {
   PhoneOutlined,
   DatabaseOutlined,
   QuestionCircleOutlined,
-  MobileOutlined
+  MobileOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined
 } from '@ant-design/icons';
 import { useAuthStore } from '../../stores';
 
@@ -77,7 +79,7 @@ export default function AdminLayout() {
         <Header style={{ background: '#fff', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <Button
             type="text"
-            icon={collapsed ? <span>展开</span> : <span>收起</span>}
+            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
             onClick={() => setCollapsed(!collapsed)}
           />
           <Dropdown menu={{ items: userMenuItems, onClick: handleUserMenuClick }} placement="bottomRight">

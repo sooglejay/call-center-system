@@ -1,8 +1,19 @@
 import axios, { AxiosError } from 'axios';
 
+// 服务器地址存储键
+const CURRENT_SERVER_KEY = 'current_server';
+
 // 获取 API 基础路径
 // 子路径部署时，API 路径应该是相对路径，让浏览器自动拼接
 const getBaseURL = () => {
+  // 首先检查是否有手动设置的服务器地址
+  const customServer = localStorage.getItem(CURRENT_SERVER_KEY);
+  if (customServer) {
+    // 如果设置了自定义服务器地址，使用它
+    return `${customServer}/api`;
+  }
+  
+  // 否则使用默认逻辑
   const basePath = import.meta.env.VITE_BASE_PATH || '';
   // 如果是根路径（/ 或空），直接返回 /api
   // 如果是子路径（如 /callcenter），拼接为 /callcenter/api
@@ -91,8 +102,8 @@ export const callApi = {
   getCalls: (params?: any) => api.get('/calls', { params }),
   createCall: (data: any) => api.post('/calls', data),
   updateCall: (id: number, data: any) => api.put(`/calls/${id}`, data),
-  updateCallNotes: (id: number, call_notes: string, call_result?: string) => 
-    api.put(`/calls/${id}/notes`, { call_notes, call_result }),
+  updateCallNotes: (id: number, call_notes: string) => 
+    api.put(`/calls/${id}/notes`, { call_notes }),
   getNextCall: () => api.get('/calls/next/dial')
 };
 

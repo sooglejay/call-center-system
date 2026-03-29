@@ -110,12 +110,52 @@ export const createUser = async (req: Request, res: Response) => {
 export const updateUser = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { real_name, phone, email, status } = req.body;
+    const { real_name, phone, email, status, role, data_access_type } = req.body;
+    
+    // 构建动态更新字段
+    const updateFields: string[] = [];
+    const updateValues: any[] = [];
+    
+    if (real_name !== undefined) {
+      updateFields.push(`real_name = $${updateValues.length + 1}`);
+      updateValues.push(real_name);
+    }
+    
+    if (phone !== undefined) {
+      updateFields.push(`phone = $${updateValues.length + 1}`);
+      updateValues.push(phone);
+    }
+    
+    if (email !== undefined) {
+      updateFields.push(`email = $${updateValues.length + 1}`);
+      updateValues.push(email);
+    }
+    
+    if (status !== undefined) {
+      updateFields.push(`status = $${updateValues.length + 1}`);
+      updateValues.push(status);
+    }
+    
+    if (role !== undefined) {
+      updateFields.push(`role = $${updateValues.length + 1}`);
+      updateValues.push(role);
+    }
+    
+    if (data_access_type !== undefined) {
+      updateFields.push(`data_access_type = $${updateValues.length + 1}`);
+      updateValues.push(data_access_type);
+    }
+    
+    if (updateFields.length === 0) {
+      return res.status(400).json({ error: '没有要更新的字段' });
+    }
+    
+    updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
+    updateValues.push(id);
     
     await query(
-      `UPDATE users SET real_name = $1, phone = $2, email = $3, status = $4, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $5`,
-      [real_name, phone, email, status, id]
+      `UPDATE users SET ${updateFields.join(', ')} WHERE id = $${updateValues.length}`,
+      updateValues
     );
     
     // 查询更新后的用户

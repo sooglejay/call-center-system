@@ -294,6 +294,16 @@ interface ApiService {
     @DELETE("tasks/{id}")
     suspend fun deleteTask(@Path("id") id: Int): Response<ApiResponse<Unit>>
 
+    /**
+     * 更新任务中客户的拨打状态（客服执行任务时使用）
+     */
+    @PUT("tasks/{taskId}/customers/{customerId}/status")
+    suspend fun updateTaskCustomerStatus(
+        @Path("taskId") taskId: Int,
+        @Path("customerId") customerId: Int,
+        @Body request: UpdateTaskCustomerStatusRequest
+    ): Response<TaskCustomer>
+
     // ==================== 统计数据 ====================
     
     /**

@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,8 +16,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,6 +35,8 @@ import com.callcenter.app.data.model.Customer
 import com.callcenter.app.data.model.Task
 import com.callcenter.app.ui.viewmodel.AuthViewModel
 import com.callcenter.app.ui.viewmodel.AutoDialViewModel
+import com.callcenter.app.ui.viewmodel.AutoDialConfig
+import com.callcenter.app.ui.viewmodel.AutoDialScopeType
 import com.callcenter.app.ui.viewmodel.CallSettingsViewModel
 import com.callcenter.app.ui.viewmodel.CustomerViewModel
 import com.callcenter.app.ui.viewmodel.DashboardViewModel
@@ -57,7 +62,10 @@ fun MainScreen(
     onNavigateToAgents: () -> Unit,
     onNavigateToTasks: () -> Unit,
     onNavigateToTaskDetail: (Int) -> Unit,
+    onNavigateToAgentTaskExecution: (Int) -> Unit,
+    onNavigateToHelp: () -> Unit,
     onLogout: () -> Unit,
+    onSwitchAccount: () -> Unit,
     authViewModel: AuthViewModel = hiltViewModel(),
     dashboardViewModel: DashboardViewModel = hiltViewModel(),
     taskListViewModel: TaskListViewModel = hiltViewModel(),
@@ -70,8 +78,38 @@ fun MainScreen(
     val currentUser by authViewModel.currentUser.collectAsState()
     val isAdmin = currentUser?.role == "admin"
 
-    // 当前选中的底部导航项
-    var selectedTab by remember { mutableStateOf(0) }
+    // 当前选中的底部导航项 - 使用 rememberSaveable 保存状态
+    var selectedTab by rememberSaveable { mutableStateOf(0) }
+
+    // 在 MainScreen 级别加载任务数据，确保工作台能显示任务
+    // 使用 isLoading 标记避免重复加载
+    var isInitialLoadDone by rememberSaveable { mutableStateOf(false) }
+    
+    LaunchedEffect(Unit) {
+        // 首次进入时延迟加载，等待用户信息获取
+        if (!isInitialLoadDone) {
+            kotlinx.coroutines.delay(500) // 等待500ms让currentUser加载
+            isInitialLoadDone = true
+        }
+    }
+    
+    LaunchedEffect(currentUser?.id, isInitialLoadDone) {
+        // 当用户变化或初始加载完成时加载任务
+        if (currentUser != null && isInitialLoadDone) {
+            if (currentUser?.role == "agent") {
+                taskListViewModel.loadMyTasks()
+            } else if (currentUser?.role == "admin") {
+                taskListViewModel.refresh()
+            }
+        }
+    }
+    
+    // 当切换到工作台Tab时，确保任务数据已加载
+    LaunchedEffect(selectedTab) {
+        if (!isAdmin && selectedTab == 0 && currentUser?.role == "agent") {
+            taskListViewModel.loadMyTasks()
+        }
+    }
 
     // 根据角色决定显示的导航项
     val navItems = if (isAdmin) {
@@ -83,6 +121,7 @@ fun MainScreen(
     } else {
         listOf(
             BottomNavItem("工作台", Icons.Default.WorkOutline),
+            BottomNavItem("任务", Icons.Default.Assignment),
             BottomNavItem("客户", Icons.Default.ContactPhone),
             BottomNavItem("我的", Icons.Default.Person)
         )
@@ -126,8 +165,9 @@ fun MainScreen(
             isAdmin && selectedTab == 2 -> {
                 ProfileTab(
                     padding = padding,
-                    onNavigateToSettings = onNavigateToSettings,
                     onLogout = onLogout,
+                    onSwitchAccount = onSwitchAccount,
+                    onNavigateToHelp = onNavigateToHelp,
                     authViewModel = authViewModel
                 )
             }
@@ -135,18 +175,24 @@ fun MainScreen(
             !isAdmin && selectedTab == 0 -> {
                 AgentWorkTab(
                     padding = padding,
-                    onNavigateToCustomerDetail = onNavigateToCustomerDetail,
                     onNavigateToMyStats = onNavigateToMyStats,
-                    onNavigateToTaskDetail = onNavigateToTaskDetail,
+                    onNavigateToAgentTaskExecution = onNavigateToAgentTaskExecution,
                     authViewModel = authViewModel,
                     taskListViewModel = taskListViewModel,
                     myStatsViewModel = myStatsViewModel,
-                    customerViewModel = customerViewModel,
                     autoDialViewModel = autoDialViewModel,
                     callSettingsViewModel = callSettingsViewModel
                 )
             }
             !isAdmin && selectedTab == 1 -> {
+                AgentTasksTab(
+                    padding = padding,
+                    onNavigateToAgentTaskExecution = onNavigateToAgentTaskExecution,
+                    taskListViewModel = taskListViewModel,
+                    authViewModel = authViewModel
+                )
+            }
+            !isAdmin && selectedTab == 2 -> {
                 AgentCustomersTab(
                     padding = padding,
                     onNavigateToCustomerDetail = onNavigateToCustomerDetail,
@@ -155,11 +201,12 @@ fun MainScreen(
                     callSettingsViewModel = callSettingsViewModel
                 )
             }
-            !isAdmin && selectedTab == 2 -> {
+            !isAdmin && selectedTab == 3 -> {
                 ProfileTab(
                     padding = padding,
-                    onNavigateToSettings = onNavigateToSettings,
                     onLogout = onLogout,
+                    onSwitchAccount = onSwitchAccount,
+                    onNavigateToHelp = onNavigateToHelp,
                     authViewModel = authViewModel
                 )
             }
@@ -436,13 +483,14 @@ private fun QuickActionButton(
     modifier: Modifier = Modifier,
     title: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
+    containerColor: Color? = null,
     onClick: () -> Unit
 ) {
     Card(
         modifier = modifier,
         onClick = onClick,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = containerColor ?: MaterialTheme.colorScheme.surface
         )
     ) {
         Column(
@@ -620,23 +668,218 @@ private fun AdminTasksTab(
     }
 }
 
+// ==================== 客服任务标签页 ====================
+
+/**
+ * 客服任务标签页
+ * 显示分配给当前客服的任务列表
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AgentTasksTab(
+    padding: PaddingValues,
+    onNavigateToAgentTaskExecution: (Int) -> Unit,
+    taskListViewModel: TaskListViewModel,
+    authViewModel: AuthViewModel = hiltViewModel()
+) {
+    val tasks by taskListViewModel.tasks.collectAsState()
+    val isLoading by taskListViewModel.isLoading.collectAsState()
+    val currentUser by authViewModel.currentUser.collectAsState()
+
+    LaunchedEffect(Unit) {
+        taskListViewModel.loadMyTasks()
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(padding)
+    ) {
+        // 顶部标题栏
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.primaryContainer
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "我的任务",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        // 任务列表
+        if (isLoading && tasks.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+        } else if (tasks.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        Icons.Default.Assignment,
+                        contentDescription = null,
+                        modifier = Modifier.size(64.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        "暂无任务",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "请联系管理员分配任务",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(vertical = 8.dp)
+            ) {
+                items(tasks, key = { it.id }) { task ->
+                    AgentTaskItem(
+                        task = task,
+                        onClick = { onNavigateToAgentTaskExecution(task.id) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 客服任务项
+ */
+@Composable
+private fun AgentTaskItem(
+    task: Task,
+    onClick: () -> Unit
+) {
+    val progress = if (task.customerCount > 0) {
+        (task.completedCount * 100 / task.customerCount)
+    } else 0
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        onClick = onClick
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // 优先级指示器
+                val priorityColor = when (task.priority) {
+                    "urgent" -> Color(0xFFE91E63)
+                    "high" -> Color(0xFFFF9800)
+                    else -> Color(0xFF2196F3)
+                }
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(priorityColor)
+                )
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = task.title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "${task.customerCount}个客户 · 已拨打${task.calledCount}个",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // 状态标签
+                val (statusText, statusColor) = when (task.status) {
+                    "completed" -> "已完成" to Color(0xFF4CAF50)
+                    "in_progress" -> "进行中" to Color(0xFF2196F3)
+                    else -> "待开始" to Color(0xFFFF9800)
+                }
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = statusColor.copy(alpha = 0.1f)
+                ) {
+                    Text(
+                        text = statusText,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = statusColor,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            // 进度条
+            if (task.customerCount > 0) {
+                Spacer(modifier = Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    progress = { progress / 100f },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = when {
+                        progress >= 100 -> Color(0xFF4CAF50)
+                        progress > 50 -> Color(0xFF2196F3)
+                        else -> Color(0xFFFF9800)
+                    },
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "进度: $progress% (${task.completedCount}/${task.customerCount})",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
 // ==================== 客服工作台标签页 ====================
 
 /**
  * 客服工作台标签页
- * 显示今日概览、待处理任务、快捷拨号
+ * 显示今日概览、任务列表、自动拨号入口
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AgentWorkTab(
     padding: PaddingValues,
-    onNavigateToCustomerDetail: (Int) -> Unit,
     onNavigateToMyStats: () -> Unit,
-    onNavigateToTaskDetail: (Int) -> Unit,
+    onNavigateToAgentTaskExecution: (Int) -> Unit,
     authViewModel: AuthViewModel,
     taskListViewModel: TaskListViewModel,
     myStatsViewModel: MyStatsViewModel,
-    customerViewModel: CustomerViewModel,
     autoDialViewModel: AutoDialViewModel,
     callSettingsViewModel: CallSettingsViewModel
 ) {
@@ -644,28 +887,32 @@ private fun AgentWorkTab(
     val currentUser by authViewModel.currentUser.collectAsState()
     val myStats by myStatsViewModel.stats.collectAsState()
     val tasks by taskListViewModel.tasks.collectAsState()
-    val customers by customerViewModel.customers.collectAsState()
 
-    // 获取待拨打客户（限制数量）
-    val pendingCustomers = remember(customers) {
-        customers.filter { it.status == "pending" }.take(5)
-    }
-
-    // 获取我的任务（限制数量）
+    // 获取我的任务
     val myTasks = remember(tasks) {
-        tasks.filter { it.assignedTo == currentUser?.id }.take(3)
+        tasks.filter { it.assignedTo == currentUser?.id }
     }
+
+    // 计算总体进度
+    val totalTaskCustomers = myTasks.sumOf { it.customerCount }
+    val totalCompletedCustomers = myTasks.sumOf { it.completedCount }
+    val overallProgress = if (totalTaskCustomers > 0) {
+        (totalCompletedCustomers * 100 / totalTaskCustomers)
+    } else 0
 
     val callSettings by callSettingsViewModel.callSettings.collectAsState()
-    val callHelper = remember { CallHelper(context) }
-
-    var showAutoDialDialog by remember { mutableStateOf(false) }
 
     // 自动拨号状态
     val autoDialRunning by autoDialViewModel.isRunning.collectAsState()
     val currentDialCustomer by autoDialViewModel.currentCustomer.collectAsState()
     val dialedCount by autoDialViewModel.dialedCount.collectAsState()
     val totalCount by autoDialViewModel.totalCount.collectAsState()
+    val currentConfig by autoDialViewModel.currentConfig.collectAsState()
+
+    // 加载任务数据
+    LaunchedEffect(Unit) {
+        taskListViewModel.loadMyTasks()
+    }
 
     val callPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -684,14 +931,6 @@ private fun AgentWorkTab(
                 callPermissionLauncher.launch(Manifest.permission.CALL_PHONE)
                 false
             }
-        }
-    }
-
-    fun makeCall(phone: String) {
-        if (checkAndRequestCallPermission()) {
-            callHelper.makeCall(phone, directCall = true)
-        } else {
-            callHelper.makeCall(phone, directCall = false)
         }
     }
 
@@ -725,63 +964,392 @@ private fun AgentWorkTab(
 
         // 自动拨号状态提示条
         if (autoDialRunning) {
+            val scopeDesc = autoDialViewModel.getScopeDescription(currentConfig)
             AutoDialStatusBar(
                 dialedCount = dialedCount,
                 totalCount = totalCount,
+                scopeDescription = scopeDesc,
                 currentCustomer = currentDialCustomer,
                 onStop = { autoDialViewModel.stopAutoDial() }
             )
         }
 
-        // 今日统计卡片
+        // 客户跟进进度（从myStats获取数据）
         myStats?.let { stats ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                StatCard(
-                    modifier = Modifier.weight(1f),
-                    title = "今日通话",
-                    value = stats.todayCalls.toString(),
-                    icon = Icons.Default.Phone,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                StatCard(
-                    modifier = Modifier.weight(1f),
-                    title = "通话时长",
-                    value = "${stats.todayDuration / 60}分",
-                    icon = Icons.Default.Timer,
-                    color = MaterialTheme.colorScheme.secondary
-                )
+            val totalCustomers = stats.pendingCustomers + stats.completedCustomers
+            if (totalCustomers > 0) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp)
+                    ) {
+                        Text(
+                            text = "客户跟进进度",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        val completedRate = if (totalCustomers > 0) {
+                            stats.completedCustomers.toFloat() / totalCustomers
+                        } else 0f
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "已完成 ${stats.completedCustomers} / $totalCustomers",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "${(completedRate * 100).toInt()}%",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        LinearProgressIndicator(
+                            progress = { completedRate },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(4.dp)),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            // 待跟进
+                            Surface(
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFFFF9800).copy(alpha = 0.1f)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = stats.pendingCustomers.toString(),
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFFF9800)
+                                    )
+                                    Text(
+                                        text = "待跟进",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            // 已完成
+                            Surface(
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFF4CAF50).copy(alpha = 0.1f)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = stats.completedCustomers.toString(),
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF4CAF50)
+                                    )
+                                    Text(
+                                        text = "已完成",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
             }
         }
 
-        // 快捷操作
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            QuickActionButton(
-                modifier = Modifier.weight(1f),
-                title = "我的统计",
-                icon = Icons.Default.BarChart,
-                onClick = onNavigateToMyStats
-            )
-            QuickActionButton(
-                modifier = Modifier.weight(1f),
-                title = "自动拨号",
-                icon = Icons.Default.PlayArrow,
-                onClick = { showAutoDialDialog = true }
-            )
+        // 业绩指标（包含任务总体进度）
+        myStats?.let { stats ->
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Text(
+                        text = "业绩指标",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // 任务总体进度
+                    if (myTasks.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Assignment,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.tertiary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "任务进度",
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                                LinearProgressIndicator(
+                                    progress = { overallProgress / 100f },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 4.dp)
+                                        .height(4.dp),
+                                    color = when {
+                                        overallProgress >= 100 -> Color(0xFF4CAF50)
+                                        overallProgress > 50 -> Color(0xFF2196F3)
+                                        else -> Color(0xFFFF9800)
+                                    },
+                                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Text(
+                                text = "$overallProgress%",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.tertiary
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // 任务统计
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Text(
+                                text = "${myTasks.size} 个任务",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "${totalTaskCustomers} 个客户",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Divider()
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+
+                    // 今日通话
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Phone,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Text(
+                            text = "今日通话",
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        Text(
+                            text = "${stats.todayCalls} 次",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // 今日通话时长
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Timer,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Text(
+                            text = "今日通话时长",
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        val todayDurationMin = stats.todayDuration / 60
+                        Text(
+                            text = "${todayDurationMin} 分钟",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // 接通率
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF4CAF50).copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Call,
+                                contentDescription = null,
+                                tint = Color(0xFF4CAF50),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Text(
+                            text = "接通率",
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        val totalCalls = stats.todayCalls.coerceAtLeast(stats.totalCalls)
+                        val successfulCalls = stats.todaySuccessful.coerceAtLeast(stats.successfulCalls)
+                        val rateText = if (totalCalls > 0) {
+                            "${(successfulCalls.toFloat() / totalCalls * 100).toInt()}%"
+                        } else "0%"
+
+                        Text(
+                            text = rateText,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF4CAF50)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // 平均通话时长
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Timer,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Text(
+                            text = "平均通话时长",
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        val avgDuration = if (stats.totalCalls > 0) {
+                            stats.totalDuration / stats.totalCalls
+                        } else 0
+                        val durationText = if (avgDuration < 60) "${avgDuration}秒" else "${avgDuration / 60}分${avgDuration % 60}秒"
+
+                        Text(
+                            text = durationText,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // 我的任务
+        // 我的任务列表
         if (myTasks.isNotEmpty()) {
             Row(
                 modifier = Modifier
@@ -791,7 +1359,7 @@ private fun AgentWorkTab(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "我的任务",
+                    text = "我的任务 (${myTasks.size})",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -800,36 +1368,19 @@ private fun AgentWorkTab(
             Spacer(modifier = Modifier.height(8.dp))
 
             myTasks.forEach { task ->
-                TaskItem(
+                AgentTaskItemWithProgress(
                     task = task,
-                    onClick = { onNavigateToTaskDetail(task.id) }
+                    isAutoDialing = autoDialRunning && currentConfig?.taskId == task.id,
+                    onClick = { onNavigateToAgentTaskExecution(task.id) },
+                    onStartDial = {
+                        if (checkAndRequestCallPermission()) {
+                            onNavigateToAgentTaskExecution(task.id)
+                        }
+                    }
                 )
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-
-        // 待拨打客户
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "待拨打客户",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            TextButton(onClick = { /* 切换到客户列表页 */ }) {
-                Text("查看全部")
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        if (pendingCustomers.isEmpty()) {
+        } else {
+            // 空状态
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -844,44 +1395,182 @@ private fun AgentWorkTab(
                         .padding(32.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "暂无待拨打客户",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            Icons.Default.Assignment,
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "暂无任务",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "请联系管理员分配任务",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
+                    }
                 }
-            }
-        } else {
-            pendingCustomers.forEach { customer ->
-                CustomerQuickItem(
-                    customer = customer,
-                    onCall = { makeCall(customer.phone) },
-                    onClick = { onNavigateToCustomerDetail(customer.id) }
-                )
             }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
     }
+}
 
-    // 自动拨号对话框
-    if (showAutoDialDialog) {
-        AutoDialDialog(
-            isRunning = false,
-            defaultInterval = callSettings.autoDialInterval,
-            defaultTimeout = callSettings.callTimeout,
-            onStart = { interval, timeout ->
-                showAutoDialDialog = false
-                val allPending = customers.filter { it.status == "pending" }
-                if (allPending.isEmpty()) {
-                    Toast.makeText(context, "没有待拨打的客户", Toast.LENGTH_SHORT).show()
-                } else if (checkAndRequestCallPermission()) {
-                    autoDialViewModel.startAutoDial(allPending, interval, timeout)
+/**
+ * 客服任务项（带进度和自动拨号状态）
+ */
+@Composable
+private fun AgentTaskItemWithProgress(
+    task: Task,
+    isAutoDialing: Boolean,
+    onClick: () -> Unit,
+    onStartDial: () -> Unit
+) {
+    val progress = if (task.customerCount > 0) {
+        (task.completedCount * 100 / task.customerCount)
+    } else 0
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        onClick = onClick
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // 优先级指示器
+                val priorityColor = when (task.priority) {
+                    "urgent" -> Color(0xFFE91E63)
+                    "high" -> Color(0xFFFF9800)
+                    else -> Color(0xFF2196F3)
                 }
-            },
-            onStop = { showAutoDialDialog = false },
-            onDismiss = { showAutoDialDialog = false }
-        )
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(priorityColor)
+                )
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = task.title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "${task.customerCount}个客户 · 已拨打${task.calledCount}个",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // 自动拨号指示器
+                if (isAutoDialing) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(12.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "拨号中",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                } else {
+                    // 状态标签
+                    val (statusText, statusColor) = when (task.status) {
+                        "completed" -> "已完成" to Color(0xFF4CAF50)
+                        "in_progress" -> "进行中" to Color(0xFF2196F3)
+                        else -> "待开始" to Color(0xFFFF9800)
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = statusColor.copy(alpha = 0.1f)
+                    ) {
+                        Text(
+                            text = statusText,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = statusColor,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+            }
+
+            // 进度条
+            if (task.customerCount > 0) {
+                Spacer(modifier = Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    progress = { progress / 100f },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = when {
+                        progress >= 100 -> Color(0xFF4CAF50)
+                        progress > 50 -> Color(0xFF2196F3)
+                        else -> Color(0xFFFF9800)
+                    },
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "进度: $progress% (${task.completedCount}/${task.customerCount})",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    // 开始拨号按钮
+                    if (!isAutoDialing && task.status != "completed") {
+                        TextButton(
+                            onClick = onStartDial,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                "开始拨号",
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1015,9 +1704,11 @@ private fun AgentCustomersTab(
 
         // 自动拨号进度
         if (autoDialRunning) {
+            val scopeDesc = autoDialViewModel.getScopeDescription(autoDialViewModel.currentConfig.value)
             AutoDialStatusBar(
                 dialedCount = dialedCount,
                 totalCount = totalCount,
+                scopeDescription = scopeDesc,
                 currentCustomer = currentDialCustomer,
                 onStop = { autoDialViewModel.stopAutoDial() }
             )
@@ -1135,6 +1826,7 @@ private fun AgentCustomersTab(
 private fun AutoDialStatusBar(
     dialedCount: Int,
     totalCount: Int,
+    scopeDescription: String,
     currentCustomer: Customer?,
     onStop: () -> Unit
 ) {
@@ -1169,7 +1861,7 @@ private fun AutoDialStatusBar(
                             fontWeight = FontWeight.Medium
                         )
                         Text(
-                            text = "$dialedCount / $totalCount",
+                            text = "$scopeDescription: $dialedCount / $totalCount",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                         )
@@ -1293,22 +1985,41 @@ private fun CustomerQuickItem(
 // ==================== 个人中心标签页 ====================
 
 /**
- * 个人中心标签页
+ * 个人中心标签页 - 整合设置内容
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProfileTab(
     padding: PaddingValues,
-    onNavigateToSettings: () -> Unit,
     onLogout: () -> Unit,
-    authViewModel: AuthViewModel
+    onSwitchAccount: () -> Unit,
+    onNavigateToHelp: () -> Unit,
+    authViewModel: AuthViewModel,
+    settingsViewModel: com.callcenter.app.ui.viewmodel.SettingsViewModel = hiltViewModel()
 ) {
+    val context = LocalContext.current
     val currentUser by authViewModel.currentUser.collectAsState()
+    
+    // 设置相关状态
+    val serverUrl by settingsViewModel.serverUrl.collectAsState()
+    val stats by settingsViewModel.stats.collectAsState()
+    val callSettings by settingsViewModel.callSettings.collectAsState()
+    
+    var showServerUrlDialog by remember { mutableStateOf(false) }
+    var showLogoutConfirmDialog by remember { mutableStateOf(false) }
+    var showSwitchAccountConfirmDialog by remember { mutableStateOf(false) }
+    var showAutoDialIntervalDialog by remember { mutableStateOf(false) }
+    var showCallTimeoutDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        settingsViewModel.loadSettings()
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(padding)
+            .verticalScroll(rememberScrollState())
     ) {
         // 用户信息卡片
         Surface(
@@ -1363,47 +2074,387 @@ private fun ProfileTab(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 菜单项
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            onClick = onNavigateToSettings
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Default.Settings, contentDescription = null)
-                Spacer(modifier = Modifier.width(16.dp))
-                Text("设置", style = MaterialTheme.typography.bodyLarge)
-                Spacer(modifier = Modifier.weight(1f))
-                Icon(Icons.Default.ChevronRight, contentDescription = null)
-            }
-        }
+        // 统计信息
+        StatsCard(stats)
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 退出登录
-        Button(
-            onClick = onLogout,
+        // 服务器设置
+        SettingsGroup(title = "服务器设置") {
+            SettingsItem(
+                icon = Icons.Default.Dns,
+                title = "服务器地址",
+                subtitle = serverUrl,
+                onClick = { showServerUrlDialog = true }
+            )
+        }
+
+        // 通话设置
+        SettingsGroup(title = "通话设置") {
+            SettingsItem(
+                icon = Icons.Default.Phone,
+                title = "自动拨号间隔",
+                subtitle = "${callSettings.autoDialInterval}秒",
+                onClick = { showAutoDialIntervalDialog = true }
+            )
+            SettingsItem(
+                icon = Icons.Default.Timer,
+                title = "通话超时时间",
+                subtitle = "${callSettings.callTimeout}秒",
+                onClick = { showCallTimeoutDialog = true }
+            )
+        }
+
+        // 关于
+        SettingsGroup(title = "关于") {
+            SettingsItem(
+                icon = Icons.Default.Info,
+                title = "版本信息",
+                subtitle = "v${com.callcenter.app.BuildConfig.VERSION_NAME} (${com.callcenter.app.BuildConfig.VERSION_CODE})",
+                onClick = { }
+            )
+            SettingsItem(
+                icon = Icons.Default.Help,
+                title = "帮助文档",
+                subtitle = "查看使用说明",
+                onClick = onNavigateToHelp
+            )
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // 切换账号和退出登录按钮
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.error
-            )
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Icon(Icons.Default.Logout, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("退出登录")
+            // 切换账号按钮
+            OutlinedButton(
+                onClick = { showSwitchAccountConfirmDialog = true },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.primary
+                )
+            ) {
+                Icon(Icons.Default.SwitchAccount, null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("切换账号")
+            }
+
+            // 退出登录按钮
+            Button(
+                onClick = { showLogoutConfirmDialog = true },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Icon(Icons.AutoMirrored.Filled.Logout, null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("退出登录")
+            }
         }
+
+        Spacer(modifier = Modifier.height(32.dp))
+    }
+
+    // 服务器地址设置对话框
+    if (showServerUrlDialog) {
+        ServerUrlDialog(
+            currentUrl = serverUrl,
+            onDismiss = { showServerUrlDialog = false },
+            onConfirm = { newUrl ->
+                settingsViewModel.updateServerUrl(newUrl)
+                showServerUrlDialog = false
+                Toast.makeText(context, "服务器地址已更新，请重新登录", Toast.LENGTH_LONG).show()
+            }
+        )
+    }
+
+    // 退出确认对话框
+    if (showLogoutConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutConfirmDialog = false },
+            title = { Text("确认退出") },
+            text = { Text("确定要退出登录吗？") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLogoutConfirmDialog = false
+                        onLogout()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("退出")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogoutConfirmDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    // 切换账号确认对话框
+    if (showSwitchAccountConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showSwitchAccountConfirmDialog = false },
+            title = { Text("切换账号") },
+            text = { Text("切换到其他账号登录？") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showSwitchAccountConfirmDialog = false
+                        onSwitchAccount()
+                    }
+                ) {
+                    Text("切换")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSwitchAccountConfirmDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    // 自动拨号间隔设置对话框
+    if (showAutoDialIntervalDialog) {
+        var interval by remember { mutableStateOf(callSettings.autoDialInterval) }
+        AlertDialog(
+            onDismissRequest = { showAutoDialIntervalDialog = false },
+            title = { Text("自动拨号间隔") },
+            text = {
+                Column {
+                    Text("拨号间隔（秒）")
+                    Slider(
+                        value = interval.toFloat(),
+                        onValueChange = { interval = it.toInt() },
+                        valueRange = 2f..60f,
+                        steps = 58
+                    )
+                    Text("$interval 秒", style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        settingsViewModel.updateAutoDialInterval(interval)
+                        showAutoDialIntervalDialog = false
+                        Toast.makeText(context, "自动拨号间隔已更新", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Text("确定")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAutoDialIntervalDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    // 通话超时时间设置对话框
+    if (showCallTimeoutDialog) {
+        var timeout by remember { mutableStateOf(callSettings.callTimeout) }
+        AlertDialog(
+            onDismissRequest = { showCallTimeoutDialog = false },
+            title = { Text("通话超时时间") },
+            text = {
+                Column {
+                    Text("无人接听超时（秒）")
+                    Slider(
+                        value = timeout.toFloat(),
+                        onValueChange = { timeout = it.toInt() },
+                        valueRange = 2f..60f,
+                        steps = 58
+                    )
+                    Text("$timeout 秒", style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        settingsViewModel.updateCallTimeout(timeout)
+                        showCallTimeoutDialog = false
+                        Toast.makeText(context, "通话超时时间已更新", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Text("确定")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCallTimeoutDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
     }
 }
 
 // ==================== 通用组件 ====================
+
+@Composable
+private fun StatsCard(stats: com.callcenter.app.data.model.Stats?) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Text(
+                text = "今日统计",
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                ProfileStatItem(
+                    value = stats?.totalCalls?.toString() ?: "0",
+                    label = "总通话",
+                    modifier = Modifier.weight(1f)
+                )
+                ProfileStatItem(
+                    value = stats?.successfulCalls?.toString() ?: "0",
+                    label = "成功",
+                    modifier = Modifier.weight(1f)
+                )
+                ProfileStatItem(
+                    value = formatDuration(stats?.totalDuration ?: 0),
+                    label = "总时长",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileStatItem(value: String, label: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+private fun formatDuration(seconds: Int): String {
+    return if (seconds < 60) {
+        "${seconds}s"
+    } else {
+        val minutes = seconds / 60
+        "${minutes}m"
+    }
+}
+
+@Composable
+private fun SettingsGroup(
+    title: String,
+    content: @Composable () -> Unit
+) {
+    Column {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        )
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+        ) {
+            content()
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun SettingsItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = { Text(subtitle) },
+        leadingContent = {
+            Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
+        },
+        trailingContent = {
+            Icon(Icons.Default.ChevronRight, null)
+        },
+        modifier = Modifier.clickable(onClick = onClick)
+    )
+}
+
+@Composable
+private fun ServerUrlDialog(
+    currentUrl: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var url by remember { mutableStateOf(currentUrl) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("服务器地址") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it },
+                    label = { Text("服务器地址") },
+                    placeholder = { Text("http://localhost:8081") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "修改后需要重新登录",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(url) },
+                enabled = url.isNotBlank()
+            ) {
+                Text("确定")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
 
 @Composable
 fun CustomerItem(
@@ -1447,12 +2498,30 @@ fun CustomerItem(
             Spacer(modifier = Modifier.width(12.dp))
 
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = customer.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = customer.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    // 显示任务来源标签
+                    if (customer.sourceType == "task" && !customer.taskTitle.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.secondaryContainer
+                        ) {
+                            Text(
+                                text = customer.taskTitle,
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         Icons.Default.Phone,
@@ -1534,4 +2603,136 @@ fun AutoDialDialog(
             }
         }
     )
+}
+
+// ==================== 优化版UI组件 ====================
+
+@Composable
+private fun VerticalDivider() {
+    Box(
+        modifier = Modifier
+            .width(1.dp)
+            .height(40.dp)
+            .background(MaterialTheme.colorScheme.outlineVariant)
+    )
+}
+
+@Composable
+private fun StatColumn(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    value: String,
+    label: String,
+    color: Color
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = color,
+            modifier = Modifier.size(24.dp)
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = value,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun SimpleStatColumn(
+    value: String,
+    label: String,
+    color: Color
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = color
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun TaskListItem(
+    task: Task,
+    isAutoDialing: Boolean,
+    onClick: () -> Unit
+) {
+    val progress = if (task.customerCount > 0) {
+        (task.completedCount * 100 / task.customerCount)
+    } else 0
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 6.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
+        onClick = onClick
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(12.dp)
+                    .clip(CircleShape)
+                    .background(
+                        when (task.priority) {
+                            "urgent" -> Color(0xFFE91E63)
+                            "high" -> Color(0xFFFF9800)
+                            else -> Color(0xFF4CAF50)
+                        }
+                    )
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = task.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "${task.completedCount}/${task.customerCount} 客户",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (isAutoDialing) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Text(
+                    text = "$progress%",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+    }
 }

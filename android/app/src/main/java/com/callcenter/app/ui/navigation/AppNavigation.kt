@@ -24,7 +24,10 @@ import com.callcenter.app.ui.screens.customer.CustomerDetailScreen
 import com.callcenter.app.ui.screens.main.MainScreen
 import com.callcenter.app.ui.screens.settings.CallSettingsScreen
 import com.callcenter.app.ui.screens.settings.SettingsScreen
+import com.callcenter.app.ui.screens.agent.AgentTaskExecutionScreen
+import com.callcenter.app.ui.screens.agent.AgentTaskListScreen
 import com.callcenter.app.ui.screens.stats.MyStatsScreen
+import com.callcenter.app.ui.screens.help.HelpScreen
 import com.callcenter.app.ui.viewmodel.AuthViewModel
 
 /**
@@ -51,6 +54,11 @@ sealed class Screen(val route: String) {
     
     // 客服个人
     object MyStats : Screen("my_stats")
+    object Help : Screen("help")
+    object AgentTaskList : Screen("agent/tasks")
+    object AgentTaskExecution : Screen("agent/tasks/{taskId}") {
+        fun createRoute(taskId: Int) = "agent/tasks/$taskId"
+    }
     
     // 管理员功能
     object Dashboard : Screen("admin/dashboard")
@@ -126,10 +134,26 @@ fun AppNavigation(
                 onNavigateToTaskDetail = { taskId ->
                     navController.navigate(Screen.TaskDetail.createRoute(taskId))
                 },
+                onNavigateToAgentTaskExecution = { taskId ->
+                    navController.navigate(Screen.AgentTaskExecution.createRoute(taskId))
+                },
+                onNavigateToHelp = {
+                    navController.navigate(Screen.Help.route)
+                },
                 onLogout = {
                     stopAutoDialAndLogout()
                     authViewModel.logout {
                         // 在退出完成后导航
+                        navController.navigate(Screen.Login.route) {
+                            popUpTo(Screen.Main.route) { inclusive = true }
+                        }
+                    }
+                },
+                onSwitchAccount = {
+                    // 切换账号：只清除认证信息，保留历史账号记录
+                    stopAutoDialAndLogout()
+                    authViewModel.switchAccount {
+                        // 导航到登录页
                         navController.navigate(Screen.Login.route) {
                             popUpTo(Screen.Main.route) { inclusive = true }
                         }
@@ -202,6 +226,34 @@ fun AppNavigation(
         // ==================== 客服个人功能 ====================
         composable(Screen.MyStats.route) {
             MyStatsScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.Help.route) {
+            HelpScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        // 客服任务列表
+        composable(Screen.AgentTaskList.route) {
+            AgentTaskListScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onTaskClick = { taskId ->
+                    navController.navigate(Screen.AgentTaskExecution.createRoute(taskId))
+                }
+            )
+        }
+
+        // 客服任务执行页面
+        composable(
+            route = Screen.AgentTaskExecution.route,
+            arguments = listOf(navArgument("taskId") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val taskId = backStackEntry.arguments?.getInt("taskId") ?: 0
+            AgentTaskExecutionScreen(
+                taskId = taskId,
                 onNavigateBack = { navController.popBackStack() }
             )
         }

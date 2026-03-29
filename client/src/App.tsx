@@ -12,6 +12,8 @@ import TwilioTest from './pages/admin/TwilioTest';
 import DataPermission from './pages/admin/DataPermission';
 import VersionManagement from './pages/admin/VersionManagement';
 import AgentDashboard from './pages/agent/Dashboard';
+import AgentTaskList from './pages/agent/AgentTaskList';
+import AgentTaskExecution from './pages/agent/AgentTaskExecution';
 import CallList from './pages/agent/CallList';
 import CommunicationRecords from './pages/agent/CommunicationRecords';
 import MyStats from './pages/agent/MyStats';
@@ -88,6 +90,8 @@ function App() {
         >
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<AgentDashboard />} />
+          <Route path="tasks" element={<AgentTaskList />} />
+          <Route path="tasks/:taskId" element={<AgentTaskExecution />} />
           <Route path="calls" element={<CallList />} />
           <Route path="communication" element={<CommunicationRecords />} />
           <Route path="stats" element={<MyStats />} />

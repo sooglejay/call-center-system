@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
-import { Row, Col, Card, Statistic, Table, Empty, Alert, Spin } from 'antd';
-import { UserOutlined, PhoneOutlined, CheckCircleOutlined, TeamOutlined, DashboardOutlined } from '@ant-design/icons';
+import { Row, Col, Card, Statistic, Table, Empty, Alert, Spin, Avatar } from 'antd';
+import { UserOutlined, PhoneOutlined, CheckCircleOutlined, TeamOutlined, DashboardOutlined, CrownOutlined } from '@ant-design/icons';
 import { statsApi } from '../../services/api';
 import type { DashboardStats } from '../../services/api';
+import { useAuthStore } from '../../stores';
 
 export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { user } = useAuthStore();
 
   useEffect(() => {
     fetchStats();
@@ -35,7 +37,20 @@ export default function Dashboard() {
 
   return (
     <div>
-      <h2><DashboardOutlined style={{ marginRight: 8 }} />仪表板</h2>
+      {/* 欢迎区域 */}
+      <Card style={{ marginBottom: 24, background: 'linear-gradient(135deg, #722ed1 0%, #eb2f96 100%)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <Avatar size={64} icon={<CrownOutlined />} style={{ backgroundColor: 'rgba(255,255,255,0.3)' }} />
+          <div>
+            <h2 style={{ margin: 0, color: '#fff' }}>欢迎回来，{user?.real_name || user?.username || '管理员'}</h2>
+            <p style={{ margin: '4px 0 0 0', color: 'rgba(255,255,255,0.85)' }}>
+              账号: {user?.username} | 角色: 管理员
+            </p>
+          </div>
+        </div>
+      </Card>
+
+      <h3 style={{ marginBottom: 16 }}><DashboardOutlined style={{ marginRight: 8 }} />运营概览</h3>
       
       {error && (
         <Alert

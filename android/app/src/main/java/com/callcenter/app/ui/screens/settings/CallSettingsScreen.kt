@@ -95,7 +95,7 @@ fun CallSettingsScreen(
                             value = autoDialInterval.toString(),
                             onValueChange = { value ->
                                 value.toIntOrNull()?.let {
-                                    autoDialInterval = it.coerceIn(1, 300)
+                                    autoDialInterval = it.coerceIn(2, 300)
                                 }
                             },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -122,7 +122,7 @@ fun CallSettingsScreen(
                             value = callTimeout.toString(),
                             onValueChange = { value ->
                                 value.toIntOrNull()?.let {
-                                    callTimeout = it.coerceIn(5, 120)
+                                    callTimeout = it.coerceIn(2, 120)
                                 }
                             },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),

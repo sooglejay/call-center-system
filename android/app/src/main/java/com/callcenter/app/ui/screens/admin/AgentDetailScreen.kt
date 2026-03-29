@@ -1,12 +1,14 @@
 package com.callcenter.app.ui.screens.admin
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -88,7 +90,7 @@ fun AgentDetailScreen(
                 title = { Text(if (isNewAgent) "添加客服" else "客服详情") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 },
                 actions = {
@@ -221,16 +223,18 @@ fun AgentDetailScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            FilterChip(
+                            RoleChip(
                                 selected = role == "agent",
                                 onClick = { role = "agent" },
-                                label = { Text("客服") },
+                                label = "客服",
+                                icon = Icons.Default.SupportAgent,
                                 modifier = Modifier.weight(1f)
                             )
-                            FilterChip(
+                            RoleChip(
                                 selected = role == "admin",
                                 onClick = { role = "admin" },
-                                label = { Text("管理员") },
+                                label = "管理员",
+                                icon = Icons.Default.AdminPanelSettings,
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -242,23 +246,27 @@ fun AgentDetailScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(
+                            DataAccessChip(
                                 selected = dataAccessType == "all",
                                 onClick = { dataAccessType = "all" },
-                                label = { Text("全部数据") },
-                                modifier = Modifier.fillMaxWidth()
+                                label = "全部数据",
+                                description = "可查看所有客户数据",
+                                icon = Icons.Default.Dataset
                             )
-                            FilterChip(
+                            DataAccessChip(
                                 selected = dataAccessType == "assigned",
                                 onClick = { dataAccessType = "assigned" },
-                                label = { Text("仅分配给自己的数据") },
-                                modifier = Modifier.fillMaxWidth()
+                                label = "仅分配给自己的数据",
+                                description = "只能查看分配给自己的客户",
+                                icon = Icons.Default.AssignmentInd
                             )
-                            FilterChip(
+                            DataAccessChip(
                                 selected = dataAccessType == "disabled",
                                 onClick = { dataAccessType = "disabled" },
-                                label = { Text("禁用账号") },
-                                modifier = Modifier.fillMaxWidth()
+                                label = "禁用账号",
+                                description = "账号已停用，无法登录",
+                                icon = Icons.Default.Block,
+                                isError = true
                             )
                         }
 
@@ -532,4 +540,171 @@ private fun formatDuration(seconds: Int): String {
     val minutes = seconds / 60
     val secs = seconds % 60
     return if (secs > 0) "${minutes}分${secs}秒" else "${minutes}分钟"
+}
+
+/**
+ * 角色选择卡片
+ * 选中状态使用填充色，非选中状态使用边框
+ */
+@Composable
+private fun RoleChip(
+    selected: Boolean,
+    onClick: () -> Unit,
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier
+) {
+    val containerColor = if (selected) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+    val contentColor = if (selected) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val borderColor = if (selected) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+    }
+
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = MaterialTheme.shapes.medium,
+        color = containerColor,
+        contentColor = contentColor,
+        border = androidx.compose.foundation.BorderStroke(
+            width = if (selected) 2.dp else 1.dp,
+            color = borderColor
+        ),
+        shadowElevation = if (selected) 4.dp else 0.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+            )
+            if (selected) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 数据权限选择卡片
+ * 选中状态使用填充色，非选中状态使用边框
+ */
+@Composable
+private fun DataAccessChip(
+    selected: Boolean,
+    onClick: () -> Unit,
+    label: String,
+    description: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier,
+    isError: Boolean = false
+) {
+    val containerColor = if (selected) {
+        if (isError) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+    val contentColor = if (selected) {
+        if (isError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val borderColor = if (selected) {
+        if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+    }
+    val iconColor = if (selected) {
+        if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    Surface(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = containerColor,
+        contentColor = contentColor,
+        border = androidx.compose.foundation.BorderStroke(
+            width = if (selected) 2.dp else 1.dp,
+            color = borderColor
+        ),
+        shadowElevation = if (selected) 4.dp else 0.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = iconColor
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = contentColor.copy(alpha = 0.7f)
+                )
+            }
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                )
+            } else {
+                // 未选中状态显示圆形轮廓
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .border(
+                            width = 2.dp,
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                            shape = CircleShape
+                        )
+                )
+            }
+        }
+    }
 }

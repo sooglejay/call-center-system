@@ -10,7 +10,10 @@ import {
   DownOutlined,
   CustomerServiceOutlined,
   AudioOutlined,
-  QuestionCircleOutlined
+  QuestionCircleOutlined,
+  ScheduleOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined
 } from '@ant-design/icons';
 import { useAuthStore } from '../../stores';
 
@@ -32,6 +35,7 @@ export default function AgentLayout() {
 
   const menuItems = [
     { key: '/agent/dashboard', icon: <DashboardOutlined />, label: '工作台' },
+    { key: '/agent/tasks', icon: <ScheduleOutlined />, label: '我的任务' },
     { key: '/agent/calls', icon: <PhoneOutlined />, label: '电话列表' },
     { key: '/agent/communication', icon: <AudioOutlined />, label: '通信记录' },
     { key: '/agent/stats', icon: <BarChartOutlined />, label: '我的业绩' },
@@ -70,7 +74,7 @@ export default function AgentLayout() {
         <Header style={{ background: '#fff', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <Button
             type="text"
-            icon={collapsed ? <span>展开</span> : <span>收起</span>}
+            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
             onClick={() => setCollapsed(!collapsed)}
           />
           <Dropdown menu={{ items: userMenuItems, onClick: handleUserMenuClick }} placement="bottomRight">

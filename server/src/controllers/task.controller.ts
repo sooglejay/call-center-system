@@ -414,12 +414,32 @@ export const updateTaskCustomerStatus = async (req: Request, res: Response) => {
     const { id, customerId } = req.params;
     const { status, call_result, call_id } = req.body;
     
+    // 更新 task_customers 表
     await query(
       `UPDATE task_customers 
        SET status = $1, call_result = $2, call_id = $3, called_at = datetime('now')
        WHERE task_id = $4 AND customer_id = $5`,
       [status, call_result || null, call_id || null, id, customerId]
     );
+    
+    // 同时更新 customers 表的状态，保持数据一致性
+    // 如果任务客户状态为 connected 或 completed，则更新客户状态为 contacted
+    if (status === 'connected' || status === 'completed') {
+      await query(
+        `UPDATE customers 
+         SET status = 'contacted', updated_at = datetime('now')
+         WHERE id = $1`,
+        [customerId]
+      );
+    } else if (status === 'called' || status === 'failed') {
+      // 如果已拨打但未接通，标记为 contacted（已触达）
+      await query(
+        `UPDATE customers 
+         SET status = 'contacted', updated_at = datetime('now')
+         WHERE id = $1 AND status = 'pending'`,
+        [customerId]
+      );
+    }
     
     res.json({ message: '状态更新成功' });
   } catch (error) {

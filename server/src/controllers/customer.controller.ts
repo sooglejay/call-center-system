@@ -479,7 +479,7 @@ export const batchAssignAgents = async (req: any, res: Response) => {
 
 export const getAgentCustomers = async (req: any, res: Response) => {
   try {
-    const { status, search, page = 1, pageSize = 20 } = req.query;
+    const { status, search, page = 1, pageSize = 20, include_task_customers = true } = req.query;
     const agentId = req.user.id;
     const offset = (parseInt(page as string) - 1) * parseInt(pageSize as string);
     
@@ -487,16 +487,43 @@ export const getAgentCustomers = async (req: any, res: Response) => {
     const userResult = await query('SELECT data_access_type FROM users WHERE id = $1', [agentId]);
     const dataAccessType = userResult.rows[0]?.data_access_type || 'mock';
     
-    // 获取客服的客户（通过任务关联或 assigned_to）
+    // 获取客服直接分配的客户（通过 assigned_to）
     let result = await query('SELECT * FROM customers ORDER BY created_at DESC');
     let customers = result.rows.filter((c: any) => 
       c.assigned_to === agentId && (c.data_source || 'mock') === dataAccessType
     );
     
+    // 获取通过任务分配给该客服的客户
+    if (include_task_customers !== 'false') {
+      const taskCustomersResult = await query(`
+        SELECT DISTINCT c.*, tc.status as task_customer_status, tc.task_id, t.title as task_title
+        FROM customers c
+        INNER JOIN task_customers tc ON c.id = tc.customer_id
+        INNER JOIN tasks t ON tc.task_id = t.id
+        WHERE t.assigned_to = $1 AND tc.status = 'pending'
+        ORDER BY c.created_at DESC
+      `, [agentId]);
+      
+      // 合并客户列表，去重（优先保留任务中的客户）
+      const existingIds = new Set(customers.map((c: any) => c.id));
+      for (const taskCustomer of taskCustomersResult.rows) {
+        if (!existingIds.has(taskCustomer.id)) {
+          customers.push({
+            ...taskCustomer,
+            status: 'pending', // 任务中的客户标记为待拨打
+            source_type: 'task', // 标记来源为任务
+            task_id: taskCustomer.task_id,
+            task_title: taskCustomer.task_title
+          });
+          existingIds.add(taskCustomer.id);
+        }
+      }
+    }
+    
     // 状态过滤
     if (status) {
       if (status === 'pending') {
-        customers = customers.filter((c: any) => ['pending', 'contacted'].includes(c.status));
+        customers = customers.filter((c: any) => ['pending', 'contacted', 'new'].includes(c.status));
       } else if (status === 'completed') {
         customers = customers.filter((c: any) => ['converted', 'not_interested'].includes(c.status));
       }

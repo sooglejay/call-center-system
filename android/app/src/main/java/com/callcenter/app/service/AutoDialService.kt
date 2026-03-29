@@ -38,6 +38,8 @@ class AutoDialService : Service() {
         const val EXTRA_TIMEOUT = "timeout_seconds"
         const val EXTRA_RETRY_COUNT = "retry_count"
         const val EXTRA_CUSTOMERS = "customers"
+        const val EXTRA_SCOPE_TYPE = "scope_type"
+        const val EXTRA_TASK_ID = "task_id"
 
         // 状态流
         private val _isRunning = MutableStateFlow(false)
@@ -48,6 +50,16 @@ class AutoDialService : Service() {
 
         private val _dialedCount = MutableStateFlow(0)
         val dialedCount: StateFlow<Int> = _dialedCount
+
+        private val _scopeType = MutableStateFlow<String?>(null)
+        val scopeType: StateFlow<String?> = _scopeType
+
+        private val _taskId = MutableStateFlow<Int?>(null)
+        val taskId: StateFlow<Int?> = _taskId
+
+        // 任务完成回调流
+        private val _taskCompleted = MutableStateFlow<Int?>(null)
+        val taskCompleted: StateFlow<Int?> = _taskCompleted
 
         private const val NOTIFICATION_ID = 1001
     }
@@ -74,6 +86,10 @@ class AutoDialService : Service() {
                 intervalSeconds = intent.getIntExtra(EXTRA_INTERVAL, 10)
                 timeoutSeconds = intent.getIntExtra(EXTRA_TIMEOUT, 30)
                 retryCount = intent.getIntExtra(EXTRA_RETRY_COUNT, 0)
+
+                // 获取拨号范围信息
+                _scopeType.value = intent.getStringExtra(EXTRA_SCOPE_TYPE)
+                _taskId.value = intent.getIntExtra(EXTRA_TASK_ID, -1).takeIf { it != -1 }
 
                 // 获取客户列表
                 @Suppress("UNCHECKED_CAST")
@@ -114,11 +130,19 @@ class AutoDialService : Service() {
     private fun stopAutoDial() {
         _isRunning.value = false
         _currentCustomer.value = null
+        _scopeType.value = null
+        _taskId.value = null
         job?.cancel()
         job = null
         customerQueue.clear()
         currentIndex = 0
         isPaused = false
+    }
+
+    private fun completeTask() {
+        // 通知任务完成
+        _taskCompleted.value = _taskId.value
+        _taskCompleted.value = null // 重置
     }
 
     private suspend fun processQueue() {
@@ -153,6 +177,8 @@ class AutoDialService : Service() {
         // 所有客户拨打完成
         if (_isRunning.value) {
             updateNotification("自动拨号已完成，共拨打 ${customerQueue.size} 个客户")
+            // 通知任务完成
+            completeTask()
             delay(3000)
         }
         stopAutoDial()

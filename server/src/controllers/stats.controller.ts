@@ -77,7 +77,28 @@ export const getMyStats = async (req: any, res: Response) => {
   try {
     const agentId = req.user.id;
     const calls = await query('SELECT * FROM calls WHERE agent_id = $1', [agentId]);
-    const customers = await query('SELECT * FROM customers WHERE assigned_to = $1', [agentId]);
+    
+    // 获取直接分配给客服的客户
+    const directCustomers = await query('SELECT * FROM customers WHERE assigned_to = $1', [agentId]);
+    
+    // 获取通过任务分配给客服的客户
+    const taskCustomers = await query(`
+      SELECT DISTINCT c.* FROM customers c
+      INNER JOIN task_customers tc ON c.id = tc.customer_id
+      INNER JOIN tasks t ON tc.task_id = t.id
+      WHERE t.assigned_to = $1
+    `, [agentId]);
+    
+    // 合并客户列表（去重）
+    const allCustomerIds = new Set();
+    const allCustomers = [];
+    
+    [...directCustomers.rows, ...taskCustomers.rows].forEach((c: any) => {
+      if (!allCustomerIds.has(c.id)) {
+        allCustomerIds.add(c.id);
+        allCustomers.push(c);
+      }
+    });
     
     const totalCalls = calls.rows.length;
     const connectedCalls = calls.rows.filter((c: any) => c.is_connected).length;
@@ -106,6 +127,20 @@ export const getMyStats = async (req: any, res: Response) => {
       c.created_at && new Date(c.created_at) >= monthAgo
     );
     
+    // 计算客户跟进进度（基于任务客户状态）
+    const taskCustomerStats = await query(`
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN tc.status = 'called' OR tc.status = 'completed' THEN 1 ELSE 0 END) as completed
+      FROM task_customers tc
+      INNER JOIN tasks t ON tc.task_id = t.id
+      WHERE t.assigned_to = $1
+    `, [agentId]);
+    
+    const totalTaskCustomers = parseInt(taskCustomerStats.rows[0]?.total || 0);
+    const completedTaskCustomers = parseInt(taskCustomerStats.rows[0]?.completed || 0);
+    const pendingTaskCustomers = totalTaskCustomers - completedTaskCustomers;
+    
     res.json({
       // 兼容 Web 端
       total_calls: totalCalls,
@@ -116,8 +151,9 @@ export const getMyStats = async (req: any, res: Response) => {
       connection_rate: connectionRate,
       // 兼容 Android 端
       successful_calls: connectedCalls,
-      pending_customers: customers.rows.filter((c: any) => c.status === 'pending').length,
-      completed_customers: customers.rows.filter((c: any) => c.status === 'completed').length,
+      // 使用任务客户统计数据
+      pending_customers: pendingTaskCustomers,
+      completed_customers: completedTaskCustomers,
       // 扩展统计
       today_calls: todayCalls.length,
       today_duration: todayCalls.reduce((sum: number, c: any) => sum + (c.call_duration || 0), 0),
