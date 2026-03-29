@@ -30,9 +30,8 @@ export default function AdminLayout() {
   const handleLogout = () => {
     clearAuth();
     message.success('已退出登录');
-    // 支持子路径部署
-    const basePath = import.meta.env.VITE_BASE_PATH || '';
-    window.location.href = `${basePath}/login`;
+    // 使用相对路径跳转，避免basename问题
+    navigate('/login');
   };
 
   const menuItems = [
