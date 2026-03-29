@@ -162,10 +162,20 @@ fun MainScreen(
                     containerColor = if (autoDialRunning) MaterialTheme.colorScheme.error
                     else MaterialTheme.colorScheme.primary
                 ) {
-                    Icon(
-                        if (autoDialRunning) Icons.Default.Stop else Icons.Default.PlayArrow,
-                        contentDescription = if (autoDialRunning) "停止拨号" else "自动拨号"
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            if (autoDialRunning) Icons.Default.Stop else Icons.Default.PlayArrow,
+                            contentDescription = if (autoDialRunning) "停止拨号" else "自动拨号"
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (autoDialRunning) "停止拨号" else "自动拨号",
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
                 }
             }
         }
