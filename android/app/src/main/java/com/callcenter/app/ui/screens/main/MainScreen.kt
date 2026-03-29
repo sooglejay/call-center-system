@@ -81,9 +81,6 @@ fun MainScreen(
     // 当前选中的底部导航项 - 使用 rememberSaveable 保存状态
     var selectedTab by rememberSaveable { mutableStateOf(0) }
 
-    // 自动拨号对话框显示状态 - 用于客户列表页的自动拨号按钮
-    var showAutoDialDialog by rememberSaveable { mutableStateOf(false) }
-
     // 获取自动拨号状态，用于浮动按钮显示
     val autoDialRunning by autoDialViewModel.isRunning.collectAsState()
     val customers by customerViewModel.customers.collectAsState()
@@ -172,32 +169,34 @@ fun MainScreen(
         floatingActionButton = {
             // 只在客服的客户列表页显示自动拨号按钮
             if (!isAdmin && selectedTab == 2) {
-                FloatingActionButton(
+                ExtendedFloatingActionButton(
                     onClick = {
                         if (autoDialRunning) {
                             autoDialViewModel.stopAutoDial()
-                        } else {
-                            showAutoDialDialog = true
+                        } else if (checkAndRequestCallPermission()) {
+                            // 直接开始自动拨号
+                            if (customers.isNotEmpty()) {
+                                val config = AutoDialConfig(
+                                    scopeType = AutoDialScopeType.ALL_PENDING,
+                                    intervalSeconds = callSettings.autoDialInterval,
+                                    timeoutSeconds = callSettings.callTimeout
+                                )
+                                autoDialViewModel.startAutoDial(customers, config)
+                            }
                         }
                     },
-                    containerColor = if (autoDialRunning) MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.primary
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    icon = {
                         Icon(
                             if (autoDialRunning) Icons.Default.Stop else Icons.Default.PlayArrow,
                             contentDescription = if (autoDialRunning) "停止拨号" else "自动拨号"
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = if (autoDialRunning) "停止拨号" else "自动拨号",
-                            style = MaterialTheme.typography.labelLarge
-                        )
-                    }
-                }
+                    },
+                    text = { Text(if (autoDialRunning) "停止拨号" else "自动拨号") },
+                    containerColor = if (autoDialRunning)
+                        MaterialTheme.colorScheme.error
+                    else
+                        MaterialTheme.colorScheme.primaryContainer
+                )
             }
         }
     ) { padding ->
@@ -269,28 +268,6 @@ fun MainScreen(
                     authViewModel = authViewModel
                 )
             }
-        }
-
-        // 自动拨号对话框（在客户列表页使用）
-        if (showAutoDialDialog) {
-            AutoDialDialog(
-                isRunning = autoDialRunning,
-                defaultInterval = callSettings.autoDialInterval,
-                defaultTimeout = callSettings.callTimeout,
-                onStart = { interval, timeout ->
-                    showAutoDialDialog = false
-                    if (customers.isEmpty()) {
-                        Toast.makeText(context, "没有客户可拨打", Toast.LENGTH_SHORT).show()
-                    } else if (checkAndRequestCallPermission()) {
-                        autoDialViewModel.startAutoDial(customers, interval, timeout)
-                    }
-                },
-                onStop = {
-                    showAutoDialDialog = false
-                    autoDialViewModel.stopAutoDial()
-                },
-                onDismiss = { showAutoDialDialog = false }
-            )
         }
     }
 }
