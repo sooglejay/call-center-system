@@ -194,7 +194,6 @@ fun MainScreen(
             }
             !isAdmin && selectedTab == 2 -> {
                 AgentCustomersTab(
-                    padding = padding,
                     onNavigateToCustomerDetail = onNavigateToCustomerDetail,
                     customerViewModel = customerViewModel,
                     autoDialViewModel = autoDialViewModel,
@@ -940,10 +939,7 @@ private fun AgentWorkTab(
             .padding(padding)
             .verticalScroll(rememberScrollState())
     ) {
-        // 顶部统一间距
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // 顶部欢迎区域
+        // 顶部欢迎区域（紧贴顶部，无间距）
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = MaterialTheme.colorScheme.primaryContainer
@@ -964,6 +960,9 @@ private fun AgentWorkTab(
                 )
             }
         }
+
+        // 欢迎区域与第一个组件之间的间距
+        Spacer(modifier = Modifier.height(12.dp))
 
         // 自动拨号状态提示条
         if (autoDialRunning) {
@@ -1583,7 +1582,6 @@ private fun AgentTaskItemWithProgress(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AgentCustomersTab(
-    padding: PaddingValues,
     onNavigateToCustomerDetail: (Int) -> Unit,
     customerViewModel: CustomerViewModel,
     autoDialViewModel: AutoDialViewModel,
@@ -1635,171 +1633,174 @@ private fun AgentCustomersTab(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(padding)
-    ) {
-        // 顶部工具栏
-        TopAppBar(
-            title = {
-                if (showSearchBar) {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { customerViewModel.setSearchQuery(it) },
-                        placeholder = { Text("搜索客户...") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        trailingIcon = {
-                            IconButton(onClick = {
-                                showSearchBar = false
-                                customerViewModel.setSearchQuery("")
-                            }) {
-                                Icon(Icons.Default.Close, "关闭搜索")
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    if (showSearchBar) {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { customerViewModel.setSearchQuery(it) },
+                            placeholder = { Text("搜索客户...") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            trailingIcon = {
+                                IconButton(onClick = {
+                                    showSearchBar = false
+                                    customerViewModel.setSearchQuery("")
+                                }) {
+                                    Icon(Icons.Default.Close, "关闭搜索")
+                                }
                             }
-                        }
-                    )
-                } else {
-                    Text("客户列表")
-                }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer
-            ),
-            actions = {
-                IconButton(onClick = { showSearchBar = !showSearchBar }) {
-                    Icon(Icons.Default.Search, "搜索")
-                }
-                IconButton(onClick = { showFilterMenu = true }) {
-                    Icon(Icons.Default.FilterList, "筛选")
-                }
-                DropdownMenu(
-                    expanded = showFilterMenu,
-                    onDismissRequest = { showFilterMenu = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("全部") },
-                        onClick = {
-                            customerViewModel.setStatusFilter(null)
-                            showFilterMenu = false
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("待拨打") },
-                        onClick = {
-                            customerViewModel.setStatusFilter("pending")
-                            showFilterMenu = false
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("已完成") },
-                        onClick = {
-                            customerViewModel.setStatusFilter("completed")
-                            showFilterMenu = false
-                        }
-                    )
-                }
-                IconButton(onClick = { customerViewModel.refresh() }) {
-                    Icon(Icons.Default.Refresh, "刷新")
-                }
-            }
-        )
-
-        // 自动拨号进度
-        if (autoDialRunning) {
-            val scopeDesc = autoDialViewModel.getScopeDescription(autoDialViewModel.currentConfig.value)
-            AutoDialStatusBar(
-                dialedCount = dialedCount,
-                totalCount = totalCount,
-                scopeDescription = scopeDesc,
-                currentCustomer = currentDialCustomer,
-                onStop = { autoDialViewModel.stopAutoDial() }
-            )
-        }
-
-        // 筛选标签
-        if (statusFilter != null) {
-            Surface(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                color = MaterialTheme.colorScheme.secondaryContainer,
-                shape = MaterialTheme.shapes.small
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = when (statusFilter) {
-                            "pending" -> "待拨打"
-                            "completed" -> "已完成"
-                            else -> statusFilter ?: ""
-                        },
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    IconButton(
-                        onClick = { customerViewModel.setStatusFilter(null) },
-                        modifier = Modifier.size(20.dp)
-                    ) {
-                        Icon(Icons.Default.Close, "清除", modifier = Modifier.size(16.dp))
-                    }
-                }
-            }
-        }
-
-        // 客户列表
-        when {
-            isLoading && customers.isEmpty() -> {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
-            }
-            customers.isEmpty() -> {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Default.People, null, modifier = Modifier.size(64.dp))
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text("暂无客户数据", style = MaterialTheme.typography.titleMedium)
-                    }
-                }
-            }
-            else -> {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(vertical = 8.dp)
-                ) {
-                    items(customers, key = { it.id }) { customer ->
-                        CustomerItem(
-                            customer = customer,
-                            onCall = { makeCall(customer.phone) },
-                            onClick = { onNavigateToCustomerDetail(customer.id) }
                         )
-                    }
-                }
-            }
-        }
-
-        // 自动拨号按钮
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(bottom = 16.dp),
-            contentAlignment = Alignment.BottomEnd
-        ) {
-            ExtendedFloatingActionButton(
-                onClick = {
-                    if (autoDialRunning) {
-                        autoDialViewModel.stopAutoDial()
                     } else {
-                        showAutoDialDialog = true
+                        Text("客户列表")
                     }
                 },
-                icon = { Icon(if (autoDialRunning) Icons.Default.Stop else Icons.Default.PlayArrow, null) },
-                text = { Text(if (autoDialRunning) "停止拨号" else "自动拨号") },
-                containerColor = if (autoDialRunning) MaterialTheme.colorScheme.error
-                else MaterialTheme.colorScheme.primaryContainer,
-                modifier = Modifier.padding(end = 16.dp)
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                ),
+                actions = {
+                    IconButton(onClick = { showSearchBar = !showSearchBar }) {
+                        Icon(Icons.Default.Search, "搜索")
+                    }
+                    IconButton(onClick = { showFilterMenu = true }) {
+                        Icon(Icons.Default.FilterList, "筛选")
+                    }
+                    DropdownMenu(
+                        expanded = showFilterMenu,
+                        onDismissRequest = { showFilterMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("全部") },
+                            onClick = {
+                                customerViewModel.setStatusFilter(null)
+                                showFilterMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("待拨打") },
+                            onClick = {
+                                customerViewModel.setStatusFilter("pending")
+                                showFilterMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("已完成") },
+                            onClick = {
+                                customerViewModel.setStatusFilter("completed")
+                                showFilterMenu = false
+                            }
+                        )
+                    }
+                    IconButton(onClick = { customerViewModel.refresh() }) {
+                        Icon(Icons.Default.Refresh, "刷新")
+                    }
+                }
             )
+        },
+        floatingActionButton = {
+            // 自动拨号浮动按钮
+            if (customers.isNotEmpty()) {
+                ExtendedFloatingActionButton(
+                    onClick = {
+                        if (autoDialRunning) {
+                            autoDialViewModel.stopAutoDial()
+                        } else {
+                            showAutoDialDialog = true
+                        }
+                    },
+                    icon = {
+                        Icon(
+                            if (autoDialRunning) Icons.Default.Stop else Icons.Default.PlayArrow,
+                            null
+                        )
+                    },
+                    text = { Text(if (autoDialRunning) "停止拨号" else "自动拨号") },
+                    containerColor = if (autoDialRunning) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.primaryContainer
+                )
+            }
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            // 自动拨号进度
+            if (autoDialRunning) {
+                val scopeDesc = autoDialViewModel.getScopeDescription(autoDialViewModel.currentConfig.value)
+                AutoDialStatusBar(
+                    dialedCount = dialedCount,
+                    totalCount = totalCount,
+                    scopeDescription = scopeDesc,
+                    currentCustomer = currentDialCustomer,
+                    onStop = { autoDialViewModel.stopAutoDial() }
+                )
+            }
+
+            // 筛选标签
+            if (statusFilter != null) {
+                Surface(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = when (statusFilter) {
+                                "pending" -> "待拨打"
+                                "completed" -> "已完成"
+                                else -> statusFilter ?: ""
+                            },
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        IconButton(
+                            onClick = { customerViewModel.setStatusFilter(null) },
+                            modifier = Modifier.size(20.dp)
+                        ) {
+                            Icon(Icons.Default.Close, "清除", modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+            }
+
+            // 客户列表
+            when {
+                isLoading && customers.isEmpty() -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                }
+                customers.isEmpty() -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.People, null, modifier = Modifier.size(64.dp))
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text("暂无客户数据", style = MaterialTheme.typography.titleMedium)
+                        }
+                    }
+                }
+                else -> {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(vertical = 8.dp)
+                    ) {
+                        items(customers, key = { it.id }) { customer ->
+                            CustomerItem(
+                                customer = customer,
+                                onCall = { makeCall(customer.phone) },
+                                onClick = { onNavigateToCustomerDetail(customer.id) }
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1811,11 +1812,10 @@ private fun AgentCustomersTab(
             defaultTimeout = callSettings.callTimeout,
             onStart = { interval, timeout ->
                 showAutoDialDialog = false
-                val pendingCustomers = customers.filter { it.status == "pending" }
-                if (pendingCustomers.isEmpty()) {
-                    Toast.makeText(context, "没有待拨打的客户", Toast.LENGTH_SHORT).show()
+                if (customers.isEmpty()) {
+                    Toast.makeText(context, "没有客户可拨打", Toast.LENGTH_SHORT).show()
                 } else if (checkAndRequestCallPermission()) {
-                    autoDialViewModel.startAutoDial(pendingCustomers, interval, timeout)
+                    autoDialViewModel.startAutoDial(customers, interval, timeout)
                 }
             },
             onStop = {

@@ -37,6 +37,7 @@ import com.callcenter.app.ui.screens.agent.AgentTaskListScreen
 import com.callcenter.app.ui.screens.stats.MyStatsScreen
 import com.callcenter.app.ui.screens.help.HelpScreen
 import com.callcenter.app.ui.viewmodel.AuthViewModel
+import com.callcenter.app.util.CallHelper
 
 /**
  * 导航路由定义
@@ -190,6 +191,8 @@ fun AppNavigation(
             route = Screen.CustomerDetail.route,
             arguments = listOf(navArgument("customerId") { type = NavType.IntType })
         ) { backStackEntry ->
+            val context = LocalContext.current
+            val callHelper = CallHelper(context)
             val customerId = backStackEntry.arguments?.getInt("customerId") ?: 0
             CustomerDetailScreen(
                 customerId = customerId,
@@ -199,6 +202,7 @@ fun AppNavigation(
                 },
                 onCallCustomer = { phone ->
                     // 拨打电话
+                    callHelper.makeCall(phone, directCall = true)
                 }
             )
         }
