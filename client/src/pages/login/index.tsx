@@ -319,7 +319,7 @@ export default function LoginPage() {
                       <span>
                         {server.name}
                         {server.url && (
-                          <Tag size="small" style={{ marginLeft: 8 }}>
+                          <Tag color="default" style={{ marginLeft: 8, fontSize: 12 }}>
                             {server.url}
                           </Tag>
                         )}
