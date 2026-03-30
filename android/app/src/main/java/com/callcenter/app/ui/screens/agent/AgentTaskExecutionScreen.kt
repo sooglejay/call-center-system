@@ -1,9 +1,7 @@
 package com.callcenter.app.ui.screens.agent
 
 import android.Manifest
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -31,6 +29,7 @@ import com.callcenter.app.ui.viewmodel.AutoDialViewModel
 import com.callcenter.app.ui.viewmodel.AutoDialConfig
 import com.callcenter.app.ui.viewmodel.AutoDialScopeType
 import com.callcenter.app.ui.viewmodel.CallSettingsViewModel
+import com.callcenter.app.util.CallHelper
 
 /**
  * 客服任务执行页面
@@ -49,6 +48,9 @@ fun AgentTaskExecutionScreen(
     val task by viewModel.task.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
+
+    // 初始化 CallHelper
+    val callHelper = remember { CallHelper(context) }
 
     // 自动拨号状态
     val autoDialRunning by autoDialViewModel.isRunning.collectAsState()
@@ -165,11 +167,12 @@ fun AgentTaskExecutionScreen(
                     dialedCount = dialedCount,
                     totalCount = totalCount,
                     onCallCustomer = { phone, taskId, customerId ->
-                        // 拨打电话
-                        val intent = Intent(Intent.ACTION_CALL).apply {
-                            data = Uri.parse("tel:$phone")
+                        // 检查并请求权限，然后拨打电话
+                        if (checkAndRequestCallPermission()) {
+                            callHelper.makeCall(phone, directCall = true)
+                        } else {
+                            callHelper.makeCall(phone, directCall = false)
                         }
-                        context.startActivity(intent)
                         // 更新状态为已拨打
                         viewModel.updateCustomerStatus(taskId, customerId, "called", null)
                     },
