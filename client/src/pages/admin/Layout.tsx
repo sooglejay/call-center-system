@@ -30,8 +30,10 @@ export default function AdminLayout() {
   const handleLogout = () => {
     clearAuth();
     message.success('已退出登录');
-    // 使用相对路径跳转，避免basename问题
-    navigate('/login');
+    // 使用 replace 避免后退按钮回到已登录页面
+    navigate('/login', { replace: true });
+    // 强制刷新确保状态完全清除
+    window.location.reload();
   };
 
   const menuItems = [
