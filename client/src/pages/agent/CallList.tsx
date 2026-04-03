@@ -45,9 +45,10 @@ export default function CallList() {
       });
       const customersData = response.data?.data || response.data || [];
       setCustomers(Array.isArray(customersData) ? customersData : []);
-      setTotal(response.data?.total || 0);
-    } catch (error) {
-      message.error('获取客户列表失败');
+      setTotal(response.data?.pagination?.total || response.data?.total || 0);
+    } catch (error: any) {
+      console.error('获取客户列表失败:', error);
+      message.error(error.response?.data?.error || '获取客户列表失败');
     } finally {
       setLoading(false);
     }
