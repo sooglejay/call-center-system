@@ -97,8 +97,20 @@ class AgentTaskViewModel @Inject constructor(
             val result = taskRepository.updateTaskCustomerStatus(taskId, customerId, request)
             result.fold(
                 onSuccess = {
-                    // 刷新任务详情
-                    loadTaskDetail(taskId)
+                    // 直接更新本地数据，而不是重新加载整个任务
+                    _task.value = _task.value?.copy(
+                        customers = _task.value?.customers?.map { customer ->
+                            if (customer.id == customerId) {
+                                customer.copy(
+                                    callStatus = status,
+                                    callResult = callResult ?: customer.callResult
+                                )
+                            } else {
+                                customer
+                            }
+                        } ?: emptyList()
+                    )
+                    _isLoading.value = false
                 },
                 onFailure = { exception ->
                     _error.value = exception.message ?: "更新状态失败"
@@ -136,8 +148,21 @@ class AgentTaskViewModel @Inject constructor(
             )
             result.fold(
                 onSuccess = {
-                    // 刷新任务详情
-                    loadTaskDetail(taskId)
+                    // 直接更新本地数据，而不是重新加载整个任务
+                    _task.value = _task.value?.copy(
+                        customers = _task.value?.customers?.map { customer ->
+                            if (customer.id == customerId) {
+                                customer.copy(
+                                    name = name ?: customer.name,
+                                    phone = phone ?: customer.phone,
+                                    company = company ?: customer.company
+                                )
+                            } else {
+                                customer
+                            }
+                        } ?: emptyList()
+                    )
+                    _isLoading.value = false
                     onSuccess()
                 },
                 onFailure = { exception ->
@@ -164,8 +189,11 @@ class AgentTaskViewModel @Inject constructor(
             val result = taskRepository.removeTaskCustomer(taskId, customerId)
             result.fold(
                 onSuccess = {
-                    // 刷新任务详情
-                    loadTaskDetail(taskId)
+                    // 直接从本地数据中移除客户，而不是重新加载整个任务
+                    _task.value = _task.value?.copy(
+                        customers = _task.value?.customers?.filter { it.id != customerId } ?: emptyList()
+                    )
+                    _isLoading.value = false
                     onSuccess()
                 },
                 onFailure = { exception ->
