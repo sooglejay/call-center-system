@@ -44,8 +44,8 @@ data class User(
 @KSerializable
 data class Customer(
     val id: Int,
-    val name: String,
-    val phone: String,
+    val name: String? = null,
+    val phone: String? = null,
     val email: String? = null,
     val company: String? = null,
     val address: String? = null,
@@ -176,8 +176,8 @@ data class TaskCustomer(
     @SerializedName("task_customer_id")
     val taskCustomerId: Int,
     val id: Int,
-    val name: String,
-    val phone: String,
+    val name: String? = null,
+    val phone: String? = null,
     val email: String? = null,
     val company: String? = null,
     @SerializedName("customer_status")

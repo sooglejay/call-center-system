@@ -315,8 +315,8 @@ fun CustomerEntity.toModel(): Customer {
 fun Customer.toEntity(): CustomerEntity {
     return CustomerEntity(
         id = id,
-        name = name,
-        phone = phone,
+        name = name ?: "",
+        phone = phone ?: "",
         email = email,
         company = company,
         address = address,

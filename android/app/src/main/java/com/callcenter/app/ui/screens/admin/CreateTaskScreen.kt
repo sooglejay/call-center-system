@@ -71,7 +71,7 @@ fun CreateTaskScreen(
     LaunchedEffect(selectedLetters, customers) {
         if (selectedLetters.isNotEmpty()) {
             val letterCustomers = customers.filter { customer ->
-                val firstLetter = getFirstLetter(customer.name)
+                val firstLetter = getFirstLetter(customer.name ?: "")
                 selectedLetters.contains(firstLetter)
             }
             selectedCustomerIds = selectedCustomerIds + letterCustomers.map { it.id }.toSet()
@@ -415,8 +415,8 @@ fun CreateTaskScreen(
 
                                 // 客户列表
                                 val filteredCustomers = customers.filter {
-                                    it.name.contains(searchQuery, ignoreCase = true) ||
-                                    it.phone.contains(searchQuery)
+                                    (it.name ?: "").contains(searchQuery, ignoreCase = true) ||
+                                    (it.phone ?: "").contains(searchQuery)
                                 }
 
                                 if (filteredCustomers.isEmpty()) {
@@ -640,7 +640,7 @@ private fun CustomerSelectItem(
             Spacer(modifier = Modifier.width(8.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = customer.name,
+                    text = customer.name ?: "未命名",
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
@@ -655,7 +655,7 @@ private fun CustomerSelectItem(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = customer.phone,
+                        text = customer.phone ?: "",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

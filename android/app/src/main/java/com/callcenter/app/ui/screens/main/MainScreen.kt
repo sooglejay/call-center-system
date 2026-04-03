@@ -1871,8 +1871,8 @@ private fun AgentCustomersTab(
         // 搜索过滤
         if (searchQuery.isNotBlank()) {
             result = result.filter {
-                it.name.contains(searchQuery, ignoreCase = true) ||
-                it.phone.contains(searchQuery, ignoreCase = true) ||
+                it.name?.contains(searchQuery, ignoreCase = true) ?: false ||
+                it.phone?.contains(searchQuery, ignoreCase = true) ?: false ||
                 it.company?.contains(searchQuery, ignoreCase = true) == true
             }
         }
@@ -2061,7 +2061,7 @@ private fun AgentCustomersTab(
                         items(filteredCustomers, key = { it.id }) { customer ->
                             CustomerItem(
                                 customer = customer,
-                                onCall = { makeCall(customer.phone) },
+                                onCall = { makeCall(customer.phone ?: "") },
                                 onClick = { onNavigateToCustomerDetail(customer.id) }
                             )
                         }
@@ -2143,7 +2143,7 @@ private fun AutoDialCustomerInfoPanel(
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(
-                            text = currentCustomer.name.firstOrNull()?.toString() ?: "?",
+                            text = currentCustomer.name?.firstOrNull()?.toString() ?: "?",
                             style = MaterialTheme.typography.headlineMedium,
                             color = MaterialTheme.colorScheme.onPrimary
                         )
@@ -2155,14 +2155,14 @@ private fun AutoDialCustomerInfoPanel(
                 // 当前客户信息
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = currentCustomer.name,
+                        text = currentCustomer.name ?: "",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = currentCustomer.phone,
+                        text = currentCustomer.phone ?: "",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -2313,7 +2313,7 @@ private fun CustomerQuickItem(
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = customer.name,
+                    text = customer.name ?: "",
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
@@ -2893,7 +2893,7 @@ fun CustomerItem(
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = customer.name,
+                        text = customer.name ?: "",
                         style = MaterialTheme.typography.titleMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
