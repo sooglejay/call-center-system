@@ -415,7 +415,7 @@ private fun TaskExecutionContent(
     val pendingCustomers = customers.filter { it.callStatus == "pending" }
     val calledCustomers = customers.filter { 
         it.callStatus == "called" || it.callStatus == "completed" || it.callStatus == "connected" 
-    }
+    }.sortedByDescending { it.calledAt ?: it.callTime ?: "" } // 按拨打时间降序排列
 
     // 根据选中的Tab过滤客户列表
     val displayedCustomers = when (selectedTab) {
@@ -776,15 +776,15 @@ private fun TaskCustomerCard(
                 Button(
                     onClick = onCall,
                     modifier = Modifier.weight(1f),
-                    enabled = customer.callStatus != "completed"
+                    enabled = customer.callStatus == "pending"
                 ) {
                     Icon(Icons.Default.Phone, null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("拨打")
                 }
 
-                // 标记完成按钮
-                if (customer.callStatus != "completed") {
+                // 标记完成按钮 - 只有待拨打状态才显示
+                if (customer.callStatus == "pending") {
                     OutlinedButton(
                         onClick = { showResultDialog = true },
                         modifier = Modifier.weight(1f)
@@ -1167,7 +1167,7 @@ private fun TaskAutoDialCustomerPanel(
 
                 // 下一个客户信息
                 Column(
-                    modifier = Modifier.width(100.dp),
+                    modifier = Modifier.width(120.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
@@ -1194,6 +1194,13 @@ private fun TaskAutoDialCustomerPanel(
                         Text(
                             text = nextCustomer.name,
                             style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = nextCustomer.phone,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
