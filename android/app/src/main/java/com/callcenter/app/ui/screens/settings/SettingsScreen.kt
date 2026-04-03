@@ -20,6 +20,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.callcenter.app.BuildConfig
 import com.callcenter.app.ui.components.UpdateDialog
 import com.callcenter.app.ui.viewmodel.SettingsViewModel
+import com.callcenter.app.util.UpdateState
 import com.callcenter.app.util.VersionInfoUtil
 
 @OptIn(ExperimentalMaterial3Api::class)
