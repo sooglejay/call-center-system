@@ -344,15 +344,6 @@ private fun TaskExecutionContent(
             pending = pendingCustomers.size
         )
 
-        // 自动拨号进度条
-        if (isAutoDialing) {
-            AutoDialProgressCard(
-                dialedCount = dialedCount,
-                totalCount = totalCount,
-                taskTitle = task.title
-            )
-        }
-
         // 客户列表标题
         Text(
             text = "客户列表 (${customers.size})",
@@ -431,59 +422,6 @@ private fun TaskStatsCard(total: Int, completed: Int, pending: Int) {
             StatItem(value = total.toString(), label = "总客户")
             StatItem(value = completed.toString(), label = "已完成")
             StatItem(value = pending.toString(), label = "待拨打")
-        }
-    }
-}
-
-@Composable
-private fun AutoDialProgressCard(
-    dialedCount: Int,
-    totalCount: Int,
-    taskTitle: String
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = "自动拨号进行中",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-                Text(
-                    text = "$dialedCount / $totalCount",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = "任务: $taskTitle",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-            )
         }
     }
 }
