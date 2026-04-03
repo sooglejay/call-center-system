@@ -606,8 +606,8 @@ export const getAgentCustomers = async (req: any, res: Response) => {
     const offset = (pageNum - 1) * sizeNum;
     
     // 获取当前客服的数据权限
-    const userResult = await query('SELECT data_source FROM users WHERE id = $1', [agentId]);
-    const dataAccessType = userResult.rows[0]?.data_source || 'mock';
+    const userResult = await query('SELECT data_access_type FROM users WHERE id = $1', [agentId]);
+    const dataAccessType = userResult.rows[0]?.data_access_type || 'mock';
     
     // 构建查询 - 使用UNION合并直接分配的客户和任务分配的客户
     let querySql = '';
