@@ -5,7 +5,9 @@ import { query } from '../config/database';
 export const getUsers = async (req: Request, res: Response) => {
   try {
     const { role, status, search, page = 1, pageSize = 20 } = req.query;
-    const offset = (parseInt(page as string) - 1) * parseInt(pageSize as string);
+    const pageNum = parseInt(page as string);
+    const sizeNum = parseInt(pageSize as string);
+    const offset = (pageNum - 1) * sizeNum;
     
     let sql = 'SELECT id, username, real_name, role, phone, email, status, data_access_type, created_at FROM users WHERE 1=1';
     const params: any[] = [];
@@ -32,7 +34,7 @@ export const getUsers = async (req: Request, res: Response) => {
     // 添加分页
     sql += ' ORDER BY created_at DESC';
     sql += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-    params.push(parseInt(pageSize as string));
+    params.push(sizeNum);
     params.push(offset);
     
     const result = await query(sql, params);
@@ -40,9 +42,9 @@ export const getUsers = async (req: Request, res: Response) => {
     res.json({
       data: result.rows,
       total: parseInt(total.toString()),
-      page: parseInt(page as string),
-      page_size: parseInt(pageSize as string),
-      total_pages: Math.ceil(parseInt(total.toString()) / parseInt(pageSize as string))
+      page: pageNum,
+      page_size: sizeNum,
+      total_pages: Math.ceil(parseInt(total.toString()) / sizeNum)
     });
   } catch (error) {
     console.error('获取用户列表错误:', error);

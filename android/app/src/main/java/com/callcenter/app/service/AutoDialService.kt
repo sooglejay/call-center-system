@@ -14,6 +14,9 @@ import com.callcenter.app.CallCenterApp
 import com.callcenter.app.MainActivity
 import com.callcenter.app.R
 import com.callcenter.app.data.model.Customer
+import com.callcenter.app.data.local.preferences.AutoDialProgressManager
+import com.callcenter.app.data.local.preferences.AutoDialProgress
+import com.callcenter.app.ui.viewmodel.AutoDialScopeType
 import com.callcenter.app.util.CallHelper
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
@@ -33,13 +36,19 @@ class AutoDialService : Service() {
         const val ACTION_STOP = "com.callcenter.app.action.STOP_AUTO_DIAL"
         const val ACTION_PAUSE = "com.callcenter.app.action.PAUSE_AUTO_DIAL"
         const val ACTION_RESUME = "com.callcenter.app.action.RESUME_AUTO_DIAL"
+        const val ACTION_RESTORE = "com.callcenter.app.action.RESTORE_AUTO_DIAL"
 
         const val EXTRA_INTERVAL = "interval_seconds"
         const val EXTRA_TIMEOUT = "timeout_seconds"
         const val EXTRA_RETRY_COUNT = "retry_count"
+        const val EXTRA_DIALS_PER_CUSTOMER = "dials_per_customer"  // 每个客户连续拨打次数
         const val EXTRA_CUSTOMERS = "customers"
         const val EXTRA_SCOPE_TYPE = "scope_type"
         const val EXTRA_TASK_ID = "task_id"
+        const val EXTRA_TASK_TITLE = "task_title"
+        const val EXTRA_START_INDEX = "start_index"
+        const val EXTRA_DIALED_COUNT = "dialed_count"
+        const val EXTRA_START_DIAL_ROUND = "start_dial_round"  // 恢复进度时的当前轮次
 
         // 状态流
         private val _isRunning = MutableStateFlow(false)
@@ -67,16 +76,23 @@ class AutoDialService : Service() {
     @Inject
     lateinit var callHelper: CallHelper
 
+    @Inject
+    lateinit var progressManager: AutoDialProgressManager
+
     private var job: Job? = null
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     private var intervalSeconds: Int = 10
     private var timeoutSeconds: Int = 30
     private var retryCount: Int = 0
+    private var dialsPerCustomer: Int = 1  // 每个客户连续拨打次数，默认1次
+    private var currentDialRound: Int = 1  // 当前客户的第几轮拨打
+    private var taskTitle: String? = null
 
     private var isPaused: Boolean = false
     private var customerQueue: MutableList<Customer> = mutableListOf()
     private var currentIndex: Int = 0
+    private var scopeType: AutoDialScopeType = AutoDialScopeType.ALL_PENDING
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -86,10 +102,18 @@ class AutoDialService : Service() {
                 intervalSeconds = intent.getIntExtra(EXTRA_INTERVAL, 10)
                 timeoutSeconds = intent.getIntExtra(EXTRA_TIMEOUT, 30)
                 retryCount = intent.getIntExtra(EXTRA_RETRY_COUNT, 0)
+                dialsPerCustomer = intent.getIntExtra(EXTRA_DIALS_PER_CUSTOMER, 1)
+                currentDialRound = intent.getIntExtra(EXTRA_START_DIAL_ROUND, 1)
 
                 // 获取拨号范围信息
                 _scopeType.value = intent.getStringExtra(EXTRA_SCOPE_TYPE)
+                scopeType = try {
+                    AutoDialScopeType.valueOf(intent.getStringExtra(EXTRA_SCOPE_TYPE) ?: AutoDialScopeType.ALL_PENDING.name)
+                } catch (e: Exception) {
+                    AutoDialScopeType.ALL_PENDING
+                }
                 _taskId.value = intent.getIntExtra(EXTRA_TASK_ID, -1).takeIf { it != -1 }
+                taskTitle = intent.getStringExtra(EXTRA_TASK_TITLE)
 
                 // 获取客户列表
                 @Suppress("UNCHECKED_CAST")
@@ -99,9 +123,22 @@ class AutoDialService : Service() {
                     customerQueue.addAll(customers)
                 }
 
+                // 获取起始索引（用于恢复进度）
+                currentIndex = intent.getIntExtra(EXTRA_START_INDEX, 0)
+                _dialedCount.value = intent.getIntExtra(EXTRA_DIALED_COUNT, 0)
+
+                // 保存初始进度
+                serviceScope.launch {
+                    saveProgress()
+                }
+
                 startAutoDial()
             }
             ACTION_STOP -> {
+                // 清除进度
+                serviceScope.launch {
+                    progressManager.clearProgress()
+                }
                 stopAutoDial()
                 stopSelf()
             }
@@ -155,7 +192,10 @@ class AutoDialService : Service() {
             val customer = customerQueue[currentIndex]
             _currentCustomer.value = customer
 
-            updateNotification("正在拨打: ${customer.name} (${currentIndex + 1}/${customerQueue.size})")
+            updateNotification("正在拨打: ${customer.name} (${currentIndex + 1}/${customerQueue.size}, 第${currentDialRound}/${dialsPerCustomer}次)")
+
+            // 保存进度（每拨打一个客户前保存）
+            saveProgress()
 
             // 拨打电话
             callHelper.makeCall(customer.phone)
@@ -165,24 +205,69 @@ class AutoDialService : Service() {
 
             // 更新状态
             _dialedCount.value = _dialedCount.value + 1
-            currentIndex++
 
-            // 如果不是最后一个，等待间隔时间
-            if (currentIndex < customerQueue.size && _isRunning.value) {
-                updateNotification("等待 ${intervalSeconds} 秒后拨打下一个...")
-                delay(intervalSeconds * 1000L)
+            // 保存进度
+            saveProgress()
+
+            // 判断是否继续拨打同一客户
+            if (currentDialRound < dialsPerCustomer) {
+                // 同一客户还有下一轮拨打
+                currentDialRound++
+                // 等待间隔时间后继续拨打同一客户
+                if (_isRunning.value) {
+                    updateNotification("等待 ${intervalSeconds} 秒后再次拨打 ${customer.name}...")
+                    delay(intervalSeconds * 1000L)
+                }
+            } else {
+                // 当前客户所有轮次完成，流转到下一个客户
+                currentDialRound = 1
+                currentIndex++
+
+                // 如果不是最后一个客户，等待间隔时间
+                if (currentIndex < customerQueue.size && _isRunning.value) {
+                    updateNotification("等待 ${intervalSeconds} 秒后拨打下一个...")
+                    delay(intervalSeconds * 1000L)
+                }
             }
         }
 
         // 所有客户拨打完成
         if (_isRunning.value) {
             updateNotification("自动拨号已完成，共拨打 ${customerQueue.size} 个客户")
+            // 清除进度
+            progressManager.clearProgress()
             // 通知任务完成
             completeTask()
             delay(3000)
         }
         stopAutoDial()
         stopSelf()
+    }
+
+    private suspend fun saveProgress() {
+        if (customerQueue.isEmpty()) return
+
+        val remainingCustomers = customerQueue.subList(currentIndex, customerQueue.size)
+        val allCustomerIds = customerQueue.map { it.id }
+
+        val progress = AutoDialProgress(
+            scopeType = scopeType,
+            taskId = _taskId.value,
+            taskTitle = taskTitle,
+            currentIndex = currentIndex,
+            totalCount = customerQueue.size,
+            dialedCount = _dialedCount.value,
+            intervalSeconds = intervalSeconds,
+            timeoutSeconds = timeoutSeconds,
+            dialsPerCustomer = dialsPerCustomer,
+            currentDialRound = currentDialRound,
+            remainingCustomers = remainingCustomers,
+            allCustomerIds = allCustomerIds,
+            isActive = true,
+            lastUpdateTime = System.currentTimeMillis()
+        )
+
+        progressManager.saveProgress(progress)
     }
 
     private suspend fun waitForCallEndOrTimeout() {

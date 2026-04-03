@@ -41,8 +41,10 @@ export const getFirstLetter = (name: string): string => {
 
 export const getCustomers = async (req: any, res: Response) => {
   try {
-    const { search, status, assigned_to, sort_by = 'created_at', page = 1, pageSize = 20 } = req.query;
-    const offset = (parseInt(page as string) - 1) * parseInt(pageSize as string);
+    const { search, status, assigned_to, sort_by = 'created_at', page = 1, pageSize = 20, name_letter } = req.query;
+    const pageNum = parseInt(page as string);
+    const sizeNum = parseInt(pageSize as string);
+    const offset = (pageNum - 1) * sizeNum;
     
     // 获取当前用户信息
     const currentUser = req.user;
@@ -50,42 +52,130 @@ export const getCustomers = async (req: any, res: Response) => {
     const userRole = userResult.rows[0]?.role;
     const dataAccessType = userResult.rows[0]?.data_access_type || 'mock';
     
-    // 简单查询 - 获取所有客户
-    const result = await query('SELECT * FROM customers ORDER BY created_at DESC');
-    let data = result.rows;
+    // 构建WHERE条件
+    const whereConditions: string[] = [];
+    const params: any[] = [];
     
     // 根据用户权限过滤数据
-    // 管理员可以看到所有数据，客服只能看到自己权限范围内的数据
     if (userRole !== 'admin') {
-      data = data.filter((c: any) => (c.data_source || 'mock') === dataAccessType);
+      whereConditions.push(`(data_source = $${params.length + 1} OR data_source IS NULL)`);
+      params.push(dataAccessType);
     }
     
     // 搜索过滤
     if (search) {
-      const searchStr = search.toString().toLowerCase();
-      data = data.filter((c: any) => 
-        (c.name && c.name.toLowerCase().includes(searchStr)) ||
-        (c.phone && c.phone.includes(searchStr))
-      );
+      whereConditions.push(`(LOWER(name) LIKE $${params.length + 1} OR phone LIKE $${params.length + 1})`);
+      params.push(`%${search.toString().toLowerCase()}%`);
     }
     
     // 状态过滤
     if (status) {
-      data = data.filter((c: any) => c.status === status);
+      whereConditions.push(`status = $${params.length + 1}`);
+      params.push(status);
     }
     
     // 客服过滤
     if (assigned_to !== undefined && assigned_to !== '') {
       const agentId = parseInt(assigned_to as string);
       if (agentId === 0) {
-        // 0 表示查询未分配客服的客户
-        data = data.filter((c: any) => !c.assigned_to);
+        whereConditions.push(`(assigned_to IS NULL OR assigned_to = 0)`);
       } else {
-        data = data.filter((c: any) => c.assigned_to === agentId);
+        whereConditions.push(`assigned_to = $${params.length + 1}`);
+        params.push(agentId);
       }
     }
     
-    const total = data.length;
+    // 姓氏首字母过滤
+    if (name_letter) {
+      const letters = (name_letter as string).split(',');
+      const letterConditions = letters.map((_, idx) => {
+        const pinyinMap: Record<string, string[]> = {
+          'A': ['阿', '艾', '安'],
+          'B': ['白', '班', '包', '鲍', '毕', '边', '卞'],
+          'C': ['蔡', '曹', '岑', '常', '陈', '程', '池', '褚', '楚', '崔'],
+          'D': ['戴', '邓', '丁', '董', '杜', '段'],
+          'F': ['樊', '范', '方', '费', '冯', '符', '傅', '富'],
+          'G': ['高', '葛', '耿', '龚', '顾', '管', '郭'],
+          'H': ['韩', '郝', '何', '贺', '侯', '胡', '花', '华', '黄', '霍'],
+          'J': ['姬', '纪', '季', '贾', '简', '江', '姜', '蒋', '金', '靳', '景', '静'],
+          'K': ['康', '柯', '孔'],
+          'L': ['赖', '兰', '雷', '黎', '李', '梁', '林', '刘', '柳', '龙', '卢', '鲁', '陆', '路', '罗', '吕'],
+          'M': ['马', '毛', '茅', '梅', '孟', '米', '苗', '闵', '莫', '穆'],
+          'N': ['倪', '宁', '牛'],
+          'O': ['欧', '区'],
+          'P': ['潘', '庞', '裴', '彭', '皮', '朴'],
+          'Q': ['齐', '钱', '乔', '秦', '邱', '裘', '曲'],
+          'R': ['冉', '任', '荣', '阮'],
+          'S': ['沙', '邵', '沈', '盛', '施', '石', '史', '舒', '宋', '苏', '孙', '索'],
+          'T': ['汤', '唐', '陶', '田', '童'],
+          'W': ['万', '汪', '王', '韦', '卫', '魏', '温', '文', '翁', '巫', '吴', '伍', '武'],
+          'X': ['席', '夏', '项', '萧', '谢', '辛', '邢', '熊', '徐', '许', '薛'],
+          'Y': ['严', '颜', '杨', '叶', '易', '殷', '尹', '应', '尤', '于', '余', '俞', '虞', '袁', '岳', '云'],
+          'Z': ['藏', '曾', '翟', '詹', '张', '章', '赵', '郑', '钟', '周', '朱', '诸', '祝', '庄']
+        };
+        const chars = pinyinMap[letters[idx]] || [];
+        if (chars.length > 0) {
+          const charConditions = chars.map((_, charIdx) => 
+            `SUBSTR(name, 1, 1) = $${params.length + idx + charIdx + 1}`
+          ).join(' OR ');
+          params.push(...chars);
+          return `(${charConditions})`;
+        }
+        return `UPPER(SUBSTR(name, 1, 1)) = $${params.length + idx + 1}`;
+      }).filter(Boolean);
+      
+      if (letterConditions.length > 0) {
+        whereConditions.push(`(${letterConditions.join(' OR ')})`);
+        // 添加英文字母参数
+        letters.forEach(letter => {
+          const pinyinMap: Record<string, string[]> = {
+            'A': ['阿', '艾', '安'], 'B': ['白', '班', '包', '鲍', '毕', '边', '卞'],
+            'C': ['蔡', '曹', '岑', '常', '陈', '程', '池', '褚', '楚', '崔'],
+            'D': ['戴', '邓', '丁', '董', '杜', '段'],
+            'F': ['樊', '范', '方', '费', '冯', '符', '傅', '富'],
+            'G': ['高', '葛', '耿', '龚', '顾', '管', '郭'],
+            'H': ['韩', '郝', '何', '贺', '侯', '胡', '花', '华', '黄', '霍'],
+            'J': ['姬', '纪', '季', '贾', '简', '江', '姜', '蒋', '金', '靳', '景', '静'],
+            'K': ['康', '柯', '孔'],
+            'L': ['赖', '兰', '雷', '黎', '李', '梁', '林', '刘', '柳', '龙', '卢', '鲁', '陆', '路', '罗', '吕'],
+            'M': ['马', '毛', '茅', '梅', '孟', '米', '苗', '闵', '莫', '穆'],
+            'N': ['倪', '宁', '牛'], 'O': ['欧', '区'],
+            'P': ['潘', '庞', '裴', '彭', '皮', '朴'],
+            'Q': ['齐', '钱', '乔', '秦', '邱', '裘', '曲'],
+            'R': ['冉', '任', '荣', '阮'],
+            'S': ['沙', '邵', '沈', '盛', '施', '石', '史', '舒', '宋', '苏', '孙', '索'],
+            'T': ['汤', '唐', '陶', '田', '童'],
+            'W': ['万', '汪', '王', '韦', '卫', '魏', '温', '文', '翁', '巫', '吴', '伍', '武'],
+            'X': ['席', '夏', '项', '萧', '谢', '辛', '邢', '熊', '徐', '许', '薛'],
+            'Y': ['严', '颜', '杨', '叶', '易', '殷', '尹', '应', '尤', '于', '余', '俞', '虞', '袁', '岳', '云'],
+            'Z': ['藏', '曾', '翟', '詹', '张', '章', '赵', '郑', '钟', '周', '朱', '诸', '祝', '庄']
+          };
+          if (!pinyinMap[letter]) {
+            params.push(letter);
+          }
+        });
+      }
+    }
+    
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+    
+    // 获取总数（使用COUNT查询）
+    const countResult = await query(`SELECT COUNT(*) as total FROM customers ${whereClause}`, params);
+    const total = parseInt(countResult.rows[0].total);
+    
+    // 构建排序
+    let orderBy = 'ORDER BY created_at DESC';
+    if (sort_by === 'name') {
+      orderBy = 'ORDER BY name ASC';
+    }
+    
+    // 获取分页数据（使用LIMIT/OFFSET）
+    const queryParams = [...params, sizeNum, offset];
+    const dataResult = await query(
+      `SELECT * FROM customers ${whereClause} ${orderBy} LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      queryParams
+    );
+    let data = dataResult.rows;
     
     // 获取用户名称
     const users = await query('SELECT id, real_name FROM users');
@@ -99,34 +189,58 @@ export const getCustomers = async (req: any, res: Response) => {
       is_duplicate: false
     }));
     
-    // 按姓氏首字母排序
-    if (sort_by === 'name') {
-      data.sort((a: any, b: any) => {
-        const letterA = getFirstLetter(a.name);
-        const letterB = getFirstLetter(b.name);
-        if (letterA !== letterB) {
-          return letterA.localeCompare(letterB);
-        }
-        return (a.name || '').localeCompare(b.name || '');
-      });
-    }
+    // 计算姓氏分组（使用子查询优化）
+    const nameGroupsResult = await query(
+      `SELECT 
+        CASE 
+          WHEN name IS NULL OR name = '' THEN '#'
+          WHEN SUBSTR(name, 1, 1) BETWEEN '一' AND '龥' THEN
+            CASE SUBSTR(name, 1, 1)
+              WHEN '阿' THEN 'A' WHEN '艾' THEN 'A' WHEN '安' THEN 'A'
+              WHEN '白' THEN 'B' WHEN '班' THEN 'B' WHEN '包' THEN 'B' WHEN '鲍' THEN 'B' WHEN '毕' THEN 'B' WHEN '边' THEN 'B'
+              WHEN '蔡' THEN 'C' WHEN '曹' THEN 'C' WHEN '陈' THEN 'C' WHEN '程' THEN 'C' WHEN '崔' THEN 'C'
+              WHEN '戴' THEN 'D' WHEN '邓' THEN 'D' WHEN '丁' THEN 'D' WHEN '董' THEN 'D' WHEN '杜' THEN 'D'
+              WHEN '范' THEN 'F' WHEN '方' THEN 'F' WHEN '冯' THEN 'F' WHEN '傅' THEN 'F'
+              WHEN '高' THEN 'G' WHEN '葛' THEN 'G' WHEN '郭' THEN 'G'
+              WHEN '韩' THEN 'H' WHEN '何' THEN 'H' WHEN '贺' THEN 'H' WHEN '胡' THEN 'H' WHEN '黄' THEN 'H'
+              WHEN '贾' THEN 'J' WHEN '江' THEN 'J' WHEN '姜' THEN 'J' WHEN '蒋' THEN 'J' WHEN '金' THEN 'J'
+              WHEN '康' THEN 'K' WHEN '孔' THEN 'K'
+              WHEN '赖' THEN 'L' WHEN '兰' THEN 'L' WHEN '雷' THEN 'L' WHEN '李' THEN 'L' WHEN '梁' THEN 'L'
+              WHEN '林' THEN 'L' WHEN '刘' THEN 'L' WHEN '龙' THEN 'L' WHEN '卢' THEN 'L' WHEN '陆' THEN 'L' WHEN '罗' THEN 'L'
+              WHEN '马' THEN 'M' WHEN '毛' THEN 'M' WHEN '孟' THEN 'M' WHEN '莫' THEN 'M'
+              WHEN '潘' THEN 'P' WHEN '彭' THEN 'P'
+              WHEN '钱' THEN 'Q' WHEN '秦' THEN 'Q' WHEN '邱' THEN 'Q'
+              WHEN '任' THEN 'R'
+              WHEN '沈' THEN 'S' WHEN '史' THEN 'S' WHEN '宋' THEN 'S' WHEN '苏' THEN 'S' WHEN '孙' THEN 'S'
+              WHEN '汤' THEN 'T' WHEN '唐' THEN 'T' WHEN '陶' THEN 'T' WHEN '田' THEN 'T'
+              WHEN '万' THEN 'W' WHEN '汪' THEN 'W' WHEN '王' THEN 'W' WHEN '韦' THEN 'W' WHEN '魏' THEN 'W'
+              WHEN '吴' THEN 'W' WHEN '武' THEN 'W'
+              WHEN '夏' THEN 'X' WHEN '肖' THEN 'X' WHEN '谢' THEN 'X' WHEN '徐' THEN 'X' WHEN '许' THEN 'X'
+              WHEN '严' THEN 'Y' WHEN '杨' THEN 'Y' WHEN '叶' THEN 'Y' WHEN '易' THEN 'Y' WHEN '殷' THEN 'Y'
+              WHEN '于' THEN 'Y' WHEN '余' THEN 'Y' WHEN '袁' THEN 'Y'
+              WHEN '曾' THEN 'Z' WHEN '张' THEN 'Z' WHEN '章' THEN 'Z' WHEN '赵' THEN 'Z' WHEN '郑' THEN 'Z'
+              WHEN '周' THEN 'Z' WHEN '朱' THEN 'Z'
+              ELSE '#'
+            END
+          ELSE UPPER(SUBSTR(name, 1, 1))
+        END as letter,
+        COUNT(*) as count
+       FROM customers ${whereClause}
+       GROUP BY letter`,
+      params
+    );
     
-    // 计算姓氏分组
     const nameGroups: Record<string, number> = {};
-    data.forEach((c: any) => {
-      const letter = getFirstLetter(c.name);
-      nameGroups[letter] = (nameGroups[letter] || 0) + 1;
+    nameGroupsResult.rows.forEach((row: any) => {
+      nameGroups[row.letter] = parseInt(row.count);
     });
-    
-    // 分页
-    data = data.slice(offset, offset + parseInt(pageSize as string));
     
     res.json({
       data,
       total,
-      page: parseInt(page as string),
-      page_size: parseInt(pageSize as string),
-      total_pages: Math.ceil(total / parseInt(pageSize as string)),
+      page: pageNum,
+      page_size: sizeNum,
+      total_pages: Math.ceil(total / sizeNum),
       name_groups: nameGroups
     });
   } catch (error) {
@@ -481,64 +595,68 @@ export const getAgentCustomers = async (req: any, res: Response) => {
   try {
     const { status, search, page = 1, pageSize = 20, include_task_customers = true } = req.query;
     const agentId = req.user.id;
-    const offset = (parseInt(page as string) - 1) * parseInt(pageSize as string);
+    const pageNum = parseInt(page as string);
+    const sizeNum = parseInt(pageSize as string);
+    const offset = (pageNum - 1) * sizeNum;
     
     // 获取当前客服的数据权限
-    const userResult = await query('SELECT data_access_type FROM users WHERE id = $1', [agentId]);
-    const dataAccessType = userResult.rows[0]?.data_access_type || 'mock';
+    const userResult = await query('SELECT data_source FROM users WHERE id = $1', [agentId]);
+    const dataAccessType = userResult.rows[0]?.data_source || 'mock';
     
-    // 获取客服直接分配的客户（通过 assigned_to）
-    let result = await query('SELECT * FROM customers ORDER BY created_at DESC');
-    let customers = result.rows.filter((c: any) => 
-      c.assigned_to === agentId && (c.data_source || 'mock') === dataAccessType
-    );
+    // 构建查询 - 使用UNION合并直接分配的客户和任务分配的客户
+    let querySql = '';
+    const params: any[] = [agentId, dataAccessType];
     
-    // 获取通过任务分配给该客服的客户
     if (include_task_customers !== 'false') {
-      const taskCustomersResult = await query(`
-        SELECT DISTINCT c.*, tc.status as task_customer_status, tc.task_id, t.title as task_title
+      // 包含任务分配的客户
+      querySql = `
+        SELECT DISTINCT c.*, 
+          CASE WHEN tc.customer_id IS NOT NULL THEN 'task' ELSE 'direct' END as source_type,
+          tc.task_id,
+          t.title as task_title
         FROM customers c
-        INNER JOIN task_customers tc ON c.id = tc.customer_id
-        INNER JOIN tasks t ON tc.task_id = t.id
-        WHERE t.assigned_to = $1 AND tc.status = 'pending'
-        ORDER BY c.created_at DESC
-      `, [agentId]);
-      
-      // 合并客户列表，去重（优先保留任务中的客户）
-      const existingIds = new Set(customers.map((c: any) => c.id));
-      for (const taskCustomer of taskCustomersResult.rows) {
-        if (!existingIds.has(taskCustomer.id)) {
-          customers.push({
-            ...taskCustomer,
-            status: 'pending', // 任务中的客户标记为待拨打
-            source_type: 'task', // 标记来源为任务
-            task_id: taskCustomer.task_id,
-            task_title: taskCustomer.task_title
-          });
-          existingIds.add(taskCustomer.id);
-        }
-      }
+        LEFT JOIN task_customers tc ON c.id = tc.customer_id AND tc.status = 'pending'
+        LEFT JOIN tasks t ON tc.task_id = t.id AND t.assigned_to = $1
+        WHERE (c.assigned_to = $1 AND (c.data_source = $2 OR c.data_source IS NULL))
+           OR (t.assigned_to = $1 AND tc.status = 'pending')
+      `;
+    } else {
+      // 只包含直接分配的客户
+      querySql = `
+        SELECT c.*, 'direct' as source_type, NULL as task_id, NULL as task_title
+        FROM customers c
+        WHERE c.assigned_to = $1 AND (c.data_source = $2 OR c.data_source IS NULL)
+      `;
     }
     
-    // 状态过滤
+    // 添加状态过滤
     if (status) {
       if (status === 'pending') {
-        customers = customers.filter((c: any) => ['pending', 'contacted', 'new'].includes(c.status));
+        querySql += ` AND c.status IN ('pending', 'contacted', 'new')`;
       } else if (status === 'completed') {
-        customers = customers.filter((c: any) => ['converted', 'not_interested'].includes(c.status));
+        querySql += ` AND c.status IN ('converted', 'not_interested')`;
+      } else {
+        params.push(status);
+        querySql += ` AND c.status = $${params.length}`;
       }
     }
     
-    // 搜索过滤
+    // 添加搜索过滤
     if (search) {
-      const searchStr = search.toString().toLowerCase();
-      customers = customers.filter((c: any) => 
-        (c.name && c.name.toLowerCase().includes(searchStr)) ||
-        (c.phone && c.phone.includes(searchStr))
-      );
+      params.push(`%${search.toString().toLowerCase()}%`);
+      querySql += ` AND (LOWER(c.name) LIKE $${params.length} OR c.phone LIKE $${params.length})`;
     }
     
-    const total = customers.length;
+    // 获取总数
+    const countResult = await query(`SELECT COUNT(*) as total FROM (${querySql}) as subquery`, params);
+    const total = parseInt(countResult.rows[0].total);
+    
+    // 添加排序和分页
+    querySql += ` ORDER BY c.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    params.push(sizeNum, offset);
+    
+    const result = await query(querySql, params);
+    let customers = result.rows;
     
     // 获取通话记录
     const calls = await query('SELECT * FROM calls WHERE agent_id = $1', [agentId]);
@@ -550,8 +668,8 @@ export const getAgentCustomers = async (req: any, res: Response) => {
       callsByCustomer.get(c.customer_id).push(c);
     });
     
-    // 分页并添加通话信息
-    customers = customers.slice(offset, offset + parseInt(pageSize as string)).map((c: any) => {
+    // 添加通话信息
+    customers = customers.map((c: any) => {
       const customerCalls = callsByCustomer.get(c.id) || [];
       const lastCall = customerCalls.sort((a: any, b: any) => 
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
@@ -573,9 +691,9 @@ export const getAgentCustomers = async (req: any, res: Response) => {
       data: customers,
       pagination: {
         total,
-        page: parseInt(page as string),
-        pageSize: parseInt(pageSize as string),
-        totalPages: Math.ceil(total / parseInt(pageSize as string))
+        page: pageNum,
+        pageSize: sizeNum,
+        totalPages: Math.ceil(total / sizeNum)
       }
     });
   } catch (error) {

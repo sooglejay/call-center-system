@@ -111,4 +111,69 @@ class AgentTaskViewModel @Inject constructor(
     fun clearError() {
         _error.value = null
     }
+
+    /**
+     * 更新任务中客户的信息（编辑电话号码等）
+     */
+    fun updateCustomerInfo(
+        taskId: Int,
+        customerId: Int,
+        name: String? = null,
+        phone: String? = null,
+        company: String? = null,
+        onSuccess: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            _isLoading.value = true
+
+            val result = taskRepository.updateTaskCustomerInfo(
+                taskId = taskId,
+                customerId = customerId,
+                name = name,
+                phone = phone,
+                company = company
+            )
+            result.fold(
+                onSuccess = {
+                    // 刷新任务详情
+                    loadTaskDetail(taskId)
+                    onSuccess()
+                },
+                onFailure = { exception ->
+                    _error.value = exception.message ?: "更新客户信息失败"
+                    onError(_error.value!!)
+                    _isLoading.value = false
+                }
+            )
+        }
+    }
+
+    /**
+     * 从任务中移除客户
+     */
+    fun removeCustomer(
+        taskId: Int,
+        customerId: Int,
+        onSuccess: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            _isLoading.value = true
+
+            val result = taskRepository.removeTaskCustomer(taskId, customerId)
+            result.fold(
+                onSuccess = {
+                    // 刷新任务详情
+                    loadTaskDetail(taskId)
+                    onSuccess()
+                },
+                onFailure = { exception ->
+                    _error.value = exception.message ?: "移除客户失败"
+                    onError(_error.value!!)
+                    _isLoading.value = false
+                }
+            )
+        }
+    }
 }

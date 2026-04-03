@@ -2,6 +2,7 @@ package com.callcenter.app.data.model
 
 import com.google.gson.annotations.SerializedName
 import java.io.Serializable
+import kotlinx.serialization.Serializable as KSerializable
 
 /**
  * 登录请求
@@ -22,6 +23,7 @@ data class LoginResponse(
 /**
  * 用户信息
  */
+@KSerializable
 data class User(
     val id: Int,
     val username: String,
@@ -39,6 +41,7 @@ data class User(
 /**
  * 客户信息
  */
+@KSerializable
 data class Customer(
     val id: Int,
     val name: String,
@@ -355,6 +358,15 @@ data class UpdateTaskCustomerStatusRequest(
     val callResult: String? = null,
     @SerializedName("call_id")
     val callId: Int? = null
+)
+
+/**
+ * 更新任务客户信息请求（编辑电话号码等）
+ */
+data class UpdateTaskCustomerInfoRequest(
+    val name: String? = null,
+    val phone: String? = null,
+    val company: String? = null
 )
 
 // ==================== 统计相关 ====================

@@ -8,6 +8,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -60,6 +62,10 @@ fun AgentTaskExecutionScreen(
     val currentConfig by autoDialViewModel.currentConfig.collectAsState()
     val callSettings by callSettingsViewModel.callSettings.collectAsState()
 
+    // 自动拨号配置对话框状态
+    var showAutoDialConfigDialog by remember { mutableStateOf(false) }
+    var pendingCustomersForDial by remember { mutableStateOf<List<com.callcenter.app.data.model.Customer>>(emptyList()) }
+
     // 检查是否正在拨打当前任务
     val isAutoDialingThisTask = autoDialRunning && currentConfig?.taskId == taskId
 
@@ -107,28 +113,21 @@ fun AgentTaskExecutionScreen(
                         onClick = {
                             if (isAutoDialingThisTask) {
                                 autoDialViewModel.stopAutoDial()
-                            } else {
-                                // 开始自动拨号
-                                if (checkAndRequestCallPermission()) {
-                                    val customers = pendingCustomers.map { tc ->
-                                        Customer(
-                                            id = tc.id,
-                                            name = tc.name,
-                                            phone = tc.phone,
-                                            email = tc.email,
-                                            company = tc.company
-                                        )
-                                    }
-                                    val config = AutoDialConfig(
-                                        scopeType = AutoDialScopeType.SPECIFIC_TASK,
-                                        taskId = taskId,
-                                        taskTitle = currentTask.title,
-                                        intervalSeconds = callSettings.autoDialInterval,
-                                        timeoutSeconds = callSettings.callTimeout
+                        } else {
+                            // 显示配置对话框
+                            if (checkAndRequestCallPermission()) {
+                                pendingCustomersForDial = pendingCustomers.map { tc ->
+                                    com.callcenter.app.data.model.Customer(
+                                        id = tc.id,
+                                        name = tc.name,
+                                        phone = tc.phone,
+                                        email = tc.email,
+                                        company = tc.company
                                     )
-                                    autoDialViewModel.startAutoDial(customers, config)
                                 }
+                                showAutoDialConfigDialog = true
                             }
+                        }
                         },
                         icon = {
                             Icon(
@@ -178,9 +177,130 @@ fun AgentTaskExecutionScreen(
                     },
                     onUpdateStatus = { customerId, status, result ->
                         viewModel.updateCustomerStatus(taskId, customerId, status, result)
+                    },
+                    onEditCustomer = { customerId, name, phone, company ->
+                        viewModel.updateCustomerInfo(
+                            taskId = taskId,
+                            customerId = customerId,
+                            name = name,
+                            phone = phone,
+                            company = company
+                        )
+                    },
+                    onDeleteCustomer = { customerId ->
+                        viewModel.removeCustomer(taskId, customerId)
                     }
                 )
             }
+        }
+
+        // 自动拨号配置对话框
+        if (showAutoDialConfigDialog) {
+            // 本地配置状态
+            var localInterval by remember { mutableStateOf(callSettings.autoDialInterval) }
+            var localTimeout by remember { mutableStateOf(callSettings.callTimeout) }
+            var localDialsPerCustomer by remember { mutableStateOf(1) }
+
+            AlertDialog(
+                onDismissRequest = { showAutoDialConfigDialog = false },
+                title = { Text("自动拨号配置") },
+                text = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(20.dp)
+                    ) {
+                        // 拨号间隔配置
+                        Column {
+                            Text(
+                                text = "拨号间隔: ${localInterval}秒",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Slider(
+                                value = localInterval.toFloat(),
+                                onValueChange = { localInterval = it.toInt() },
+                                valueRange = 3f..30f,
+                                steps = 26
+                            )
+                            Text(
+                                text = "每次拨打完成后等待的时间",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        // 超时时间配置
+                        Column {
+                            Text(
+                                text = "通话超时: ${localTimeout}秒",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Slider(
+                                value = localTimeout.toFloat(),
+                                onValueChange = { localTimeout = it.toInt() },
+                                valueRange = 10f..120f,
+                                steps = 21
+                            )
+                            Text(
+                                text = "等待对方接听的最大时间",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        HorizontalDivider()
+
+                        // 每客户拨打次数配置
+                        Column {
+                            Text(
+                                text = "每个客户连续拨打次数: $localDialsPerCustomer",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Slider(
+                                value = localDialsPerCustomer.toFloat(),
+                                onValueChange = { localDialsPerCustomer = it.toInt() },
+                                valueRange = 1f..5f,
+                                steps = 3
+                            )
+                            Text(
+                                text = when (localDialsPerCustomer) {
+                                    1 -> "每个客户拨打1次后流转到下一个"
+                                    else -> "每个客户连续拨打${localDialsPerCustomer}次后流转到下一个"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showAutoDialConfigDialog = false
+                            // 开始自动拨号，使用本地配置
+                            val config = AutoDialConfig(
+                                scopeType = AutoDialScopeType.SPECIFIC_TASK,
+                                taskId = taskId,
+                                taskTitle = task?.title,
+                                intervalSeconds = localInterval,
+                                timeoutSeconds = localTimeout,
+                                dialsPerCustomer = localDialsPerCustomer
+                            )
+                            autoDialViewModel.startAutoDial(pendingCustomersForDial, config)
+                        }
+                    ) {
+                        Text("开始拨号")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { showAutoDialConfigDialog = false }
+                    ) {
+                        Text("取消")
+                    }
+                }
+            )
         }
     }
 }
@@ -192,7 +312,9 @@ private fun TaskExecutionContent(
     dialedCount: Int,
     totalCount: Int,
     onCallCustomer: (String, Int, Int) -> Unit,
-    onUpdateStatus: (Int, String, String?) -> Unit
+    onUpdateStatus: (Int, String, String?) -> Unit,
+    onEditCustomer: (Int, String?, String?, String?) -> Unit,
+    onDeleteCustomer: (Int) -> Unit
 ) {
     val customers = task.customers ?: emptyList()
     val pendingCustomers = customers.filter { it.callStatus == "pending" }
@@ -232,13 +354,19 @@ private fun TaskExecutionContent(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(customers) { customer ->
-                TaskCustomerCard(
-                    customer = customer,
-                    onCall = { onCallCustomer(customer.phone, task.id, customer.id) },
-                    onUpdateStatus = { status, result ->
-                        onUpdateStatus(customer.id, status, result)
-                    }
-                )
+            TaskCustomerCard(
+                customer = customer,
+                onCall = { onCallCustomer(customer.phone, task.id, customer.id) },
+                onUpdateStatus = { status, result ->
+                    onUpdateStatus(customer.id, status, result)
+                },
+                onEditCustomer = { name, phone, company ->
+                    onEditCustomer(customer.id, name, phone, company)
+                },
+                onDeleteCustomer = {
+                    onDeleteCustomer(customer.id)
+                }
+            )
             }
         }
     }
@@ -379,9 +507,13 @@ private fun StatItem(value: String, label: String) {
 private fun TaskCustomerCard(
     customer: TaskCustomer,
     onCall: () -> Unit,
-    onUpdateStatus: (String, String?) -> Unit
+    onUpdateStatus: (String, String?) -> Unit,
+    onEditCustomer: (String?, String?, String?) -> Unit,
+    onDeleteCustomer: () -> Unit
 ) {
     var showResultDialog by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
     var callResult by remember { mutableStateOf(customer.callResult ?: "") }
 
     Card(
@@ -455,6 +587,37 @@ private fun TaskCustomerCard(
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 编辑和删除按钮
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // 编辑按钮
+                OutlinedButton(
+                    onClick = { showEditDialog = true },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Edit, null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("编辑")
+                }
+
+                // 删除按钮
+                OutlinedButton(
+                    onClick = { showDeleteConfirm = true },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Icon(Icons.Default.Delete, null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("删除")
+                }
+            }
         }
     }
 
@@ -488,6 +651,89 @@ private fun TaskCustomerCard(
             },
             dismissButton = {
                 TextButton(onClick = { showResultDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    // 编辑客户信息对话框
+    if (showEditDialog) {
+        var editName by remember { mutableStateOf(customer.name) }
+        var editPhone by remember { mutableStateOf(customer.phone) }
+        var editCompany by remember { mutableStateOf(customer.company ?: "") }
+
+        AlertDialog(
+            onDismissRequest = { showEditDialog = false },
+            title = { Text("编辑客户信息") },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedTextField(
+                        value = editName,
+                        onValueChange = { editName = it },
+                        label = { Text("姓名") },
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = editPhone,
+                        onValueChange = { editPhone = it },
+                        label = { Text("电话") },
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = editCompany,
+                        onValueChange = { editCompany = it },
+                        label = { Text("公司") },
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onEditCustomer(
+                            editName.takeIf { it != customer.name },
+                            editPhone.takeIf { it != customer.phone },
+                            editCompany.takeIf { it != customer.company }
+                        )
+                        showEditDialog = false
+                    }
+                ) {
+                    Text("保存")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    // 删除确认对话框
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("确认删除") },
+            text = { Text("确定要从任务中删除客户「${customer.name}」吗？此操作不可恢复。") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDeleteCustomer()
+                        showDeleteConfirm = false
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("删除")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
                     Text("取消")
                 }
             }

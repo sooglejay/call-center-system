@@ -15,32 +15,37 @@ export default function CallList() {
   const [callModalVisible, setCallModalVisible] = useState(false);
   const [notesModalVisible, setNotesModalVisible] = useState(false);
   const [editingRecord, setEditingRecord] = useState<CallRecord | null>(null);
-  const [totalCount, setTotalCount] = useState(0);
   const [noteForm] = Form.useForm();
+  
+  // 分页状态
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [total, setTotal] = useState(0);
   
   const { isAutoDialing, setAutoDialing, setCurrentCustomer, dialStatus, setDialStatus } = useAutoDialStore();
   const { config } = useAgentConfigStore();
 
   useEffect(() => {
     fetchCustomers();
-  }, [filters]);
+  }, [currentPage, pageSize]);
 
+  // 当筛选条件变化时，重置到第一页
   useEffect(() => {
-    if (isAutoDialing && !callingCustomer) {
-      startNextCall();
-    }
-  }, [isAutoDialing]);
+    setCurrentPage(1);
+  }, [filters]);
 
   const fetchCustomers = async () => {
     setLoading(true);
     try {
       const response = await customerApi.getAgentCustomers({
         status: filters.status,
-        search: filters.search
+        search: filters.search,
+        page: currentPage,
+        pageSize: pageSize
       });
       const customersData = response.data?.data || response.data || [];
       setCustomers(Array.isArray(customersData) ? customersData : []);
-      setTotalCount(response.data?.pagination?.total || response.data?.total || 0);
+      setTotal(response.data?.total || 0);
     } catch (error) {
       message.error('获取客户列表失败');
     } finally {
@@ -133,7 +138,7 @@ export default function CallList() {
     Modal.confirm({
       title: '开始自动拨号',
       icon: <ExclamationCircleOutlined />,
-      content: `即将开始自动拨号，共有 ${totalCount} 个待拨打客户。拨号过程中您可以随时停止。`,
+      content: `即将开始自动拨号，共有 ${total} 个待拨打客户。拨号过程中您可以随时停止。`,
       okText: '开始',
       cancelText: '取消',
       onOk: () => {
@@ -291,7 +296,24 @@ export default function CallList() {
         </div>
       )}
 
-      <Table columns={columns} dataSource={customers} rowKey="id" loading={loading} />
+      <Table 
+        columns={columns} 
+        dataSource={customers} 
+        rowKey="id" 
+        loading={loading}
+        pagination={{
+          current: currentPage,
+          pageSize: pageSize,
+          total: total,
+          showSizeChanger: true,
+          showQuickJumper: true,
+          showTotal: (total) => `共 ${total} 条`,
+          onChange: (page, size) => {
+            setCurrentPage(page);
+            if (size) setPageSize(size);
+          }
+        }}
+      />
 
       {/* 通话中弹窗 */}
       <Modal

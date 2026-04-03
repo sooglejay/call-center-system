@@ -2,6 +2,7 @@ package com.callcenter.app.di
 
 import android.content.Context
 import com.callcenter.app.data.local.preferences.CallSettingsManager
+import com.callcenter.app.data.local.preferences.AutoDialProgressManager
 import com.callcenter.app.util.CallHelper
 import dagger.Module
 import dagger.Provides
@@ -28,5 +29,13 @@ object AppModule {
         @ApplicationContext context: Context
     ): CallSettingsManager {
         return CallSettingsManager(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideAutoDialProgressManager(
+        @ApplicationContext context: Context
+    ): AutoDialProgressManager {
+        return AutoDialProgressManager(context)
     }
 }

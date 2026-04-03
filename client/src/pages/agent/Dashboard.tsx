@@ -52,7 +52,7 @@ export default function AgentDashboard() {
 
   const fetchCustomerCount = async () => {
     try {
-      const response = await customerApi.getAgentCustomers({ status: 'pending' });
+      const response = await customerApi.getAgentCustomers({ status: 'pending', pageSize: 1000 });
       setCustomerCount(response.data?.pagination?.total || 0);
     } catch (error) {
       console.error('获取客户数量失败');

@@ -99,6 +99,11 @@ export default function CustomerManagement() {
   const [addForm] = Form.useForm();
   const [importDataSource, setImportDataSource] = useState<'mock' | 'real'>('real');
 
+  // 分页状态
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [total, setTotal] = useState(0);
+
   // CSV 预览相关状态
   const [previewModalVisible, setPreviewModalVisible] = useState(false);
   const [previewData, setPreviewData] = useState<CsvPreviewData | null>(null);
@@ -110,16 +115,23 @@ export default function CustomerManagement() {
   useEffect(() => {
     fetchCustomers();
     fetchAgents();
-  }, []);
+  }, [currentPage, pageSize, sortBy, searchText, filterStatus, filterAssigned, activeLetters]);
 
   const fetchCustomers = async () => {
     setLoading(true);
     try {
       const response = await customerApi.getCustomers({ 
-        sort_by: sortBy
+        sort_by: sortBy,
+        page: currentPage,
+        pageSize: pageSize,
+        search: searchText || undefined,
+        status: filterStatus || undefined,
+        assigned_to: filterAssigned ? parseInt(filterAssigned) : undefined,
+        name_letter: activeLetters.length > 0 ? activeLetters.join(',') : undefined
       });
       const customersData = response.data?.data || response.data || [];
       setCustomers(Array.isArray(customersData) ? customersData : []);
+      setTotal(response.data?.total || 0);
       if (response.data?.name_groups) {
         setNameGroups(response.data.name_groups);
       }
@@ -130,6 +142,11 @@ export default function CustomerManagement() {
       setLoading(false);
     }
   };
+
+  // 当搜索或过滤条件改变时，重置到第一页
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchText, filterStatus, filterAssigned]);
 
   const fetchAgents = async () => {
     try {
@@ -142,41 +159,12 @@ export default function CustomerManagement() {
     }
   };
 
-  // 按姓氏分组
+  // 按姓氏分组（后端已做过滤和分页，前端只做分组）
   const groupedCustomers = useMemo(() => {
-    let filtered = customers;
-    
-    // 搜索过滤
-    if (searchText) {
-      const lowerSearch = searchText.toLowerCase();
-      filtered = filtered.filter(c => 
-        (c.name && c.name.toLowerCase().includes(lowerSearch)) ||
-        (c.phone && c.phone.includes(searchText))
-      );
-    }
-    
-    // 状态过滤
-    if (filterStatus) {
-      filtered = filtered.filter(c => c.status === filterStatus);
-    }
-    
-    // 客服过滤
-    if (filterAssigned) {
-      if (filterAssigned === '0') {
-        filtered = filtered.filter(c => !c.assigned_to);
-      } else {
-        filtered = filtered.filter(c => c.assigned_to === parseInt(filterAssigned));
-      }
-    }
-    
-    // 首字母过滤（支持多选）
-    if (activeLetters.length > 0) {
-      filtered = filtered.filter(c => activeLetters.includes(getFirstLetter(c.name || '')));
-    }
-    
     // 按姓氏排序
+    let sorted = [...customers];
     if (sortBy === 'name') {
-      filtered = [...filtered].sort((a, b) => {
+      sorted = sorted.sort((a, b) => {
         const letterA = getFirstLetter(a.name || '');
         const letterB = getFirstLetter(b.name || '');
         if (letterA !== letterB) return letterA.localeCompare(letterB);
@@ -186,14 +174,14 @@ export default function CustomerManagement() {
     
     // 分组
     const groups: Record<string, Customer[]> = {};
-    filtered.forEach(customer => {
+    sorted.forEach(customer => {
       const letter = getFirstLetter(customer.name || '');
       if (!groups[letter]) groups[letter] = [];
       groups[letter].push(customer);
     });
     
     return groups;
-  }, [customers, searchText, filterStatus, filterAssigned, activeLetters, sortBy]);
+  }, [customers, sortBy]);
 
   // 处理分组表格的选择变化（支持跨组多选）
   const handleGroupSelectionChange = (groupCustomers: Customer[], keys: (string | number)[], selected: boolean) => {
@@ -693,7 +681,18 @@ export default function CustomerManagement() {
                 selectedRowKeys,
                 onChange: (keys) => setSelectedRowKeys(keys as number[])
               }}
-              pagination={{ pageSize: 20 }}
+              pagination={{
+                current: currentPage,
+                pageSize: pageSize,
+                total: total,
+                showSizeChanger: true,
+                showQuickJumper: true,
+                showTotal: (total) => `共 ${total} 条`,
+                onChange: (page, size) => {
+                  setCurrentPage(page);
+                  if (size) setPageSize(size);
+                }
+              }}
               locale={{
                 emptyText: (
                   <div style={{ padding: '24px 0' }}>

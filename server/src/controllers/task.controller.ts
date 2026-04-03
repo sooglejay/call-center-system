@@ -5,76 +5,83 @@ import { query } from '../config/database';
 export const getTasks = async (req: Request, res: Response) => {
   try {
     const { agent_id, status, page = 1, pageSize = 20 } = req.query;
-    const offset = (parseInt(page as string) - 1) * parseInt(pageSize as string);
+    const pageNum = parseInt(page as string);
+    const sizeNum = parseInt(pageSize as string);
+    const offset = (pageNum - 1) * sizeNum;
     
-    // 获取所有任务
-    let result = await query('SELECT * FROM tasks ORDER BY created_at DESC');
-    let tasks = result.rows;
+    // 构建WHERE条件
+    const whereConditions: string[] = [];
+    const params: any[] = [];
     
-    // 过滤
     if (agent_id) {
-      tasks = tasks.filter((t: any) => t.assigned_to === parseInt(agent_id as string));
+      whereConditions.push(`t.assigned_to = $${params.length + 1}`);
+      params.push(parseInt(agent_id as string));
     }
     if (status) {
-      tasks = tasks.filter((t: any) => t.status === status);
+      whereConditions.push(`t.status = $${params.length + 1}`);
+      params.push(status);
     }
     
-    const total = tasks.length;
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
     
-    // 获取用户信息
-    const users = await query('SELECT id, username, real_name, role, phone, email, status, data_access_type FROM users');
-    const userMap = new Map(users.rows.map((u: any) => [u.id, u]));
+    // 获取总数
+    const countResult = await query(`SELECT COUNT(*) as total FROM tasks t ${whereClause}`, params);
+    const total = parseInt(countResult.rows[0].total);
     
-    // 获取每个任务的客户统计
-    const taskCustomersResult = await query(`
-      SELECT task_id, 
-             COUNT(*) as total_customers,
-             SUM(CASE WHEN status = 'completed' OR status = 'connected' THEN 1 ELSE 0 END) as completed_customers,
-             SUM(CASE WHEN status = 'called' THEN 1 ELSE 0 END) as called_customers
-      FROM task_customers
-      GROUP BY task_id
-    `);
-    const taskStatsMap = new Map(taskCustomersResult.rows.map((r: any) => [r.task_id, r]));
+    // 获取分页数据
+    const queryParams = [...params, sizeNum, offset];
+    const result = await query(
+      `SELECT t.*, 
+              u.username as agent_username, u.real_name as agent_real_name,
+              COALESCE(tc_stats.total_customers, 0) as total_customers,
+              COALESCE(tc_stats.completed_customers, 0) as completed_customers,
+              COALESCE(tc_stats.called_customers, 0) as called_customers
+       FROM tasks t
+       LEFT JOIN users u ON t.assigned_to = u.id
+       LEFT JOIN (
+         SELECT task_id, 
+                COUNT(*) as total_customers,
+                SUM(CASE WHEN status = 'completed' OR status = 'connected' THEN 1 ELSE 0 END) as completed_customers,
+                SUM(CASE WHEN status = 'called' THEN 1 ELSE 0 END) as called_customers
+         FROM task_customers
+         GROUP BY task_id
+       ) tc_stats ON t.id = tc_stats.task_id
+       ${whereClause}
+       ORDER BY t.created_at DESC
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      queryParams
+    );
     
-    // 分页并添加信息
-    const data = tasks.slice(offset, offset + parseInt(pageSize as string)).map((t: any) => {
-      const agent = userMap.get(t.assigned_to);
-      const stats = taskStatsMap.get(t.id) || { total_customers: 0, completed_customers: 0, called_customers: 0 };
-      
-      return {
-        id: t.id,
-        title: t.title || '',
-        description: t.description || '',
-        status: t.status || 'pending',
-        priority: t.priority || 'normal',
-        assigned_to: t.assigned_to,
-        assigned_agent: agent ? {
-          id: agent.id,
-          username: agent.username,
-          real_name: agent.real_name,
-          role: agent.role,
-          phone: agent.phone,
-          email: agent.email
-        } : null,
-        due_date: t.due_date || null,
-        created_at: t.created_at,
-        updated_at: t.updated_at,
-        // 新增统计字段
-        customer_count: stats.total_customers || 0,
-        completed_count: stats.completed_customers || 0,
-        called_count: stats.called_customers || 0,
-        progress: stats.total_customers > 0 
-          ? Math.round((stats.completed_customers / stats.total_customers) * 100) 
-          : 0
-      };
-    });
+    // 格式化数据
+    const data = result.rows.map((t: any) => ({
+      id: t.id,
+      title: t.title || '',
+      description: t.description || '',
+      status: t.status || 'pending',
+      priority: t.priority || 'normal',
+      assigned_to: t.assigned_to,
+      assigned_agent: t.agent_username ? {
+        id: t.assigned_to,
+        username: t.agent_username,
+        real_name: t.agent_real_name
+      } : null,
+      due_date: t.due_date || null,
+      created_at: t.created_at,
+      updated_at: t.updated_at,
+      customer_count: parseInt(t.total_customers) || 0,
+      completed_count: parseInt(t.completed_customers) || 0,
+      called_count: parseInt(t.called_customers) || 0,
+      progress: parseInt(t.total_customers) > 0 
+        ? Math.round((parseInt(t.completed_customers) / parseInt(t.total_customers)) * 100) 
+        : 0
+    }));
     
     res.json({
       data,
       total,
-      page: parseInt(page as string),
-      page_size: parseInt(pageSize as string),
-      total_pages: Math.ceil(total / parseInt(pageSize as string))
+      page: pageNum,
+      page_size: sizeNum,
+      total_pages: Math.ceil(total / sizeNum)
     });
   } catch (error) {
     console.error('获取任务列表错误:', error);
@@ -444,6 +451,69 @@ export const updateTaskCustomerStatus = async (req: Request, res: Response) => {
     res.json({ message: '状态更新成功' });
   } catch (error) {
     console.error('更新任务客户状态错误:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+};
+
+// 更新任务中客户的信息（编辑电话号码等）
+export const updateTaskCustomerInfo = async (req: Request, res: Response) => {
+  try {
+    const { id, customerId } = req.params;
+    const { name, phone, company } = req.body;
+    
+    // 验证必填字段
+    if (!phone) {
+      return res.status(400).json({ error: '电话号码不能为空' });
+    }
+    
+    // 更新 customers 表
+    const updateFields: string[] = [];
+    const params: any[] = [];
+    
+    if (name !== undefined) {
+      updateFields.push(`name = $${params.length + 1}`);
+      params.push(name);
+    }
+    if (phone !== undefined) {
+      updateFields.push(`phone = $${params.length + 1}`);
+      params.push(phone);
+    }
+    if (company !== undefined) {
+      updateFields.push(`company = $${params.length + 1}`);
+      params.push(company);
+    }
+    
+    if (updateFields.length > 0) {
+      updateFields.push(`updated_at = datetime('now')`);
+      params.push(customerId);
+      
+      await query(
+        `UPDATE customers SET ${updateFields.join(', ')} WHERE id = $${params.length}`,
+        params
+      );
+    }
+    
+    res.json({ message: '客户信息更新成功' });
+  } catch (error) {
+    console.error('更新任务客户信息错误:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+};
+
+// 从任务中移除客户
+export const removeTaskCustomer = async (req: Request, res: Response) => {
+  try {
+    const { id, customerId } = req.params;
+    
+    // 从 task_customers 表中删除关联
+    await query(
+      'DELETE FROM task_customers WHERE task_id = $1 AND customer_id = $2',
+      [id, customerId]
+    );
+    
+    res.json({ message: '客户已从任务中移除' });
+  } catch (error) {
+    console.error('移除任务客户错误:', error);
     res.status(500).json({ error: '服务器错误' });
   }
 };

@@ -5,78 +5,97 @@ export const getCallRecords = async (req: any, res: Response) => {
   try {
     const { customer_id, status, start_date, end_date, page = 1, pageSize = 20 } = req.query;
     const agentId = req.user.role === 'agent' ? req.user.id : null;
-    const offset = (parseInt(page as string) - 1) * parseInt(pageSize as string);
+    const pageNum = parseInt(page as string);
+    const sizeNum = parseInt(pageSize as string);
+    const offset = (pageNum - 1) * sizeNum;
     
-    // 获取通话记录
-    let result = await query('SELECT * FROM calls ORDER BY created_at DESC');
-    let data = result.rows;
+    // 构建WHERE条件
+    const whereConditions: string[] = [];
+    const params: any[] = [];
     
-    // 过滤
+    // 客服只能看到自己的通话记录
     if (agentId) {
-      data = data.filter((c: any) => c.agent_id === agentId);
+      whereConditions.push(`c.agent_id = $${params.length + 1}`);
+      params.push(agentId);
     }
+    
+    // 客户过滤
     if (customer_id) {
-      data = data.filter((c: any) => c.customer_id === parseInt(customer_id as string));
+      whereConditions.push(`c.customer_id = $${params.length + 1}`);
+      params.push(parseInt(customer_id as string));
     }
+    
+    // 状态过滤
     if (status) {
-      data = data.filter((c: any) => c.status === status);
+      whereConditions.push(`c.status = $${params.length + 1}`);
+      params.push(status);
     }
+    
+    // 日期范围过滤
     if (start_date) {
-      data = data.filter((c: any) => new Date(c.created_at) >= new Date(start_date as string));
+      whereConditions.push(`c.created_at >= $${params.length + 1}`);
+      params.push(start_date);
     }
     if (end_date) {
-      data = data.filter((c: any) => new Date(c.created_at) <= new Date(end_date as string));
+      whereConditions.push(`c.created_at <= $${params.length + 1}`);
+      params.push(end_date);
     }
     
-    const total = data.length;
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
     
-    // 获取客户和客服信息
-    const customers = await query('SELECT id, name, phone FROM customers');
-    const users = await query('SELECT id, username, real_name, role, phone, email, status, data_access_type FROM users');
-    const customerMap = new Map(customers.rows.map((c: any) => [c.id, c]));
-    const userMap = new Map(users.rows.map((u: any) => [u.id, u]));
+    // 获取总数
+    const countResult = await query(`SELECT COUNT(*) as total FROM calls c ${whereClause}`, params);
+    const total = parseInt(countResult.rows[0].total);
     
-    // 分页并添加完整信息
-    data = data.slice(offset, offset + parseInt(pageSize as string)).map((c: any) => {
-      const customer = customerMap.get(c.customer_id);
-      const agent = userMap.get(c.agent_id);
-      
-      return {
-        id: c.id,
-        customer_id: c.customer_id,
-        customer: customer ? {
-          id: customer.id,
-          name: customer.name,
-          phone: customer.phone
-        } : null,
-        agent_id: c.agent_id,
-        agent: agent ? {
-          id: agent.id,
-          username: agent.username,
-          real_name: agent.real_name,
-          role: agent.role,
-          phone: agent.phone,
-          email: agent.email
-        } : null,
-        phone: c.customer_phone || customer?.phone || '',
-        direction: 'outbound',
-        status: c.status,
-        duration: c.call_duration || 0,
-        notes: c.call_notes || '',
-        recording: c.recording_url || '',
-        call_sid: c.twilio_call_sid || '',
-        dialed_at: c.started_at || null,
-        connected_at: c.connected_at || null,
-        ended_at: c.ended_at || null,
-        created_at: c.created_at
-      };
-    });
+    // 获取分页数据
+    const queryParams = [...params, sizeNum, offset];
+    const result = await query(
+      `SELECT c.*, 
+              cu.name as customer_name, cu.phone as customer_phone,
+              u.username as agent_username, u.real_name as agent_real_name, u.role as agent_role
+       FROM calls c
+       LEFT JOIN customers cu ON c.customer_id = cu.id
+       LEFT JOIN users u ON c.agent_id = u.id
+       ${whereClause}
+       ORDER BY c.created_at DESC
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      queryParams
+    );
+    
+    // 格式化数据
+    const data = result.rows.map((c: any) => ({
+      id: c.id,
+      customer_id: c.customer_id,
+      customer: c.customer_name ? {
+        id: c.customer_id,
+        name: c.customer_name,
+        phone: c.customer_phone
+      } : null,
+      agent_id: c.agent_id,
+      agent: c.agent_username ? {
+        id: c.agent_id,
+        username: c.agent_username,
+        real_name: c.agent_real_name,
+        role: c.agent_role
+      } : null,
+      phone: c.customer_phone || '',
+      direction: 'outbound',
+      status: c.status,
+      duration: c.call_duration || 0,
+      notes: c.call_notes || '',
+      recording: c.recording_url || '',
+      call_sid: c.twilio_call_sid || '',
+      dialed_at: c.started_at || null,
+      connected_at: c.connected_at || null,
+      ended_at: c.ended_at || null,
+      created_at: c.created_at
+    }));
     
     res.json({
       data,
       total,
-      page: parseInt(page as string),
-      page_size: parseInt(pageSize as string)
+      page: pageNum,
+      page_size: sizeNum
     });
   } catch (error) {
     console.error('获取通话记录错误:', error);
