@@ -1999,9 +1999,10 @@ private fun AgentCustomersTab(
                 .padding(innerPadding)
         ) {
             // 自动拨号时，顶部固定显示当前和下一个客户信息（占据约1/4屏幕）
-            if (autoDialRunning && currentDialCustomer != null) {
+            val currentCustomer = currentDialCustomer
+            if (autoDialRunning && currentCustomer != null) {
                 AutoDialCustomerInfoPanel(
-                    currentCustomer = currentDialCustomer,
+                    currentCustomer = currentCustomer,
                     nextCustomer = nextDialCustomer,
                     dialedCount = dialedCount,
                     totalCount = totalCount,
