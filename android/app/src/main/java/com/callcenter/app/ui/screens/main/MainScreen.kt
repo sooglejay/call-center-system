@@ -85,7 +85,6 @@ fun MainScreen(
     // 获取自动拨号状态，用于浮动按钮显示
     val autoDialRunning by autoDialViewModel.isRunning.collectAsState()
     val currentDialCustomer by autoDialViewModel.currentCustomer.collectAsState()
-    val nextDialCustomer by autoDialViewModel.nextCustomer.collectAsState()
     val customers by customerViewModel.customers.collectAsState()
     val tasks by taskListViewModel.tasks.collectAsState()
     val callSettings by callSettingsViewModel.callSettings.collectAsState()
@@ -1814,7 +1813,6 @@ private fun AgentCustomersTab(
     // 自动拨号状态
     val autoDialRunning by autoDialViewModel.isRunning.collectAsState()
     val currentDialCustomer by autoDialViewModel.currentCustomer.collectAsState()
-    val nextDialCustomer by autoDialViewModel.nextCustomer.collectAsState()
     val dialedCount by autoDialViewModel.dialedCount.collectAsState()
     val totalCount by autoDialViewModel.totalCount.collectAsState()
     val currentConfig by autoDialViewModel.currentConfig.collectAsState()
@@ -1998,12 +1996,11 @@ private fun AgentCustomersTab(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // 自动拨号时，顶部固定显示当前和下一个客户信息（占据约1/4屏幕）
+            // 自动拨号时，顶部固定显示当前客户信息
             val currentCustomer = currentDialCustomer
             if (autoDialRunning && currentCustomer != null) {
                 AutoDialCustomerInfoPanel(
                     currentCustomer = currentCustomer,
-                    nextCustomer = nextDialCustomer,
                     dialedCount = dialedCount,
                     totalCount = totalCount,
                     onStop = { autoDialViewModel.stopAutoDial() }
@@ -2077,12 +2074,11 @@ private fun AgentCustomersTab(
 
 /**
  * 自动拨号客户信息面板
- * 在客户Tab顶部固定显示当前和下一个客户信息
+ * 在客户Tab顶部固定显示当前客户信息
  */
 @Composable
 private fun AutoDialCustomerInfoPanel(
     currentCustomer: Customer,
-    nextCustomer: Customer?,
     dialedCount: Int,
     totalCount: Int,
     onStop: () -> Unit
@@ -2177,63 +2173,6 @@ private fun AutoDialCustomerInfoPanel(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-
-                // 分隔线
-                Divider(
-                    modifier = Modifier
-                        .height(40.dp)
-                        .width(1.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                // 下一个客户信息
-                Column(
-                    modifier = Modifier.width(100.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "下一个",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    if (nextCustomer != null) {
-                        Surface(
-                            modifier = Modifier.size(32.dp),
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.secondaryContainer
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = nextCustomer.name.firstOrNull()?.toString() ?: "?",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = nextCustomer.name,
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.tertiary,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Text(
-                            text = "最后一个",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }

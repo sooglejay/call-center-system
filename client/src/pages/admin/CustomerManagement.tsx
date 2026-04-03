@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Table, Button, Modal, Upload, message, Tabs, Select, Form, Input, Badge, Space, Tag, Radio, Divider, Typography, Alert, Card, Row, Col, Spin } from 'antd';
-import { UploadOutlined, CameraOutlined, UserAddOutlined, TeamOutlined, InfoCircleOutlined, DownloadOutlined, PlusOutlined } from '@ant-design/icons';
+import { UploadOutlined, CameraOutlined, UserAddOutlined, TeamOutlined, InfoCircleOutlined, DownloadOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import { customerApi, dataImportApi, userApi } from '../../services/api';
 import type { Customer, User } from '../../services/api';
 import * as XLSX from 'xlsx';
@@ -329,6 +329,54 @@ export default function CustomerManagement() {
     }
   };
 
+  // 删除客户
+  const handleDeleteCustomer = (record: Customer) => {
+    Modal.confirm({
+      title: '确认删除',
+      content: `确定要删除客户「${record.name || '未命名'}」吗？此操作不可恢复。`,
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await customerApi.deleteCustomer(record.id);
+          message.success('删除成功');
+          fetchCustomers();
+        } catch (error: any) {
+          message.error(error.response?.data?.error || '删除失败');
+        }
+      }
+    });
+  };
+
+  // 批量删除客户
+  const handleBatchDelete = () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('请先选择客户');
+      return;
+    }
+    
+    Modal.confirm({
+      title: '确认批量删除',
+      content: `确定要删除选中的 ${selectedRowKeys.length} 个客户吗？此操作不可恢复。`,
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          // 循环调用单个删除接口
+          const deletePromises = selectedRowKeys.map(id => customerApi.deleteCustomer(id));
+          await Promise.all(deletePromises);
+          message.success(`成功删除 ${selectedRowKeys.length} 个客户`);
+          setSelectedRowKeys([]);
+          fetchCustomers();
+        } catch (error: any) {
+          message.error(error.response?.data?.error || '批量删除失败');
+        }
+      }
+    });
+  };
+
   const handleBatchAssign = async () => {
     console.log('[批量分配] 开始分配流程:', {
       selectedCustomers: selectedRowKeys,
@@ -473,6 +521,14 @@ export default function CustomerManagement() {
           >
             编辑
           </Button>
+          <Button 
+            type="link" 
+            size="small"
+            danger
+            onClick={() => handleDeleteCustomer(record)}
+          >
+            删除
+          </Button>
         </Space>
       )
     }
@@ -494,13 +550,22 @@ export default function CustomerManagement() {
         </Space>
         <Space>
           {selectedRowKeys.length > 0 && (
-            <Button 
-              type="primary" 
-              icon={<UserAddOutlined />}
-              onClick={() => setAssignModalVisible(true)}
-            >
-              批量分配 ({selectedRowKeys.length})
-            </Button>
+            <>
+              <Button 
+                type="primary" 
+                icon={<UserAddOutlined />}
+                onClick={() => setAssignModalVisible(true)}
+              >
+                批量分配 ({selectedRowKeys.length})
+              </Button>
+              <Button 
+                danger
+                icon={<DeleteOutlined />}
+                onClick={handleBatchDelete}
+              >
+                批量删除 ({selectedRowKeys.length})
+              </Button>
+            </>
           )}
           <Button 
             type="primary"

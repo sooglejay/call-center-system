@@ -40,6 +40,7 @@ class AutoDialService : Service() {
         const val ACTION_PAUSE = "com.callcenter.app.action.PAUSE_AUTO_DIAL"
         const val ACTION_RESUME = "com.callcenter.app.action.RESUME_AUTO_DIAL"
         const val ACTION_RESTORE = "com.callcenter.app.action.RESTORE_AUTO_DIAL"
+        const val ACTION_CLOSE_NOTIFICATION = "com.callcenter.app.action.CLOSE_NOTIFICATION"
 
         const val EXTRA_INTERVAL = "interval_seconds"
         const val EXTRA_TIMEOUT = "timeout_seconds"
@@ -72,10 +73,6 @@ class AutoDialService : Service() {
         // 任务完成回调流
         private val _taskCompleted = MutableStateFlow<Int?>(null)
         val taskCompleted: StateFlow<Int?> = _taskCompleted
-
-        // 下一个客户信息流
-        private val _nextCustomer = MutableStateFlow<Customer?>(null)
-        val nextCustomer: StateFlow<Customer?> = _nextCustomer
 
         private const val NOTIFICATION_ID = 1001
     }
@@ -164,6 +161,10 @@ class AutoDialService : Service() {
                 isPaused = false
                 updateNotification("自动拨号进行中")
             }
+            ACTION_CLOSE_NOTIFICATION -> {
+                // 用户手动关闭通知，停止前台服务但保持拨号状态
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            }
         }
         return START_STICKY
     }
@@ -205,15 +206,6 @@ class AutoDialService : Service() {
 
             val customer = customerQueue[currentIndex]
             _currentCustomer.value = customer
-
-            // 设置下一个客户（如果当前客户还有下一轮，则下一个客户还是当前客户）
-            _nextCustomer.value = if (currentDialRound < dialsPerCustomer) {
-                customer
-            } else if (currentIndex + 1 < customerQueue.size) {
-                customerQueue[currentIndex + 1]
-            } else {
-                null
-            }
 
             updateNotification("正在拨打: ${customer.name} (${currentIndex + 1}/${customerQueue.size}, 第${currentDialRound}/${dialsPerCustomer}次)")
 
@@ -424,7 +416,7 @@ class AutoDialService : Service() {
             PendingIntent.FLAG_IMMUTABLE
         )
 
-        // 构建客户信息文本
+        // 构建客户信息文本 - 显示姓名、电话、公司
         val customerInfo = buildString {
             append(customer.name)
             append(" | ")
@@ -441,18 +433,19 @@ class AutoDialService : Service() {
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+            .setAutoCancel(false)
             .setStyle(NotificationCompat.BigTextStyle()
                 .setBigContentTitle(customerInfo)
                 .bigText(content))
             .addAction(
                 NotificationCompat.Action.Builder(
                     null,
-                    "停止",
+                    "关闭",
                     PendingIntent.getService(
                         this,
-                        1,
+                        2,
                         Intent(this, AutoDialService::class.java).apply {
-                            action = ACTION_STOP
+                            action = ACTION_CLOSE_NOTIFICATION
                         },
                         PendingIntent.FLAG_IMMUTABLE
                     )
