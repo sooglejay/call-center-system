@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 通话状态枚举：pending(待拨打), ringing(响铃中), connected(已接听), voicemail(语音信箱), unanswered(未接听), failed(拨打失败), completed(已完成)
+
 -- 客户表
 CREATE TABLE IF NOT EXISTS customers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,6 +43,8 @@ CREATE TABLE IF NOT EXISTS customers (
   address TEXT,
   notes TEXT,
   status TEXT DEFAULT 'pending',
+  call_status TEXT DEFAULT 'pending',
+  call_result TEXT,
   priority INTEGER DEFAULT 1,
   assigned_to INTEGER REFERENCES users(id),
   data_source TEXT DEFAULT 'mock',
@@ -275,6 +279,18 @@ const runMigrations = () => {
   if (!customersColumnNames.includes('source')) {
     console.log('  ➕ 添加 customers.source 列');
     db.run("ALTER TABLE customers ADD COLUMN source TEXT");
+  }
+  
+  // 检查并添加 call_status 列（通话状态：pending, ringing, connected, voicemail, unanswered, failed, completed）
+  if (!customersColumnNames.includes('call_status')) {
+    console.log('  ➕ 添加 customers.call_status 列');
+    db.run("ALTER TABLE customers ADD COLUMN call_status TEXT DEFAULT 'pending'");
+  }
+  
+  // 检查并添加 call_result 列（通话结果备注）
+  if (!customersColumnNames.includes('call_result')) {
+    console.log('  ➕ 添加 customers.call_result 列');
+    db.run("ALTER TABLE customers ADD COLUMN call_result TEXT");
   }
   
   // 创建 task_customers 关联表（如果不存在）

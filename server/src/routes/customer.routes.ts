@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getCustomers, getCustomerById, createCustomer, updateCustomer, deleteCustomer, batchImportCustomers, getAgentCustomers, batchAssignAgents, getCustomersByNameLetter, getNameLetterStats } from '../controllers/customer.controller';
+import { getCustomers, getCustomerById, createCustomer, updateCustomer, deleteCustomer, batchImportCustomers, getAgentCustomers, batchAssignAgents, getCustomersByNameLetter, getNameLetterStats, updateCallStatus, batchUpdateCallStatus } from '../controllers/customer.controller';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
 
 const router: Router = Router();
@@ -16,5 +16,7 @@ router.put('/:id', updateCustomer);
 router.delete('/:id', adminMiddleware, deleteCustomer);
 router.post('/import', adminMiddleware, batchImportCustomers);
 router.post('/batch-assign', adminMiddleware, batchAssignAgents);
+router.post('/batch-update-call-status', adminMiddleware, batchUpdateCallStatus);
+router.post('/:id/call-status', authMiddleware, updateCallStatus);
 
 export default router;

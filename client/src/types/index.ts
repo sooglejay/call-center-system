@@ -28,6 +28,7 @@ export interface Customer {
   updated_at?: string;
   is_duplicate?: boolean;
   call_status?: string;
+  call_result?: string;
   is_connected?: boolean;
   call_duration?: number;
   recording_url?: string;

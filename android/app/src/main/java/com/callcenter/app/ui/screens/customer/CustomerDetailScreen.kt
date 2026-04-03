@@ -61,7 +61,7 @@ fun CustomerDetailScreen(
             customer?.let { c ->
                 if (c.status == "pending" || c.status == "no_answer") {
                     ExtendedFloatingActionButton(
-                        onClick = { onCallCustomer(c.phone) },
+                        onClick = { onCallCustomer(c.phone ?: "") },
                         icon = { Icon(Icons.Default.Phone, null) },
                         text = { Text("拨打电话") }
                     )
@@ -177,7 +177,7 @@ private fun CustomerInfoCard(customer: Customer) {
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(
-                            text = customer.name.firstOrNull()?.toString() ?: "?",
+                            text = (customer.name?.firstOrNull()?.toString() ?: "?"),
                             style = MaterialTheme.typography.headlineMedium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
@@ -188,7 +188,7 @@ private fun CustomerInfoCard(customer: Customer) {
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = customer.name,
+                        text = customer.name ?: "未命名",
                         style = MaterialTheme.typography.headlineSmall
                     )
                     Spacer(modifier = Modifier.height(4.dp))
@@ -276,7 +276,7 @@ private fun ContactInfoCard(customer: Customer) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = customer.phone,
+                        text = customer.phone ?: "",
                         style = MaterialTheme.typography.bodyLarge
                     )
                 }

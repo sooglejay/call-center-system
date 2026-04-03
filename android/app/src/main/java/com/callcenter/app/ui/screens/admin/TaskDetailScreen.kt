@@ -357,7 +357,7 @@ private fun TaskCustomerItem(customer: TaskCustomer) {
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = customer.name,
+                        text = customer.name!!,
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium
                     )
@@ -370,7 +370,7 @@ private fun TaskCustomerItem(customer: TaskCustomer) {
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = customer.phone,
+                            text = customer.phone!!,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

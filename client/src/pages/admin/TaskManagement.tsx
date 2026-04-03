@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Table, Button, Modal, Form, Input, Select, DatePicker, message, Tag, Tabs, Badge, Checkbox, Space, Divider, Typography, Empty, Alert, Progress, Card, Descriptions, Tooltip, Statistic, Row, Col } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, TeamOutlined, ScheduleOutlined, InfoCircleOutlined, EyeOutlined, PhoneOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, TeamOutlined, ScheduleOutlined, InfoCircleOutlined, EyeOutlined, PhoneOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined, MessageOutlined } from '@ant-design/icons';
 import { taskApi, userApi, customerApi } from '../../services/api';
 import type { Task, User, Customer } from '../../services/api';
 import dayjs from 'dayjs';
@@ -83,6 +83,9 @@ export default function TaskManagement() {
   const [unassignedOnly, setUnassignedOnly] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [form] = Form.useForm();
+  
+  // 任务详情中客户列表的通话状态筛选
+  const [customerCallStatusFilter, setCustomerCallStatusFilter] = useState<string>('all');
 
   // 任务列表分页状态
   const [currentPage, setCurrentPage] = useState(1);
@@ -277,6 +280,21 @@ export default function TaskManagement() {
     );
   };
 
+  // 根据通话状态筛选客户
+  const filteredCustomers = useMemo(() => {
+    if (!selectedTask?.customers) return [];
+    if (customerCallStatusFilter === 'all') return selectedTask.customers;
+    
+    return selectedTask.customers.filter(customer => {
+      const status = customer.call_status || 'pending';
+      if (customerCallStatusFilter === 'called') {
+        // "其他已拨打" 包括 called 和 completed 状态
+        return status === 'called' || status === 'completed';
+      }
+      return status === customerCallStatusFilter;
+    });
+  }, [selectedTask?.customers, customerCallStatusFilter]);
+
   // 任务状态标签
   const renderStatusTag = (status: string) => {
     const statusConfig: Record<string, { color: string; text: string }> = {
@@ -294,9 +312,11 @@ export default function TaskManagement() {
     const statusConfig: Record<string, { color: string; text: string; icon: React.ReactNode }> = {
       pending: { color: 'default', text: '待拨打', icon: <ClockCircleOutlined /> },
       called: { color: 'processing', text: '已拨打', icon: <PhoneOutlined /> },
-      connected: { color: 'success', text: '已接通', icon: <CheckCircleOutlined /> },
-      completed: { color: 'success', text: '已完成', icon: <CheckCircleOutlined /> },
-      failed: { color: 'error', text: '未接通', icon: <CloseCircleOutlined /> }
+      connected: { color: 'success', text: '已接听', icon: <CheckCircleOutlined /> },
+      voicemail: { color: 'warning', text: '语音信箱', icon: <MessageOutlined /> },
+      unanswered: { color: 'error', text: '响铃未接', icon: <CloseCircleOutlined /> },
+      failed: { color: 'error', text: '拨打失败', icon: <CloseCircleOutlined /> },
+      completed: { color: 'success', text: '已完成', icon: <CheckCircleOutlined /> }
     };
     const config = statusConfig[status] || statusConfig.pending;
     return <Tag color={config.color} icon={config.icon}>{config.text}</Tag>;
@@ -764,9 +784,36 @@ export default function TaskManagement() {
             </Row>
 
             {/* 客户列表 */}
-            <Card title="客户列表及拨打情况" size="small">
+            <Card 
+              title={
+                <Space>
+                  <span>客户列表及拨打情况</span>
+                  {selectedTask.customers && (
+                    <Tag color="blue">共 {filteredCustomers.length} 人</Tag>
+                  )}
+                </Space>
+              }
+              size="small"
+              extra={
+                <Select
+                  value={customerCallStatusFilter}
+                  onChange={setCustomerCallStatusFilter}
+                  style={{ width: 120 }}
+                  size="small"
+                  options={[
+                    { value: 'all', label: '全部客户' },
+                    { value: 'pending', label: '待拨打' },
+                    { value: 'connected', label: '已接听' },
+                    { value: 'voicemail', label: '语音信箱' },
+                    { value: 'unanswered', label: '响铃未接' },
+                    { value: 'failed', label: '拨打失败' },
+                    { value: 'called', label: '其他已拨打' }
+                  ]}
+                />
+              }
+            >
               <Table
-                dataSource={selectedTask.customers || []}
+                dataSource={filteredCustomers}
                 rowKey="task_customer_id"
                 size="small"
                 pagination={{ pageSize: 10 }}

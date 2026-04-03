@@ -1,7 +1,8 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Table, Button, Modal, Upload, message, Tabs, Select, Form, Input, Badge, Space, Tag, Radio, Divider, Typography, Alert, Card, Row, Col, Spin } from 'antd';
-import { UploadOutlined, CameraOutlined, UserAddOutlined, TeamOutlined, InfoCircleOutlined, DownloadOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import { UploadOutlined, CameraOutlined, UserAddOutlined, TeamOutlined, InfoCircleOutlined, DownloadOutlined, PlusOutlined, DeleteOutlined, ExportOutlined, FileAddOutlined } from '@ant-design/icons';
 import { customerApi, dataImportApi, userApi } from '../../services/api';
+import { taskApi } from '../../services/api';
 import type { Customer, User } from '../../services/api';
 import * as XLSX from 'xlsx';
 
@@ -87,6 +88,7 @@ export default function CustomerManagement() {
   const [selectedRowKeys, setSelectedRowKeys] = useState<number[]>([]);
   const [searchText, setSearchText] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('');
+  const [filterCallStatus, setFilterCallStatus] = useState<string>('');
   const [filterAssigned, setFilterAssigned] = useState<string>('');
   const [sortBy, setSortBy] = useState<string>('created_at');
   const [activeLetters, setActiveLetters] = useState<string[]>([]);
@@ -94,6 +96,8 @@ export default function CustomerManagement() {
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [addModalVisible, setAddModalVisible] = useState(false);
+  const [createTaskModalVisible, setCreateTaskModalVisible] = useState(false);
+  const [createTaskForm] = Form.useForm();
   const [currentCustomer, setCurrentCustomer] = useState<Customer | null>(null);
   const [editForm] = Form.useForm();
   const [addForm] = Form.useForm();
@@ -115,7 +119,7 @@ export default function CustomerManagement() {
   useEffect(() => {
     fetchCustomers();
     fetchAgents();
-  }, [currentPage, pageSize, sortBy, searchText, filterStatus, filterAssigned, activeLetters]);
+  }, [currentPage, pageSize, sortBy, searchText, filterStatus, filterCallStatus, filterAssigned, activeLetters]);
 
   const fetchCustomers = async () => {
     setLoading(true);
@@ -126,6 +130,7 @@ export default function CustomerManagement() {
         pageSize: pageSize,
         search: searchText || undefined,
         status: filterStatus || undefined,
+        call_status: filterCallStatus || undefined,
         assigned_to: filterAssigned ? parseInt(filterAssigned) : undefined,
         name_letter: activeLetters.length > 0 ? activeLetters.join(',') : undefined
       });
@@ -329,6 +334,75 @@ export default function CustomerManagement() {
     }
   };
 
+  // 导出客户数据
+  const handleExportCustomers = async () => {
+    try {
+      // 获取所有符合条件的客户（不分页）
+      const response = await customerApi.getCustomers({ 
+        sort_by: sortBy,
+        page: 1,
+        pageSize: 10000, // 获取大量数据
+        search: searchText || undefined,
+        status: filterStatus || undefined,
+        call_status: filterCallStatus || undefined,
+        assigned_to: filterAssigned ? parseInt(filterAssigned) : undefined,
+        name_letter: activeLetters.length > 0 ? activeLetters.join(',') : undefined
+      });
+      
+      const customersData = response.data?.data || response.data || [];
+      
+      if (customersData.length === 0) {
+        message.warning('没有可导出的数据');
+        return;
+      }
+      
+      // 准备导出数据
+      const exportData = customersData.map((customer: Customer) => ({
+        '客户姓名': customer.name || '',
+        '电话号码': customer.phone || '',
+        '邮箱': customer.email || '',
+        '公司': customer.company || '',
+        '地址': customer.address || '',
+        '客户状态': statusLabels[customer.status || 'pending'] || '待跟进',
+        '通话状态': callStatusLabels[customer.call_status || 'pending'] || '待拨打',
+        '通话结果': customer.call_result || '',
+        '分配客服': customer.assigned_to_name || '未分配',
+        '导入人': customer.imported_by_name || '',
+        '导入时间': customer.created_at ? new Date(customer.created_at).toLocaleString() : ''
+      }));
+      
+      // 创建工作簿
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, '客户数据');
+      
+      // 设置列宽
+      ws['!cols'] = [
+        { wch: 12 }, // 客户姓名
+        { wch: 15 }, // 电话号码
+        { wch: 25 }, // 邮箱
+        { wch: 20 }, // 公司
+        { wch: 30 }, // 地址
+        { wch: 10 }, // 客户状态
+        { wch: 10 }, // 通话状态
+        { wch: 15 }, // 通话结果
+        { wch: 12 }, // 分配客服
+        { wch: 12 }, // 导入人
+        { wch: 20 }, // 导入时间
+      ];
+      
+      // 生成文件名
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      const filename = `客户数据_${timestamp}.xlsx`;
+      
+      XLSX.writeFile(wb, filename);
+      message.success(`成功导出 ${exportData.length} 条客户数据`);
+    } catch (error) {
+      console.error('导出失败:', error);
+      message.error('导出失败，请重试');
+    }
+  };
+
   // 删除客户
   const handleDeleteCustomer = (record: Customer) => {
     Modal.confirm({
@@ -427,6 +501,41 @@ export default function CustomerManagement() {
     }
   };
 
+  // 批量创建任务
+  const handleCreateTask = async () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('请先选择客户');
+      return;
+    }
+    
+    try {
+      const values = await createTaskForm.validateFields();
+      
+      // 创建任务
+      const taskData = {
+        title: values.title,
+        description: values.description || '',
+        priority: values.priority || 'normal',
+        assigned_to: values.assigned_to,
+        due_date: values.due_date,
+        customer_ids: selectedRowKeys
+      };
+      
+      await taskApi.createTask(taskData);
+      message.success(`任务创建成功，已添加 ${selectedRowKeys.length} 个客户到任务`);
+      setCreateTaskModalVisible(false);
+      createTaskForm.resetFields();
+      setSelectedRowKeys([]);
+      fetchCustomers();
+    } catch (error: any) {
+      if (error.errorFields) {
+        // 表单验证错误
+        return;
+      }
+      message.error(error.response?.data?.error || '创建任务失败');
+    }
+  };
+
   const statusColors: Record<string, string> = {
     pending: 'default',
     contacted: 'processing',
@@ -435,12 +544,32 @@ export default function CustomerManagement() {
     interested: 'warning'
   };
 
+  const callStatusColors: Record<string, string> = {
+    pending: 'default',
+    ringing: 'processing',
+    connected: 'success',
+    voicemail: 'warning',
+    unanswered: 'error',
+    failed: 'error',
+    completed: 'success'
+  };
+
   const statusLabels: Record<string, string> = {
     pending: '待跟进',
     contacted: '已联系',
     converted: '已转化',
     not_interested: '无意向',
     interested: '有意向'
+  };
+
+  const callStatusLabels: Record<string, string> = {
+    pending: '待拨打',
+    ringing: '响铃中',
+    connected: '已接听',
+    voicemail: '语音信箱',
+    unanswered: '响铃未接',
+    failed: '拨打失败',
+    completed: '已完成'
   };
 
   const columns = [
@@ -461,6 +590,23 @@ export default function CustomerManagement() {
       title: '电话号码', 
       dataIndex: 'phone', 
       key: 'phone' 
+    },
+    { 
+      title: '通话状态', 
+      dataIndex: 'call_status', 
+      key: 'call_status',
+      render: (call_status: string, record: Customer) => (
+        <Space direction="vertical" size={0}>
+          <Tag color={callStatusColors[call_status || 'pending']}>
+            {callStatusLabels[call_status || 'pending']}
+          </Tag>
+          {record.call_result && (
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {record.call_result}
+            </Text>
+          )}
+        </Space>
+      )
     },
     { 
       title: '关联客服', 
@@ -559,6 +705,13 @@ export default function CustomerManagement() {
                 批量分配 ({selectedRowKeys.length})
               </Button>
               <Button 
+                type="primary"
+                icon={<FileAddOutlined />}
+                onClick={() => setCreateTaskModalVisible(true)}
+              >
+                创建任务 ({selectedRowKeys.length})
+              </Button>
+              <Button 
                 danger
                 icon={<DeleteOutlined />}
                 onClick={handleBatchDelete}
@@ -583,6 +736,12 @@ export default function CustomerManagement() {
           <Button icon={<CameraOutlined />} onClick={() => message.info('OCR功能需要集成OCR服务')}>
             拍照识别
           </Button>
+          <Button 
+            icon={<ExportOutlined />} 
+            onClick={handleExportCustomers}
+          >
+            导出数据
+          </Button>
         </Space>
       </div>
 
@@ -606,6 +765,20 @@ export default function CustomerManagement() {
               { value: 'converted', label: '已转化' },
               { value: 'not_interested', label: '无意向' },
               { value: 'interested', label: '有意向' }
+            ]}
+          />
+          <Select 
+            placeholder="通话状态" 
+            allowClear 
+            style={{ width: 120 }}
+            onChange={setFilterCallStatus}
+            options={[
+              { value: 'pending', label: '待拨打' },
+              { value: 'connected', label: '已接听' },
+              { value: 'voicemail', label: '语音信箱' },
+              { value: 'unanswered', label: '响铃未接' },
+              { value: 'failed', label: '拨打失败' },
+              { value: 'completed', label: '已完成' }
             ]}
           />
           <Select 
@@ -1129,6 +1302,77 @@ export default function CustomerManagement() {
                 </Select.Option>
               ))}
             </Select>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 批量创建任务模态框 */}
+      <Modal
+        title="批量创建任务"
+        open={createTaskModalVisible}
+        onOk={handleCreateTask}
+        onCancel={() => {
+          setCreateTaskModalVisible(false);
+          createTaskForm.resetFields();
+        }}
+        width={600}
+      >
+        <Form form={createTaskForm} layout="vertical">
+          <Alert
+            message={`已选择 ${selectedRowKeys.length} 个客户，将添加到新创建的任务中`}
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+          />
+          <Form.Item
+            name="title"
+            label="任务标题"
+            rules={[{ required: true, message: '请输入任务标题' }]}
+          >
+            <Input placeholder="请输入任务标题" />
+          </Form.Item>
+          <Form.Item
+            name="description"
+            label="任务描述"
+          >
+            <Input.TextArea rows={3} placeholder="请输入任务描述（可选）" />
+          </Form.Item>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                name="priority"
+                label="优先级"
+                initialValue="normal"
+              >
+                <Select placeholder="选择优先级">
+                  <Select.Option value="urgent">紧急</Select.Option>
+                  <Select.Option value="high">高</Select.Option>
+                  <Select.Option value="normal">普通</Select.Option>
+                  <Select.Option value="low">低</Select.Option>
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                name="assigned_to"
+                label="指派给"
+                rules={[{ required: true, message: '请选择指派的客服' }]}
+              >
+                <Select placeholder="选择客服" allowClear>
+                  {agents.map(agent => (
+                    <Select.Option key={agent.id} value={agent.id}>
+                      {agent.real_name}
+                    </Select.Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item
+            name="due_date"
+            label="截止日期"
+          >
+            <Input type="date" placeholder="选择截止日期（可选）" />
           </Form.Item>
         </Form>
       </Modal>

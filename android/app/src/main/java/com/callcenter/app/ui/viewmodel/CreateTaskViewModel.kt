@@ -125,7 +125,7 @@ class CreateTaskViewModel @Inject constructor(
 
                 val stats = mutableMapOf<String, Int>()
                 customersToCount.forEach { customer ->
-                    val firstLetter = getFirstLetter(customer.name)
+                    val firstLetter = getFirstLetter(customer.name ?: "")
                     stats[firstLetter] = (stats[firstLetter] ?: 0) + 1
                 }
 

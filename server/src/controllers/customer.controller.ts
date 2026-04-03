@@ -41,7 +41,7 @@ export const getFirstLetter = (name: string): string => {
 
 export const getCustomers = async (req: any, res: Response) => {
   try {
-    const { search, status, assigned_to, sort_by = 'created_at', page = 1, pageSize = 20, name_letter } = req.query;
+    const { search, status, call_status, assigned_to, sort_by = 'created_at', page = 1, pageSize = 20, name_letter } = req.query;
     const pageNum = parseInt(page as string);
     const sizeNum = parseInt(pageSize as string);
     const offset = (pageNum - 1) * sizeNum;
@@ -72,6 +72,12 @@ export const getCustomers = async (req: any, res: Response) => {
     if (status) {
       whereConditions.push(`status = $${params.length + 1}`);
       params.push(status);
+    }
+    
+    // 通话状态过滤
+    if (call_status) {
+      whereConditions.push(`call_status = $${params.length + 1}`);
+      params.push(call_status);
     }
     
     // 客服过滤
@@ -376,7 +382,7 @@ export const updateCustomer = async (req: Request, res: Response) => {
     }
     
     // 构建更新字段
-    const allowedFields = ['name', 'phone', 'email', 'company', 'address', 'notes', 'status', 'priority', 'assigned_to', 'remark'];
+    const allowedFields = ['name', 'phone', 'email', 'company', 'address', 'notes', 'status', 'call_status', 'call_result', 'priority', 'assigned_to', 'remark'];
     const updateFields: string[] = [];
     const updateValues: any[] = [];
     let paramIndex = 1;
@@ -780,6 +786,86 @@ export const getNameLetterStats = async (req: Request, res: Response) => {
     res.json(stats);
   } catch (error) {
     console.error('获取姓氏统计错误:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+};
+
+// 更新客户通话状态
+export const updateCallStatus = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { call_status, call_result } = req.body;
+    
+    // 验证通话状态值
+    const validStatuses = ['pending', 'ringing', 'connected', 'voicemail', 'unanswered', 'failed', 'completed'];
+    if (!validStatuses.includes(call_status)) {
+      return res.status(400).json({ error: '无效的通话状态' });
+    }
+    
+    const result = await query('SELECT * FROM customers WHERE id = $1', [id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: '客户不存在' });
+    }
+    
+    // 更新通话状态和结果
+    await query(
+      `UPDATE customers SET call_status = $1, call_result = $2, updated_at = datetime('now') WHERE id = $3`,
+      [call_status, call_result || null, id]
+    );
+    
+    // 获取更新后的数据
+    const updatedCustomer = await query('SELECT * FROM customers WHERE id = $1', [id]);
+    
+    // 获取关联的用户名称
+    const users = await query('SELECT id, real_name FROM users');
+    const userMap = new Map(users.rows.map((u: any) => [u.id, u.real_name]));
+    
+    const customer = {
+      ...updatedCustomer.rows[0],
+      imported_by_name: userMap.get(updatedCustomer.rows[0].imported_by) || '',
+      assigned_to_name: updatedCustomer.rows[0].assigned_to ? userMap.get(updatedCustomer.rows[0].assigned_to) || '未分配' : '未分配'
+    };
+    
+    res.json({
+      message: '通话状态更新成功',
+      data: customer
+    });
+  } catch (error) {
+    console.error('更新通话状态错误:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+};
+
+// 批量更新客户通话状态
+export const batchUpdateCallStatus = async (req: any, res: Response) => {
+  try {
+    const { customer_ids, call_status, call_result } = req.body;
+    
+    if (!Array.isArray(customer_ids) || customer_ids.length === 0) {
+      return res.status(400).json({ error: '请选择要更新的客户' });
+    }
+    
+    // 验证通话状态值
+    const validStatuses = ['pending', 'ringing', 'connected', 'voicemail', 'unanswered', 'failed', 'completed'];
+    if (!validStatuses.includes(call_status)) {
+      return res.status(400).json({ error: '无效的通话状态' });
+    }
+    
+    // 批量更新
+    const placeholders = customer_ids.map((_, idx) => `$${idx + 3}`).join(',');
+    const result = await query(
+      `UPDATE customers SET call_status = $1, call_result = $2, updated_at = datetime('now') WHERE id IN (${placeholders})`,
+      [call_status, call_result || null, ...customer_ids]
+    );
+    
+    res.json({
+      message: `成功更新 ${result.rowCount} 个客户的通话状态`,
+      updated_count: result.rowCount,
+      call_status,
+      call_result
+    });
+  } catch (error) {
+    console.error('批量更新通话状态错误:', error);
     res.status(500).json({ error: '服务器错误' });
   }
 };

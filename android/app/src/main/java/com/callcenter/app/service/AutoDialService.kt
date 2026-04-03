@@ -41,6 +41,10 @@ class AutoDialService : Service() {
         const val ACTION_RESUME = "com.callcenter.app.action.RESUME_AUTO_DIAL"
         const val ACTION_RESTORE = "com.callcenter.app.action.RESTORE_AUTO_DIAL"
         const val ACTION_CLOSE_NOTIFICATION = "com.callcenter.app.action.CLOSE_NOTIFICATION"
+        const val ACTION_CALL_STATUS_CONNECTED = "com.callcenter.app.action.CALL_STATUS_CONNECTED"
+        const val ACTION_CALL_STATUS_VOICEMAIL = "com.callcenter.app.action.CALL_STATUS_VOICEMAIL"
+        const val ACTION_CALL_STATUS_UNANSWERED = "com.callcenter.app.action.CALL_STATUS_UNANSWERED"
+        const val ACTION_CALL_STATUS_FAILED = "com.callcenter.app.action.CALL_STATUS_FAILED"
 
         const val EXTRA_INTERVAL = "interval_seconds"
         const val EXTRA_TIMEOUT = "timeout_seconds"
@@ -165,8 +169,48 @@ class AutoDialService : Service() {
                 // 用户手动关闭通知，停止前台服务但保持拨号状态
                 stopForeground(STOP_FOREGROUND_REMOVE)
             }
+            ACTION_CALL_STATUS_CONNECTED, ACTION_CALL_STATUS_VOICEMAIL, 
+            ACTION_CALL_STATUS_UNANSWERED, ACTION_CALL_STATUS_FAILED -> {
+                // 处理通话状态确认
+                handleCallStatusAction(intent.action)
+            }
         }
         return START_STICKY
+    }
+
+    private fun handleCallStatusAction(action: String?) {
+        val callStatus = when (action) {
+            ACTION_CALL_STATUS_CONNECTED -> "connected"
+            ACTION_CALL_STATUS_VOICEMAIL -> "voicemail"
+            ACTION_CALL_STATUS_UNANSWERED -> "unanswered"
+            ACTION_CALL_STATUS_FAILED -> "failed"
+            else -> return
+        }
+        
+        val customer = _currentCustomer.value
+        val taskId = _taskId.value
+        
+        if (customer != null && taskId != null) {
+            serviceScope.launch {
+                try {
+                    // 更新客户通话状态
+                    val request = UpdateTaskCustomerStatusRequest(
+                        status = "called",
+                        callResult = when (callStatus) {
+                            "connected" -> "已接听"
+                            "voicemail" -> "语音信箱"
+                            "unanswered" -> "响铃未接"
+                            "failed" -> "拨打失败"
+                            else -> "未知状态"
+                        }
+                    )
+                    taskRepository.updateTaskCustomerStatus(taskId, customer.id, request)
+                    updateNotification("已标记客户 ${customer.name} 为${request.callResult}")
+                } catch (e: Exception) {
+                    updateNotification("标记客户状态失败: ${e.message}")
+                }
+            }
+        }
     }
 
     private fun startAutoDial() {
@@ -213,13 +257,32 @@ class AutoDialService : Service() {
             saveProgress()
 
             // 拨打电话
+            var callFailed = false
+            var failReason = ""
             try {
-                callHelper.makeCall(customer.phone)
+                callHelper.makeCall(customer.phone ?: "")
             } catch (e: Exception) {
-                // 拨号异常，停止自动拨号
-                updateNotification("拨号异常: ${e.message}，自动拨号已停止")
-                stopAutoDial()
-                break
+                // 拨号异常（如无SIM卡、权限被拒绝等），标记为拨打失败并继续下一个
+                callFailed = true
+                failReason = e.message ?: "拨号失败"
+                updateNotification("拨号失败: ${e.message}，继续下一个客户")
+                // 标记为拨打失败
+                markCustomerAsFailed(customer, failReason)
+            }
+            
+            // 如果拨号失败，跳过等待流程，直接处理下一个客户
+            if (callFailed) {
+                _dialedCount.value = _dialedCount.value + 1
+                currentDialRound = 1
+                currentIndex++
+                saveProgress()
+                
+                // 等待间隔时间后继续下一个
+                if (currentIndex < customerQueue.size && _isRunning.value) {
+                    updateNotification("等待 ${intervalSeconds} 秒后拨打下一个...")
+                    delay(intervalSeconds * 1000L)
+                }
+                continue
             }
 
             // 等待通话结束或超时
@@ -313,6 +376,37 @@ class AutoDialService : Service() {
                 result.fold(
                     onSuccess = {
                         updateNotification("已标记客户 ${customer.name} 为已拨打")
+                    },
+                    onFailure = { e ->
+                        updateNotification("标记客户 ${customer.name} 失败: ${e.message}")
+                        e.printStackTrace()
+                    }
+                )
+            } catch (e: Exception) {
+                updateNotification("标记客户 ${customer.name} 异常: ${e.message}")
+                e.printStackTrace()
+            }
+        } else {
+            updateNotification("无法标记客户: taskId为空")
+        }
+    }
+
+    /**
+     * 标记客户为拨打失败状态
+     * 用于无SIM卡、权限被拒绝等拨号异常情况
+     */
+    private suspend fun markCustomerAsFailed(customer: Customer, reason: String) {
+        val taskId = _taskId.value
+        if (taskId != null) {
+            try {
+                val request = UpdateTaskCustomerStatusRequest(
+                    status = "failed",
+                    callResult = "拨打失败: $reason"
+                )
+                val result = taskRepository.updateTaskCustomerStatus(taskId, customer.id, request)
+                result.fold(
+                    onSuccess = {
+                        updateNotification("已标记客户 ${customer.name} 为拨打失败")
                     },
                     onFailure = { e ->
                         updateNotification("标记客户 ${customer.name} 失败: ${e.message}")
@@ -437,6 +531,49 @@ class AutoDialService : Service() {
             .setStyle(NotificationCompat.BigTextStyle()
                 .setBigContentTitle(customerInfo)
                 .bigText(content))
+            // 通话状态确认按钮
+            .addAction(
+                NotificationCompat.Action.Builder(
+                    null,
+                    "已接听",
+                    PendingIntent.getService(
+                        this,
+                        10,
+                        Intent(this, AutoDialService::class.java).apply {
+                            action = ACTION_CALL_STATUS_CONNECTED
+                        },
+                        PendingIntent.FLAG_IMMUTABLE
+                    )
+                ).build()
+            )
+            .addAction(
+                NotificationCompat.Action.Builder(
+                    null,
+                    "语音信箱",
+                    PendingIntent.getService(
+                        this,
+                        11,
+                        Intent(this, AutoDialService::class.java).apply {
+                            action = ACTION_CALL_STATUS_VOICEMAIL
+                        },
+                        PendingIntent.FLAG_IMMUTABLE
+                    )
+                ).build()
+            )
+            .addAction(
+                NotificationCompat.Action.Builder(
+                    null,
+                    "未接听",
+                    PendingIntent.getService(
+                        this,
+                        12,
+                        Intent(this, AutoDialService::class.java).apply {
+                            action = ACTION_CALL_STATUS_UNANSWERED
+                        },
+                        PendingIntent.FLAG_IMMUTABLE
+                    )
+                ).build()
+            )
             .addAction(
                 NotificationCompat.Action.Builder(
                     null,

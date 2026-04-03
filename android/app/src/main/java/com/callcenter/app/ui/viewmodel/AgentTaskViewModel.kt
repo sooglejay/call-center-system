@@ -66,7 +66,13 @@ class AgentTaskViewModel @Inject constructor(
             val result = taskRepository.getTask(taskId)
             result.fold(
                 onSuccess = { task ->
-                    _task.value = task
+                    // 过滤掉 name 或 phone 为 null/空的无效客户数据
+                    val filteredTask = task.copy(
+                        customers = task.customers?.filter { 
+                            !it.name.isNullOrBlank() && !it.phone.isNullOrBlank() 
+                        }
+                    )
+                    _task.value = filteredTask
                 },
                 onFailure = { exception ->
                     _error.value = exception.message ?: "加载任务详情失败"
