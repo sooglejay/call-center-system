@@ -36,6 +36,7 @@ class AppUpdateManager @Inject constructor(
     val updateState: StateFlow<UpdateState> = _updateState.asStateFlow()
 
     private var downloadId: Long = -1
+    private var currentVersionInfo: VersionInfo? = null
     private val downloadManager by lazy {
         context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
     }
@@ -91,6 +92,7 @@ class AppUpdateManager @Inject constructor(
     fun startDownload(versionInfo: VersionInfo) {
         try {
             _updateState.value = UpdateState.Downloading(0)
+            currentVersionInfo = versionInfo
 
             // 创建下载请求
             val request = DownloadManager.Request(Uri.parse(versionInfo.apkUrl)).apply {
@@ -102,10 +104,12 @@ class AppUpdateManager @Inject constructor(
                 setTitle("正在下载更新")
                 setDescription("版本 ${versionInfo.versionName}")
                 
-                // 设置下载位置 - 使用应用私有目录，不需要存储权限
-                val apkFile = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), 
-                    "callcenter-${versionInfo.versionCode}.apk")
-                setDestinationUri(Uri.fromFile(apkFile))
+                // 设置下载位置 - 使用应用外部文件目录
+                setDestinationInExternalFilesDir(
+                    context,
+                    Environment.DIRECTORY_DOWNLOADS,
+                    "callcenter-${versionInfo.versionCode}.apk"
+                )
                 
                 // 允许漫游时下载
                 setAllowedOverRoaming(true)
@@ -163,14 +167,11 @@ class AppUpdateManager @Inject constructor(
                 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                     // Android 7.0+ 使用FileProvider
-                    // 从 content:// URI 获取文件路径
-                    val filePath = uri.path?.replace("/external_files/", "")?.replace("/external/", "")
-                    val file = if (filePath != null) {
-                        File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), 
-                            filePath.substringAfterLast("/"))
-                    } else {
-                        File(uri.path!!)
-                    }
+                    // 从 DownloadManager 返回的 content:// URI 获取文件
+                    val versionCode = currentVersionInfo?.versionCode ?: 
+                        uri.path?.substringAfterLast("-")?.substringBefore(".")?.toIntOrNull() ?: 0
+                    val file = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), 
+                        "callcenter-$versionCode.apk")
                     
                     if (!file.exists()) {
                         _updateState.value = UpdateState.Error("APK文件不存在")
