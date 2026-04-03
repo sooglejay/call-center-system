@@ -101,11 +101,12 @@ class AppUpdateManager @Inject constructor(
                 // 设置标题
                 setTitle("正在下载更新")
                 setDescription("版本 ${versionInfo.versionName}")
-                // 设置下载位置
-                setDestinationInExternalPublicDir(
-                    Environment.DIRECTORY_DOWNLOADS,
-                    "callcenter-${versionInfo.versionCode}.apk"
-                )
+                
+                // 设置下载位置 - 使用应用私有目录，不需要存储权限
+                val apkFile = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), 
+                    "callcenter-${versionInfo.versionCode}.apk")
+                setDestinationUri(Uri.fromFile(apkFile))
+                
                 // 允许漫游时下载
                 setAllowedOverRoaming(true)
             }
@@ -162,7 +163,20 @@ class AppUpdateManager @Inject constructor(
                 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                     // Android 7.0+ 使用FileProvider
-                    val file = File(uri.path!!)
+                    // 从 content:// URI 获取文件路径
+                    val filePath = uri.path?.replace("/external_files/", "")?.replace("/external/", "")
+                    val file = if (filePath != null) {
+                        File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), 
+                            filePath.substringAfterLast("/"))
+                    } else {
+                        File(uri.path!!)
+                    }
+                    
+                    if (!file.exists()) {
+                        _updateState.value = UpdateState.Error("APK文件不存在")
+                        return
+                    }
+                    
                     val contentUri = FileProvider.getUriForFile(
                         context,
                         "${context.packageName}.fileprovider",
