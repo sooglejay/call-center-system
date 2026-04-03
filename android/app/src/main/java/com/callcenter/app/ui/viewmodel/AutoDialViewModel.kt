@@ -66,6 +66,10 @@ class AutoDialViewModel @Inject constructor(
     private val _currentConfig = MutableStateFlow<AutoDialConfig?>(null)
     val currentConfig: StateFlow<AutoDialConfig?> = _currentConfig.asStateFlow()
 
+    // 下一个客户
+    private val _nextCustomer = MutableStateFlow<Customer?>(null)
+    val nextCustomer: StateFlow<Customer?> = _nextCustomer.asStateFlow()
+
     // 可恢复的进度
     private val _recoverableProgress = MutableStateFlow<AutoDialProgress?>(null)
     val recoverableProgress: StateFlow<AutoDialProgress?> = _recoverableProgress.asStateFlow()
@@ -90,6 +94,11 @@ class AutoDialViewModel @Inject constructor(
         viewModelScope.launch {
             AutoDialService.taskCompleted.collect { taskId ->
                 taskId?.let { onTaskCompleted(it) }
+            }
+        }
+        viewModelScope.launch {
+            AutoDialService.nextCustomer.collect { customer ->
+                _nextCustomer.value = customer
             }
         }
         // 检查是否有可恢复的进度

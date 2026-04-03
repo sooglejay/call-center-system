@@ -70,6 +70,10 @@ class AutoDialService : Service() {
         private val _taskCompleted = MutableStateFlow<Int?>(null)
         val taskCompleted: StateFlow<Int?> = _taskCompleted
 
+        // 下一个客户信息流
+        private val _nextCustomer = MutableStateFlow<Customer?>(null)
+        val nextCustomer: StateFlow<Customer?> = _nextCustomer
+
         private const val NOTIFICATION_ID = 1001
     }
 
@@ -191,6 +195,15 @@ class AutoDialService : Service() {
 
             val customer = customerQueue[currentIndex]
             _currentCustomer.value = customer
+
+            // 设置下一个客户（如果当前客户还有下一轮，则下一个客户还是当前客户）
+            _nextCustomer.value = if (currentDialRound < dialsPerCustomer) {
+                customer
+            } else if (currentIndex + 1 < customerQueue.size) {
+                customerQueue[currentIndex + 1]
+            } else {
+                null
+            }
 
             updateNotification("正在拨打: ${customer.name} (${currentIndex + 1}/${customerQueue.size}, 第${currentDialRound}/${dialsPerCustomer}次)")
 
