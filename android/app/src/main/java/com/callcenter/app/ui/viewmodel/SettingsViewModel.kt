@@ -7,8 +7,10 @@ import com.callcenter.app.data.local.preferences.TokenManager
 import com.callcenter.app.data.model.CallSettings
 import com.callcenter.app.data.model.Stats
 import com.callcenter.app.data.model.User
+import com.callcenter.app.data.model.VersionInfo
 import com.callcenter.app.data.repository.AuthRepository
 import com.callcenter.app.data.repository.StatsRepository
+import com.callcenter.app.util.AppUpdateManager
 import com.callcenter.app.util.Constants
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,7 +24,8 @@ class SettingsViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val statsRepository: StatsRepository,
     private val tokenManager: TokenManager,
-    private val callSettingsManager: CallSettingsManager
+    private val callSettingsManager: CallSettingsManager,
+    private val appUpdateManager: AppUpdateManager
 ) : ViewModel() {
 
     private val _currentUser = MutableStateFlow<User?>(null)
@@ -39,6 +42,16 @@ class SettingsViewModel @Inject constructor(
 
     private val _callSettings = MutableStateFlow(CallSettings())
     val callSettings: StateFlow<CallSettings> = _callSettings.asStateFlow()
+
+    // 版本更新相关
+    private val _hasUpdate = MutableStateFlow(false)
+    val hasUpdate: StateFlow<Boolean> = _hasUpdate.asStateFlow()
+
+    private val _latestVersionInfo = MutableStateFlow<VersionInfo?>(null)
+    val latestVersionInfo: StateFlow<VersionInfo?> = _latestVersionInfo.asStateFlow()
+
+    private val _currentVersionCode = MutableStateFlow(0)
+    val currentVersionCode: StateFlow<Int> = _currentVersionCode.asStateFlow()
 
     fun loadSettings() {
         viewModelScope.launch {
@@ -59,6 +72,23 @@ class SettingsViewModel @Inject constructor(
             }
 
             _isLoading.value = false
+        }
+    }
+
+    /**
+     * 检查版本更新
+     */
+    fun checkForUpdate() {
+        viewModelScope.launch {
+            _currentVersionCode.value = appUpdateManager.getCurrentVersionCode()
+            val newVersion = appUpdateManager.checkForUpdate()
+            if (newVersion != null) {
+                _hasUpdate.value = true
+                _latestVersionInfo.value = newVersion
+            } else {
+                _hasUpdate.value = false
+                _latestVersionInfo.value = null
+            }
         }
     }
 

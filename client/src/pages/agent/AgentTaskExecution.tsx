@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from 'react';
-import { Card, Button, Table, Tag, Space, message, Modal, Input, Radio, Progress, Row, Col, Statistic, Divider, Empty } from 'antd';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { Card, Button, Table, Tag, Space, message, Modal, Input, Radio, Progress, Row, Col, Statistic, Divider, Empty, Tabs } from 'antd';
 import { 
   PhoneOutlined, 
   CloseCircleOutlined, 
@@ -49,6 +49,17 @@ const CALL_RESULTS = [
   { value: 'other', label: '其他', color: 'default' }
 ];
 
+// 通话状态筛选选项
+const CALL_STATUS_TABS = [
+  { key: 'all', label: '全部', filter: () => true },
+  { key: 'pending', label: '待拨打', filter: (c: TaskCustomer) => c.call_status === 'pending' },
+  { key: 'connected', label: '已接通', filter: (c: TaskCustomer) => c.call_status === 'connected' },
+  { key: 'voicemail', label: '语音信箱', filter: (c: TaskCustomer) => c.call_result === 'voicemail' },
+  { key: 'unanswered', label: '未接听', filter: (c: TaskCustomer) => c.call_result === 'no_answer' || c.call_result === 'busy' },
+  { key: 'failed', label: '拨打失败', filter: (c: TaskCustomer) => c.call_status === 'failed' && !c.call_result },
+  { key: 'called', label: '已拨打', filter: (c: TaskCustomer) => c.call_status !== 'pending' }
+];
+
 export default function AgentTaskExecution() {
   const { taskId } = useParams<{ taskId: string }>();
   const navigate = useNavigate();
@@ -60,6 +71,7 @@ export default function AgentTaskExecution() {
   const [selectedResult, setSelectedResult] = useState<string>('');
   const [callNotes, setCallNotes] = useState('');
   const [isCalling, setIsCalling] = useState(false);
+  const [customerCallStatusFilter, setCustomerCallStatusFilter] = useState<string>('all');
 
   const fetchTaskDetail = useCallback(async () => {
     if (!taskId) return;
@@ -208,6 +220,15 @@ export default function AgentTaskExecution() {
   const calledCount = customers.filter(c => c.call_status !== 'pending').length;
   const progress = task?.progress || 0;
 
+  // 根据通话状态筛选客户
+  const filteredCustomers = useMemo(() => {
+    const tabConfig = CALL_STATUS_TABS.find(tab => tab.key === customerCallStatusFilter);
+    if (tabConfig && tabConfig.filter) {
+      return customers.filter(tabConfig.filter);
+    }
+    return customers;
+  }, [customers, customerCallStatusFilter]);
+
   return (
     <div>
       {/* 顶部导航和统计 */}
@@ -353,9 +374,28 @@ export default function AgentTaskExecution() {
 
         {/* 右侧：客户列表 */}
         <Col span={14}>
-          <Card title="客户列表" loading={loading}>
+          <Card 
+            title="客户列表" 
+            loading={loading}
+            extra={
+              <span style={{ color: '#999', fontSize: 12 }}>
+                共 {filteredCustomers.length} 人
+              </span>
+            }
+          >
+            {/* 通话状态筛选标签页 */}
+            <Tabs
+              activeKey={customerCallStatusFilter}
+              onChange={setCustomerCallStatusFilter}
+              size="small"
+              style={{ marginBottom: 16 }}
+              items={CALL_STATUS_TABS.map(tab => ({
+                key: tab.key,
+                label: tab.label
+              }))}
+            />
             <Table
-              dataSource={customers}
+              dataSource={filteredCustomers}
               rowKey="task_customer_id"
               size="small"
               pagination={{ pageSize: 8 }}

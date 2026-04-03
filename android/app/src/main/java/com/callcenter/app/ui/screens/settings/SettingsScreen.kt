@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.callcenter.app.BuildConfig
+import com.callcenter.app.ui.components.UpdateDialog
 import com.callcenter.app.ui.viewmodel.SettingsViewModel
 import com.callcenter.app.util.VersionInfoUtil
 
@@ -36,17 +37,24 @@ fun SettingsScreen(
     val stats by viewModel.stats.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val callSettings by viewModel.callSettings.collectAsState()
+    
+    // 版本更新相关状态
+    val hasUpdate by viewModel.hasUpdate.collectAsState()
+    val latestVersionInfo by viewModel.latestVersionInfo.collectAsState()
 
     var showServerUrlDialog by remember { mutableStateOf(false) }
     var showLogoutConfirmDialog by remember { mutableStateOf(false) }
     var showSwitchAccountConfirmDialog by remember { mutableStateOf(false) }
     var showReleaseNotesDialog by remember { mutableStateOf(false) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
     
     // 读取 release notes
     val releaseNotes = remember { VersionInfoUtil.readReleaseNotes(context) }
 
     LaunchedEffect(Unit) {
         viewModel.loadSettings()
+        // 检查版本更新
+        viewModel.checkForUpdate()
     }
 
     Scaffold(
@@ -111,11 +119,19 @@ fun SettingsScreen(
             }
 
             SettingsGroup(title = "关于") {
-                SettingsItem(
-                    icon = Icons.Default.Info,
-                    title = "版本信息",
-                    subtitle = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-                    onClick = { showReleaseNotesDialog = true }
+                // 版本信息项 - 有更新时显示更新提示
+                VersionSettingsItem(
+                    hasUpdate = hasUpdate,
+                    latestVersionName = latestVersionInfo?.versionName,
+                    currentVersionName = BuildConfig.VERSION_NAME,
+                    currentVersionCode = BuildConfig.VERSION_CODE,
+                    onClick = {
+                        if (hasUpdate && latestVersionInfo != null) {
+                            showUpdateDialog = true
+                        } else {
+                            showReleaseNotesDialog = true
+                        }
+                    }
                 )
                 SettingsItem(
                     icon = Icons.Default.Help,
@@ -253,6 +269,25 @@ fun SettingsScreen(
                 TextButton(onClick = { showReleaseNotesDialog = false }) {
                     Text("关闭")
                 }
+            }
+        )
+    }
+    
+    // 版本更新对话框
+    if (showUpdateDialog && latestVersionInfo != null) {
+        UpdateDialog(
+            versionInfo = latestVersionInfo,
+            updateState = UpdateState.Idle,
+            onDismiss = { showUpdateDialog = false },
+            onConfirm = {
+                showUpdateDialog = false
+                // 使用系统浏览器下载
+                val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(latestVersionInfo?.apkUrl))
+                context.startActivity(intent)
+            },
+            onRetry = {
+                val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(latestVersionInfo?.apkUrl))
+                context.startActivity(intent)
             }
         )
     }
@@ -414,6 +449,69 @@ private fun SettingsItem(
         },
         trailingContent = {
             Icon(Icons.Default.ChevronRight, null)
+        },
+        modifier = Modifier.clickable(onClick = onClick)
+    )
+}
+
+/**
+ * 版本信息设置项 - 支持显示更新提示
+ */
+@Composable
+private fun VersionSettingsItem(
+    hasUpdate: Boolean,
+    latestVersionName: String?,
+    currentVersionName: String,
+    currentVersionCode: Int,
+    onClick: () -> Unit
+) {
+    ListItem(
+        headlineContent = { 
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("版本信息")
+                if (hasUpdate) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Surface(
+                        color = MaterialTheme.colorScheme.error,
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Text(
+                            text = "有更新",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onError,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+        },
+        supportingContent = { 
+            if (hasUpdate && latestVersionName != null) {
+                Text(
+                    text = "当前: v$currentVersionName ($currentVersionCode) → 最新: v$latestVersionName",
+                    color = MaterialTheme.colorScheme.error
+                )
+            } else {
+                Text("v$currentVersionName ($currentVersionCode)")
+            }
+        },
+        leadingContent = {
+            Icon(
+                Icons.Default.Info, 
+                null, 
+                tint = if (hasUpdate) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+            )
+        },
+        trailingContent = {
+            if (hasUpdate) {
+                Icon(
+                    Icons.Default.Update,
+                    contentDescription = "有更新",
+                    tint = MaterialTheme.colorScheme.error
+                )
+            } else {
+                Icon(Icons.Default.ChevronRight, null)
+            }
         },
         modifier = Modifier.clickable(onClick = onClick)
     )
