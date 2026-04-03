@@ -8,7 +8,9 @@ import {
   getTaskById,
   addCustomersToTask,
   removeCustomerFromTask,
-  updateTaskCustomerStatus
+  updateTaskCustomerStatus,
+  updateTaskCustomerInfo,
+  removeTaskCustomer
 } from '../controllers/task.controller';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
 
@@ -30,5 +32,7 @@ router.get('/my/list', getMyTasks);
 // 通用路由（需要登录）
 router.get('/:id', authMiddleware, getTaskById);
 router.put('/:id/customers/:customerId/status', authMiddleware, updateTaskCustomerStatus);
+router.put('/:id/customers/:customerId/info', authMiddleware, updateTaskCustomerInfo);
+router.delete('/:id/task-customers/:customerId', authMiddleware, removeTaskCustomer);
 
 export default router;

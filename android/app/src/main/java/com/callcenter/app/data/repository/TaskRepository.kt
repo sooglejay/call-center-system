@@ -205,4 +205,49 @@ class TaskRepository @Inject constructor(
             Result.failure(e)
         }
     }
+
+    /**
+     * 更新任务中客户的信息（编辑电话号码等）
+     */
+    suspend fun updateTaskCustomerInfo(
+        taskId: Int,
+        customerId: Int,
+        name: String? = null,
+        phone: String? = null,
+        company: String? = null
+    ): Result<Unit> {
+        return try {
+            val request = UpdateTaskCustomerInfoRequest(
+                name = name,
+                phone = phone,
+                company = company
+            )
+            val response = apiService.updateTaskCustomerInfo(taskId, customerId, request)
+            if (response.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                val errorMsg = response.errorBody()?.string() ?: "更新客户信息失败"
+                Result.failure(Exception(errorMsg))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * 从任务中移除客户
+     */
+    suspend fun removeTaskCustomer(taskId: Int, customerId: Int): Result<Unit> {
+        return try {
+            val response = apiService.removeTaskCustomer(taskId, customerId)
+            if (response.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                val errorMsg = response.errorBody()?.string() ?: "移除客户失败"
+                Result.failure(Exception(errorMsg))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }

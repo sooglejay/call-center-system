@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Table, Button, Modal, Form, Input, Select, DatePicker, message, Tag, Tabs, Badge, Checkbox, Transfer, Space, Divider, Typography, Empty, Alert, Progress, Card, Descriptions, Tooltip, Statistic, Row, Col } from 'antd';
+import { Table, Button, Modal, Form, Input, Select, DatePicker, message, Tag, Tabs, Badge, Checkbox, Space, Divider, Typography, Empty, Alert, Progress, Card, Descriptions, Tooltip, Statistic, Row, Col } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, TeamOutlined, ScheduleOutlined, InfoCircleOutlined, EyeOutlined, PhoneOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { taskApi, userApi, customerApi } from '../../services/api';
 import type { Task, User, Customer } from '../../services/api';
@@ -84,11 +84,22 @@ export default function TaskManagement() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [form] = Form.useForm();
 
+  // 任务列表分页状态
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [total, setTotal] = useState(0);
+
+  // 客户选择分页状态
+  const [customerPage, setCustomerPage] = useState(1);
+  const [customerPageSize, setCustomerPageSize] = useState(20);
+  const [customerTotal, setCustomerTotal] = useState(0);
+  const [customerSearch, setCustomerSearch] = useState('');
+
   useEffect(() => {
     fetchTasks();
     fetchAgents();
     fetchNameLetterStats();
-  }, []);
+  }, [currentPage, pageSize]);
 
   useEffect(() => {
     if (customerSelectMode === 'letter' && selectedLetters.length > 0) {
@@ -96,14 +107,18 @@ export default function TaskManagement() {
     } else if (customerSelectMode === 'id') {
       fetchAllCustomers();
     }
-  }, [selectedLetters, customerSelectMode, unassignedOnly]);
+  }, [selectedLetters, customerSelectMode, unassignedOnly, customerPage, customerPageSize, customerSearch]);
 
   const fetchTasks = async () => {
     setLoading(true);
     try {
-      const response = await taskApi.getTasks();
+      const response = await taskApi.getTasks({
+        page: currentPage,
+        pageSize: pageSize
+      });
       const tasksData = response.data?.data || response.data || [];
       setTasks(Array.isArray(tasksData) ? tasksData : []);
+      setTotal(response.data?.total || 0);
     } catch (error: any) {
       message.error(error.response?.data?.error || '获取任务列表失败，请刷新重试');
     } finally {
@@ -146,10 +161,14 @@ export default function TaskManagement() {
   const fetchAllCustomers = async () => {
     try {
       const response = await customerApi.getCustomers({ 
-        assigned_to: unassignedOnly ? 0 : undefined 
+        assigned_to: unassignedOnly ? 0 : undefined,
+        page: customerPage,
+        pageSize: customerPageSize,
+        search: customerSearch || undefined
       });
       const customersData = response.data?.data || response.data || [];
       setCustomers(Array.isArray(customersData) ? customersData : []);
+      setCustomerTotal(response.data?.total || 0);
     } catch (error) {
       console.error('获取客户列表失败');
     }
@@ -172,6 +191,8 @@ export default function TaskManagement() {
     setSelectedLetters([]);
     setSelectedCustomerIds([]);
     setCustomerSelectMode('id');
+    setCustomerPage(1);
+    setCustomerSearch('');
     form.resetFields();
     setModalVisible(true);
     fetchAllCustomers();
@@ -393,14 +414,6 @@ export default function TaskManagement() {
     },
   ];
 
-  // Transfer 数据源
-  const transferData = customers.map(c => ({
-    key: c.id.toString(),
-    title: `${c.name || '未命名'} (${c.phone})`,
-    description: c.assigned_to_name || '未分配',
-    letter: getFirstLetter(c.name || '')
-  }));
-
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
@@ -436,6 +449,18 @@ export default function TaskManagement() {
           dataSource={tasks} 
           rowKey="id" 
           loading={loading}
+          pagination={{
+            current: currentPage,
+            pageSize: pageSize,
+            total: total,
+            showSizeChanger: true,
+            showQuickJumper: true,
+            showTotal: (total) => `共 ${total} 条`,
+            onChange: (page, size) => {
+              setCurrentPage(page);
+              if (size) setPageSize(size);
+            }
+          }}
           locale={{
             emptyText: (
               <Empty
@@ -524,26 +549,65 @@ export default function TaskManagement() {
 
               <Tabs activeKey={customerSelectMode} onChange={(k) => setCustomerSelectMode(k as 'id' | 'letter')}>
                 <TabPane tab="按客户选择" key="id">
-                  <Transfer
-                    dataSource={transferData}
-                    titles={['可选客户', '已选客户']}
-                    targetKeys={selectedCustomerIds.map(String)}
-                    onChange={(keys) => setSelectedCustomerIds(keys.map(Number))}
-                    render={(item) => (
-                      <Space>
-                        <Badge count={item.letter} style={{ backgroundColor: '#1890ff', fontSize: 10 }} />
-                        <span>{item.title}</span>
-                        <Tag color={item.description === '未分配' ? 'default' : 'blue'}>
-                          {item.description}
-                        </Tag>
-                      </Space>
-                    )}
-                    listStyle={{ width: 300, height: 300 }}
-                    showSearch
-                    filterOption={(inputValue, item) =>
-                      item.title?.toLowerCase().includes(inputValue.toLowerCase()) ||
-                      item.description?.toLowerCase().includes(inputValue.toLowerCase())
-                    }
+                  <div style={{ marginBottom: 16 }}>
+                    <Input.Search
+                      placeholder="搜索客户姓名或电话"
+                      value={customerSearch}
+                      onChange={(e) => setCustomerSearch(e.target.value)}
+                      onSearch={() => {
+                        setCustomerPage(1);
+                        fetchAllCustomers();
+                      }}
+                      style={{ width: 250 }}
+                      allowClear
+                    />
+                  </div>
+                  <Table
+                    rowSelection={{
+                      selectedRowKeys: selectedCustomerIds,
+                      onChange: (keys) => setSelectedCustomerIds(keys as number[]),
+                      preserveSelectedRowKeys: true
+                    }}
+                    columns={[
+                      {
+                        title: '姓名',
+                        dataIndex: 'name',
+                        key: 'name',
+                        render: (name: string) => (
+                          <Space>
+                            <Badge count={getFirstLetter(name || '')} style={{ backgroundColor: '#1890ff', fontSize: 10 }} />
+                            <span>{name || '未命名'}</span>
+                          </Space>
+                        )
+                      },
+                      { title: '电话', dataIndex: 'phone', key: 'phone' },
+                      {
+                        title: '分配状态',
+                        dataIndex: 'assigned_to_name',
+                        key: 'assigned_to_name',
+                        render: (name: string) => (
+                          <Tag color={name === '未分配' ? 'default' : 'blue'}>
+                            {name || '未分配'}
+                          </Tag>
+                        )
+                      }
+                    ]}
+                    dataSource={customers}
+                    rowKey="id"
+                    pagination={{
+                      current: customerPage,
+                      pageSize: customerPageSize,
+                      total: customerTotal,
+                      showSizeChanger: true,
+                      showQuickJumper: true,
+                      showTotal: (total) => `共 ${total} 条`,
+                      onChange: (page, size) => {
+                        setCustomerPage(page);
+                        if (size) setCustomerPageSize(size);
+                      }
+                    }}
+                    size="small"
+                    scroll={{ y: 300 }}
                   />
                   <div style={{ marginTop: 8, textAlign: 'center' }}>
                     <Text type="secondary">已选择 {selectedCustomerIds.length} 个客户</Text>

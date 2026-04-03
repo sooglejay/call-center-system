@@ -59,6 +59,7 @@ class TaskListViewModel @Inject constructor(
 
     /**
      * 加载我的任务列表（客服视角）
+     * 同时加载每个任务的客户列表
      */
     fun loadMyTasks() {
         viewModelScope.launch {
@@ -69,7 +70,11 @@ class TaskListViewModel @Inject constructor(
 
             result.fold(
                 onSuccess = { taskList ->
-                    _tasks.value = taskList
+                    // 为每个任务加载详情（包含客户列表）
+                    val tasksWithCustomers = taskList.map { task ->
+                        taskRepository.getTask(task.id).getOrNull() ?: task
+                    }
+                    _tasks.value = tasksWithCustomers
                     _error.value = null
                 },
                 onFailure = { exception ->

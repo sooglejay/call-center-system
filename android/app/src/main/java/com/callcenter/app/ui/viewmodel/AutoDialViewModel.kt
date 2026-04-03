@@ -6,11 +6,14 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.callcenter.app.data.model.Customer
 import com.callcenter.app.data.model.Task
+import com.callcenter.app.data.local.preferences.AutoDialProgressManager
+import com.callcenter.app.data.local.preferences.AutoDialProgress
 import com.callcenter.app.service.AutoDialService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -31,12 +34,14 @@ data class AutoDialConfig(
     val taskId: Int? = null,
     val taskTitle: String? = null,
     val intervalSeconds: Int = 10,
-    val timeoutSeconds: Int = 30
+    val timeoutSeconds: Int = 30,
+    val dialsPerCustomer: Int = 1  // 每个客户连续拨打次数
 )
 
 @HiltViewModel
 class AutoDialViewModel @Inject constructor(
-    application: Application
+    application: Application,
+    private val progressManager: AutoDialProgressManager
 ) : AndroidViewModel(application) {
 
     private val _isRunning = MutableStateFlow(false)
@@ -61,6 +66,10 @@ class AutoDialViewModel @Inject constructor(
     private val _currentConfig = MutableStateFlow<AutoDialConfig?>(null)
     val currentConfig: StateFlow<AutoDialConfig?> = _currentConfig.asStateFlow()
 
+    // 可恢复的进度
+    private val _recoverableProgress = MutableStateFlow<AutoDialProgress?>(null)
+    val recoverableProgress: StateFlow<AutoDialProgress?> = _recoverableProgress.asStateFlow()
+
     init {
         // 监听服务状态
         viewModelScope.launch {
@@ -83,6 +92,19 @@ class AutoDialViewModel @Inject constructor(
                 taskId?.let { onTaskCompleted(it) }
             }
         }
+        // 检查是否有可恢复的进度
+        checkRecoverableProgress()
+    }
+
+    /**
+     * 检查是否有可恢复的进度
+     */
+    private fun checkRecoverableProgress() {
+        viewModelScope.launch {
+            progressManager.progressFlow.collect { progress ->
+                _recoverableProgress.value = progress
+            }
+        }
     }
 
     /**
@@ -98,8 +120,17 @@ class AutoDialViewModel @Inject constructor(
      * 开始自动拨号
      * @param customers 要拨打的客户列表
      * @param config 拨号配置
+     * @param startIndex 起始索引（用于恢复进度）
+     * @param dialedCount 已拨打数量（用于恢复进度）
+     * @param startDialRound 起始拨打轮次（用于恢复进度）
      */
-    fun startAutoDial(customers: List<Customer>, config: AutoDialConfig) {
+    fun startAutoDial(
+        customers: List<Customer>,
+        config: AutoDialConfig,
+        startIndex: Int = 0,
+        dialedCount: Int = 0,
+        startDialRound: Int = 1
+    ) {
         if (customers.isEmpty()) return
 
         _totalCount.value = customers.size
@@ -112,9 +143,14 @@ class AutoDialViewModel @Inject constructor(
             action = AutoDialService.ACTION_START
             putExtra(AutoDialService.EXTRA_INTERVAL, config.intervalSeconds)
             putExtra(AutoDialService.EXTRA_TIMEOUT, config.timeoutSeconds)
+            putExtra(AutoDialService.EXTRA_DIALS_PER_CUSTOMER, config.dialsPerCustomer)
             putExtra(AutoDialService.EXTRA_CUSTOMERS, ArrayList(customers))
             putExtra(AutoDialService.EXTRA_SCOPE_TYPE, config.scopeType.name)
             putExtra(AutoDialService.EXTRA_TASK_ID, config.taskId ?: -1)
+            putExtra(AutoDialService.EXTRA_TASK_TITLE, config.taskTitle)
+            putExtra(AutoDialService.EXTRA_START_INDEX, startIndex)
+            putExtra(AutoDialService.EXTRA_DIALED_COUNT, dialedCount)
+            putExtra(AutoDialService.EXTRA_START_DIAL_ROUND, startDialRound)
         }
         context.startService(intent)
     }
@@ -129,6 +165,37 @@ class AutoDialViewModel @Inject constructor(
             timeoutSeconds = timeout
         )
         startAutoDial(customers, config)
+    }
+
+    /**
+     * 恢复上次的拨号进度
+     */
+    fun restoreProgress(progress: AutoDialProgress) {
+        val config = AutoDialConfig(
+            scopeType = progress.scopeType,
+            taskId = progress.taskId,
+            taskTitle = progress.taskTitle,
+            intervalSeconds = progress.intervalSeconds,
+            timeoutSeconds = progress.timeoutSeconds,
+            dialsPerCustomer = progress.dialsPerCustomer
+        )
+        startAutoDial(
+            customers = progress.remainingCustomers,
+            config = config,
+            startIndex = progress.currentIndex,
+            dialedCount = progress.dialedCount,
+            startDialRound = progress.currentDialRound
+        )
+    }
+
+    /**
+     * 清除可恢复的进度
+     */
+    fun clearRecoverableProgress() {
+        viewModelScope.launch {
+            progressManager.clearProgress()
+            _recoverableProgress.value = null
+        }
     }
 
     fun stopAutoDial() {
@@ -174,5 +241,18 @@ class AutoDialViewModel @Inject constructor(
             AutoDialScopeType.ALL_TASKS -> "全部任务客户"
             else -> "未知范围"
         }
+    }
+
+    /**
+     * 获取恢复进度的描述文本
+     */
+    fun getRecoverProgressDescription(progress: AutoDialProgress?): String {
+        if (progress == null) return ""
+        val scopeDesc = when (progress.scopeType) {
+            AutoDialScopeType.ALL_PENDING -> "全部待拨打客户"
+            AutoDialScopeType.SPECIFIC_TASK -> "任务: ${progress.taskTitle ?: "#${progress.taskId}"}"
+            AutoDialScopeType.ALL_TASKS -> "全部任务客户"
+        }
+        return "$scopeDesc (${progress.dialedCount}/${progress.totalCount})"
     }
 }

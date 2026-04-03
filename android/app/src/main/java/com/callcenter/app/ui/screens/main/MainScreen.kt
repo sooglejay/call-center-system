@@ -84,7 +84,52 @@ fun MainScreen(
     // 获取自动拨号状态，用于浮动按钮显示
     val autoDialRunning by autoDialViewModel.isRunning.collectAsState()
     val customers by customerViewModel.customers.collectAsState()
+    val tasks by taskListViewModel.tasks.collectAsState()
     val callSettings by callSettingsViewModel.callSettings.collectAsState()
+
+    // 合并所有客户：任务客户 + 分配客户（用于客户Tab的自动拨号）
+    val allCustomersForDial = remember(tasks, customers) {
+        val taskCustomers = mutableListOf<Customer>()
+
+        // 从所有任务中提取客户
+        tasks.forEach { task ->
+            task.customers?.forEach { taskCustomer ->
+                taskCustomers.add(
+                    Customer(
+                        id = taskCustomer.id,
+                        name = taskCustomer.name,
+                        phone = taskCustomer.phone,
+                        email = taskCustomer.email,
+                        company = taskCustomer.company,
+                        status = taskCustomer.callStatus,
+                        sourceType = "task",
+                        taskId = task.id,
+                        taskTitle = task.title
+                    )
+                )
+            }
+        }
+
+        // 合并分配的客户，去重（以ID为准）
+        val mergedMap = mutableMapOf<Int, Customer>()
+
+        // 先添加任务客户
+        taskCustomers.forEach { customer ->
+            mergedMap[customer.id] = customer
+        }
+
+        // 再添加分配的客户（如果ID重复，优先保留任务来源的信息）
+        customers.forEach { customer ->
+            if (!mergedMap.containsKey(customer.id)) {
+                mergedMap[customer.id] = customer
+            }
+        }
+
+        mergedMap.values.toList()
+    }
+
+    // 自动拨号配置对话框状态
+    var showAutoDialConfigDialog by remember { mutableStateOf(false) }
 
     // 自动拨号权限请求
     val callPermissionLauncher = rememberLauncherForActivityResult(
@@ -174,14 +219,9 @@ fun MainScreen(
                         if (autoDialRunning) {
                             autoDialViewModel.stopAutoDial()
                         } else if (checkAndRequestCallPermission()) {
-                            // 直接开始自动拨号
-                            if (customers.isNotEmpty()) {
-                                val config = AutoDialConfig(
-                                    scopeType = AutoDialScopeType.ALL_PENDING,
-                                    intervalSeconds = callSettings.autoDialInterval,
-                                    timeoutSeconds = callSettings.callTimeout
-                                )
-                                autoDialViewModel.startAutoDial(customers, config)
+                            // 显示配置对话框
+                            if (allCustomersForDial.isNotEmpty()) {
+                                showAutoDialConfigDialog = true
                             }
                         }
                     },
@@ -255,6 +295,7 @@ fun MainScreen(
                 AgentCustomersTab(
                     onNavigateToCustomerDetail = onNavigateToCustomerDetail,
                     customerViewModel = customerViewModel,
+                    taskListViewModel = taskListViewModel,
                     autoDialViewModel = autoDialViewModel,
                     callSettingsViewModel = callSettingsViewModel
                 )
@@ -268,6 +309,113 @@ fun MainScreen(
                     authViewModel = authViewModel
                 )
             }
+        }
+
+        // 自动拨号配置对话框
+        if (showAutoDialConfigDialog) {
+            // 本地配置状态
+            var localInterval by remember { mutableStateOf(callSettings.autoDialInterval) }
+            var localTimeout by remember { mutableStateOf(callSettings.callTimeout) }
+            var localDialsPerCustomer by remember { mutableStateOf(1) }
+
+            AlertDialog(
+                onDismissRequest = { showAutoDialConfigDialog = false },
+                title = { Text("自动拨号配置") },
+                text = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(20.dp)
+                    ) {
+                        // 拨号间隔配置
+                        Column {
+                            Text(
+                                text = "拨号间隔: ${localInterval}秒",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Slider(
+                                value = localInterval.toFloat(),
+                                onValueChange = { localInterval = it.toInt() },
+                                valueRange = 3f..30f,
+                                steps = 26
+                            )
+                            Text(
+                                text = "每次拨打完成后等待的时间",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        // 超时时间配置
+                        Column {
+                            Text(
+                                text = "通话超时: ${localTimeout}秒",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Slider(
+                                value = localTimeout.toFloat(),
+                                onValueChange = { localTimeout = it.toInt() },
+                                valueRange = 10f..120f,
+                                steps = 21
+                            )
+                            Text(
+                                text = "等待对方接听的最大时间",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        HorizontalDivider()
+
+                        // 每客户拨打次数配置
+                        Column {
+                            Text(
+                                text = "每个客户连续拨打次数: $localDialsPerCustomer",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Slider(
+                                value = localDialsPerCustomer.toFloat(),
+                                onValueChange = { localDialsPerCustomer = it.toInt() },
+                                valueRange = 1f..5f,
+                                steps = 3
+                            )
+                            Text(
+                                text = when (localDialsPerCustomer) {
+                                    1 -> "每个客户拨打1次后流转到下一个"
+                                    else -> "每个客户连续拨打${localDialsPerCustomer}次后流转到下一个"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showAutoDialConfigDialog = false
+                            // 开始自动拨号，使用本地配置
+                            val config = AutoDialConfig(
+                                scopeType = AutoDialScopeType.ALL_PENDING,
+                                intervalSeconds = localInterval,
+                                timeoutSeconds = localTimeout,
+                                dialsPerCustomer = localDialsPerCustomer
+                            )
+                            autoDialViewModel.startAutoDial(allCustomersForDial, config)
+                        }
+                    ) {
+                        Text("开始拨号")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { showAutoDialConfigDialog = false }
+                    ) {
+                        Text("取消")
+                    }
+                }
+            )
         }
     }
 }
@@ -1637,31 +1785,105 @@ private fun AgentTaskItemWithProgress(
 
 /**
  * 客服客户列表标签页
+ * 显示所有任务中的客户 + 分配给自己的客户
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AgentCustomersTab(
     onNavigateToCustomerDetail: (Int) -> Unit,
     customerViewModel: CustomerViewModel,
+    taskListViewModel: TaskListViewModel,
     autoDialViewModel: AutoDialViewModel,
     callSettingsViewModel: CallSettingsViewModel
 ) {
     val context = LocalContext.current
-    val customers by customerViewModel.customers.collectAsState()
-    val isLoading by customerViewModel.isLoading.collectAsState()
+
+    // 从CustomerViewModel获取分配给自己的客户
+    val assignedCustomers by customerViewModel.customers.collectAsState()
+    val isLoadingAssigned by customerViewModel.isLoading.collectAsState()
     val searchQuery by customerViewModel.searchQuery.collectAsState()
     val statusFilter by customerViewModel.statusFilter.collectAsState()
 
+    // 从TaskListViewModel获取任务列表
+    val tasks by taskListViewModel.tasks.collectAsState()
+    val isLoadingTasks by taskListViewModel.isLoading.collectAsState()
+
+    // 自动拨号状态
     val autoDialRunning by autoDialViewModel.isRunning.collectAsState()
     val currentDialCustomer by autoDialViewModel.currentCustomer.collectAsState()
     val dialedCount by autoDialViewModel.dialedCount.collectAsState()
     val totalCount by autoDialViewModel.totalCount.collectAsState()
+    val currentConfig by autoDialViewModel.currentConfig.collectAsState()
 
     val callSettings by callSettingsViewModel.callSettings.collectAsState()
     val callHelper = remember { CallHelper(context) }
 
     var showSearchBar by remember { mutableStateOf(false) }
     var showFilterMenu by remember { mutableStateOf(false) }
+
+    // 合并所有客户：任务客户 + 分配客户
+    val allCustomers = remember(tasks, assignedCustomers) {
+        val taskCustomers = mutableListOf<Customer>()
+
+        // 从所有任务中提取客户
+        tasks.forEach { task ->
+            task.customers?.forEach { taskCustomer ->
+                taskCustomers.add(
+                    Customer(
+                        id = taskCustomer.id,
+                        name = taskCustomer.name,
+                        phone = taskCustomer.phone,
+                        email = taskCustomer.email,
+                        company = taskCustomer.company,
+                        status = taskCustomer.callStatus,
+                        sourceType = "task",
+                        taskId = task.id,
+                        taskTitle = task.title
+                    )
+                )
+            }
+        }
+
+        // 合并分配的客户，去重（以ID为准）
+        val mergedMap = mutableMapOf<Int, Customer>()
+
+        // 先添加任务客户
+        taskCustomers.forEach { customer ->
+            mergedMap[customer.id] = customer
+        }
+
+        // 再添加分配的客户（如果ID重复，优先保留任务来源的信息，因为可能包含任务状态）
+        assignedCustomers.forEach { customer ->
+            if (!mergedMap.containsKey(customer.id)) {
+                mergedMap[customer.id] = customer
+            }
+        }
+
+        mergedMap.values.toList()
+    }
+
+    // 根据搜索和筛选条件过滤
+    val filteredCustomers = remember(allCustomers, searchQuery, statusFilter) {
+        var result = allCustomers
+
+        // 搜索过滤
+        if (searchQuery.isNotBlank()) {
+            result = result.filter {
+                it.name.contains(searchQuery, ignoreCase = true) ||
+                it.phone.contains(searchQuery, ignoreCase = true) ||
+                it.company?.contains(searchQuery, ignoreCase = true) == true
+            }
+        }
+
+        // 状态过滤
+        if (statusFilter != null) {
+            result = result.filter { it.status == statusFilter }
+        }
+
+        result.sortedBy { it.name }
+    }
+
+    val isLoading = isLoadingAssigned || isLoadingTasks
 
     val callPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -1691,6 +1913,12 @@ private fun AgentCustomersTab(
         }
     }
 
+    // 加载数据
+    LaunchedEffect(Unit) {
+        customerViewModel.loadCustomers()
+        taskListViewModel.loadMyTasks()
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -1712,7 +1940,7 @@ private fun AgentCustomersTab(
                             }
                         )
                     } else {
-                        Text("客户列表")
+                        Text("客户列表 (${filteredCustomers.size})")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -1751,7 +1979,10 @@ private fun AgentCustomersTab(
                             }
                         )
                     }
-                    IconButton(onClick = { customerViewModel.refresh() }) {
+                    IconButton(onClick = {
+                        customerViewModel.refresh()
+                        taskListViewModel.loadMyTasks()
+                    }) {
                         Icon(Icons.Default.Refresh, "刷新")
                     }
                 }
@@ -1763,82 +1994,82 @@ private fun AgentCustomersTab(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-                // 自动拨号进度
-                if (autoDialRunning) {
-                    val scopeDesc = autoDialViewModel.getScopeDescription(autoDialViewModel.currentConfig.value)
-                    AutoDialStatusBar(
-                        dialedCount = dialedCount,
-                        totalCount = totalCount,
-                        scopeDescription = scopeDesc,
-                        currentCustomer = currentDialCustomer,
-                        onStop = { autoDialViewModel.stopAutoDial() }
-                    )
-                }
+            // 自动拨号进度
+            if (autoDialRunning) {
+                val scopeDesc = autoDialViewModel.getScopeDescription(currentConfig)
+                AutoDialStatusBar(
+                    dialedCount = dialedCount,
+                    totalCount = totalCount,
+                    scopeDescription = scopeDesc,
+                    currentCustomer = currentDialCustomer,
+                    onStop = { autoDialViewModel.stopAutoDial() }
+                )
+            }
 
-                // 筛选标签
-                if (statusFilter != null) {
-                    Surface(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        shape = MaterialTheme.shapes.small
+            // 筛选标签
+            if (statusFilter != null) {
+                Surface(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        Text(
+                            text = when (statusFilter) {
+                                "pending" -> "待拨打"
+                                "completed" -> "已完成"
+                                else -> statusFilter ?: ""
+                            },
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        IconButton(
+                            onClick = { customerViewModel.setStatusFilter(null) },
+                            modifier = Modifier.size(20.dp)
                         ) {
-                            Text(
-                                text = when (statusFilter) {
-                                    "pending" -> "待拨打"
-                                    "completed" -> "已完成"
-                                    else -> statusFilter ?: ""
-                                },
-                                style = MaterialTheme.typography.labelMedium
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            IconButton(
-                                onClick = { customerViewModel.setStatusFilter(null) },
-                                modifier = Modifier.size(20.dp)
-                            ) {
-                                Icon(Icons.Default.Close, "清除", modifier = Modifier.size(16.dp))
-                            }
+                            Icon(Icons.Default.Close, "清除", modifier = Modifier.size(16.dp))
                         }
                     }
                 }
+            }
 
-                // 客户列表
-                when {
-                    isLoading && customers.isEmpty() -> {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator()
+            // 客户列表
+            when {
+                isLoading && filteredCustomers.isEmpty() -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                }
+                filteredCustomers.isEmpty() -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.People, null, modifier = Modifier.size(64.dp))
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text("暂无客户数据", style = MaterialTheme.typography.titleMedium)
                         }
                     }
-                    customers.isEmpty() -> {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(Icons.Default.People, null, modifier = Modifier.size(64.dp))
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Text("暂无客户数据", style = MaterialTheme.typography.titleMedium)
-                            }
-                        }
-                    }
-                    else -> {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(vertical = 8.dp)
-                        ) {
-                            items(customers, key = { it.id }) { customer ->
-                                CustomerItem(
-                                    customer = customer,
-                                    onCall = { makeCall(customer.phone) },
-                                    onClick = { onNavigateToCustomerDetail(customer.id) }
-                                )
-                            }
+                }
+                else -> {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(vertical = 8.dp)
+                    ) {
+                        items(filteredCustomers, key = { it.id }) { customer ->
+                            CustomerItem(
+                                customer = customer,
+                                onCall = { makeCall(customer.phone) },
+                                onClick = { onNavigateToCustomerDetail(customer.id) }
+                            )
                         }
                     }
                 }
             }
         }
     }
+}
 
 /**
  * 自动拨号状态提示条

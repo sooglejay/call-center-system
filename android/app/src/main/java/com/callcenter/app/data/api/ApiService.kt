@@ -304,6 +304,25 @@ interface ApiService {
         @Body request: UpdateTaskCustomerStatusRequest
     ): Response<TaskCustomer>
 
+    /**
+     * 更新任务中客户的信息（编辑电话号码等）
+     */
+    @PUT("tasks/{taskId}/customers/{customerId}/info")
+    suspend fun updateTaskCustomerInfo(
+        @Path("taskId") taskId: Int,
+        @Path("customerId") customerId: Int,
+        @Body request: UpdateTaskCustomerInfoRequest
+    ): Response<ApiResponse<Unit>>
+
+    /**
+     * 从任务中移除客户
+     */
+    @DELETE("tasks/{taskId}/task-customers/{customerId}")
+    suspend fun removeTaskCustomer(
+        @Path("taskId") taskId: Int,
+        @Path("customerId") customerId: Int
+    ): Response<ApiResponse<Unit>>
+
     // ==================== 统计数据 ====================
     
     /**
