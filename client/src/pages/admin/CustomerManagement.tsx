@@ -337,22 +337,16 @@ export default function CustomerManagement() {
   // 导出客户数据
   const handleExportCustomers = async () => {
     try {
-      // 获取所有符合条件的客户（不分页）
-      const response = await customerApi.getCustomers({ 
-        sort_by: sortBy,
-        page: 1,
-        pageSize: 10000, // 获取大量数据
-        search: searchText || undefined,
-        status: filterStatus || undefined,
-        call_status: filterCallStatus || undefined,
-        assigned_to: filterAssigned ? parseInt(filterAssigned) : undefined,
-        name_letter: activeLetters.length > 0 ? activeLetters.join(',') : undefined
-      });
+      // 只导出选中的客户
+      if (selectedRowKeys.length === 0) {
+        message.warning('请先选择要导出的客户');
+        return;
+      }
       
-      const customersData = response.data?.data || response.data || [];
+      const customersData = customers.filter(c => selectedRowKeys.includes(c.id));
       
       if (customersData.length === 0) {
-        message.warning('没有可导出的数据');
+        message.warning('选中的客户数据不存在');
         return;
       }
       
@@ -695,31 +689,45 @@ export default function CustomerManagement() {
           )}
         </Space>
         <Space>
-          {selectedRowKeys.length > 0 && (
-            <>
-              <Button 
-                type="primary" 
-                icon={<UserAddOutlined />}
-                onClick={() => setAssignModalVisible(true)}
-              >
-                批量分配 ({selectedRowKeys.length})
-              </Button>
-              <Button 
-                type="primary"
-                icon={<FileAddOutlined />}
-                onClick={() => setCreateTaskModalVisible(true)}
-              >
-                创建任务 ({selectedRowKeys.length})
-              </Button>
-              <Button 
-                danger
-                icon={<DeleteOutlined />}
-                onClick={handleBatchDelete}
-              >
-                批量删除 ({selectedRowKeys.length})
-              </Button>
-            </>
-          )}
+          <Button 
+            type="primary" 
+            icon={<UserAddOutlined />}
+            onClick={() => {
+              if (selectedRowKeys.length === 0) {
+                message.warning('请先选择客户');
+                return;
+              }
+              setAssignModalVisible(true);
+            }}
+          >
+            批量分配 {selectedRowKeys.length > 0 && `(${selectedRowKeys.length})`}
+          </Button>
+          <Button 
+            type="primary"
+            icon={<FileAddOutlined />}
+            onClick={() => {
+              if (selectedRowKeys.length === 0) {
+                message.warning('请先选择客户');
+                return;
+              }
+              setCreateTaskModalVisible(true);
+            }}
+          >
+            创建任务 {selectedRowKeys.length > 0 && `(${selectedRowKeys.length})`}
+          </Button>
+          <Button 
+            danger
+            icon={<DeleteOutlined />}
+            onClick={() => {
+              if (selectedRowKeys.length === 0) {
+                message.warning('请先选择客户');
+                return;
+              }
+              handleBatchDelete();
+            }}
+          >
+            批量删除 {selectedRowKeys.length > 0 && `(${selectedRowKeys.length})`}
+          </Button>
           <Button 
             type="primary"
             icon={<PlusOutlined />}

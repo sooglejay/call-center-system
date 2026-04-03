@@ -212,7 +212,7 @@ fun AgentTaskExecutionScreen(
                             } else {
                                 callHelper.makeCall(phone, directCall = false)
                             }
-                            // 更新状态为已拨打
+                            // 拨打电话不自动标记完成，只记录为已拨打
                             viewModel.updateCustomerStatus(taskId, customerId, "called", null)
                         } catch (e: Exception) {
                             // 拨号失败（如无SIM卡），标记为拨打失败
@@ -937,27 +937,26 @@ private fun TaskCustomerCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // 拨打电话按钮
+                // 拨打电话按钮 - 待拨打和已拨打状态都启用，允许重复拨打
                 Button(
                     onClick = onCall,
                     modifier = Modifier.weight(1f),
-                    enabled = customer.callStatus == "pending"
+                    enabled = customer.callStatus == "pending" || customer.callStatus == "called"
                 ) {
                     Icon(Icons.Default.Phone, null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("拨打")
                 }
 
-                // 标记完成按钮 - 只有待拨打状态才显示
-                if (customer.callStatus == "pending") {
-                    OutlinedButton(
-                        onClick = { showResultDialog = true },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.Check, null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("完成")
-                    }
+                // 标记完成按钮 - 所有状态都显示，让用户手动标记完成
+                OutlinedButton(
+                    onClick = { showResultDialog = true },
+                    modifier = Modifier.weight(1f),
+                    enabled = customer.callStatus != "completed"
+                ) {
+                    Icon(Icons.Default.Check, null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(if (customer.callStatus == "completed") "已完成" else "完成")
                 }
             }
 
