@@ -611,7 +611,7 @@ export const getAgentCustomers = async (req: any, res: Response) => {
     
     // 构建查询 - 使用UNION合并直接分配的客户和任务分配的客户
     let querySql = '';
-    const params: any[] = [agentId, dataAccessType];
+    const params: any[] = [];
     
     if (include_task_customers !== 'false') {
       // 包含任务分配的客户
@@ -622,16 +622,16 @@ export const getAgentCustomers = async (req: any, res: Response) => {
           t.title as task_title
         FROM customers c
         LEFT JOIN task_customers tc ON c.id = tc.customer_id AND tc.status = 'pending'
-        LEFT JOIN tasks t ON tc.task_id = t.id AND t.assigned_to = $1
-        WHERE (c.assigned_to = $1 AND (c.data_source = $2 OR c.data_source IS NULL))
-           OR (t.assigned_to = $1 AND tc.status = 'pending')
+        LEFT JOIN tasks t ON tc.task_id = t.id AND t.assigned_to = ${agentId}
+        WHERE (c.assigned_to = ${agentId} AND (c.data_source = '${dataAccessType}' OR c.data_source IS NULL))
+           OR (t.assigned_to = ${agentId} AND tc.status = 'pending')
       `;
     } else {
       // 只包含直接分配的客户
       querySql = `
         SELECT c.*, 'direct' as source_type, NULL as task_id, NULL as task_title
         FROM customers c
-        WHERE c.assigned_to = $1 AND (c.data_source = $2 OR c.data_source IS NULL)
+        WHERE c.assigned_to = ${agentId} AND (c.data_source = '${dataAccessType}' OR c.data_source IS NULL)
       `;
     }
     
