@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.callcenter.app.BuildConfig
 import com.callcenter.app.ui.viewmodel.SettingsViewModel
+import com.callcenter.app.util.VersionInfoUtil
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,6 +40,10 @@ fun SettingsScreen(
     var showServerUrlDialog by remember { mutableStateOf(false) }
     var showLogoutConfirmDialog by remember { mutableStateOf(false) }
     var showSwitchAccountConfirmDialog by remember { mutableStateOf(false) }
+    var showReleaseNotesDialog by remember { mutableStateOf(false) }
+    
+    // 读取 release notes
+    val releaseNotes = remember { VersionInfoUtil.readReleaseNotes(context) }
 
     LaunchedEffect(Unit) {
         viewModel.loadSettings()
@@ -110,7 +115,7 @@ fun SettingsScreen(
                     icon = Icons.Default.Info,
                     title = "版本信息",
                     subtitle = "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-                    onClick = {}
+                    onClick = { showReleaseNotesDialog = true }
                 )
                 SettingsItem(
                     icon = Icons.Default.Help,
@@ -221,6 +226,32 @@ fun SettingsScreen(
             dismissButton = {
                 TextButton(onClick = { showSwitchAccountConfirmDialog = false }) {
                     Text("取消")
+                }
+            }
+        )
+    }
+    
+    // Release Notes 对话框
+    if (showReleaseNotesDialog) {
+        AlertDialog(
+            onDismissRequest = { showReleaseNotesDialog = false },
+            title = { Text("版本更新日志") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 400.dp)
+                ) {
+                    Text(
+                        text = releaseNotes,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.verticalScroll(rememberScrollState())
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showReleaseNotesDialog = false }) {
+                    Text("关闭")
                 }
             }
         )

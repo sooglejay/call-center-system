@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Card, Form, Input, Button, message, Alert, Switch, Typography, Select } from 'antd';
+import { Card, Form, Input, Button, message, Alert, Switch, Typography, Select, Slider, InputNumber } from 'antd';
 import { SettingOutlined } from '@ant-design/icons';
 import { configApi } from '../../services/api';
 
@@ -54,6 +54,91 @@ export default function SystemConfig() {
       />
 
       <Form form={form} layout="vertical">
+        <Card title="自动拨号配置" style={{ marginBottom: 24 }}>
+          <Alert
+            message="拨号配置说明"
+            description="这些配置将同步到 Android App 客户端，用于控制自动拨号行为。"
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+          />
+          
+          <Form.Item 
+            label="拨号间隔" 
+            name="auto_dial_interval"
+            extra="自动拨号时，两次拨号之间的等待时间（秒）"
+          >
+            <Slider
+              min={2}
+              max={300}
+              defaultValue={10}
+              marks={{ 2: '2秒', 60: '60秒', 120: '120秒', 300: '300秒' }}
+              onChangeComplete={(value) => handleUpdateConfig('auto_dial_interval', value.toString())}
+            />
+          </Form.Item>
+          
+          <Form.Item 
+            label="通话超时" 
+            name="call_timeout"
+            extra="无人接听时的等待时间（秒）"
+          >
+            <Slider
+              min={2}
+              max={120}
+              defaultValue={30}
+              marks={{ 2: '2秒', 30: '30秒', 60: '60秒', 120: '120秒' }}
+              onChangeComplete={(value) => handleUpdateConfig('call_timeout', value.toString())}
+            />
+          </Form.Item>
+          
+          <Form.Item 
+            label="重试次数" 
+            name="retry_count"
+            extra="拨号失败后的自动重试次数"
+          >
+            <InputNumber
+              min={0}
+              max={5}
+              defaultValue={0}
+              onChange={(value) => handleUpdateConfig('retry_count', value?.toString() || '0')}
+            />
+          </Form.Item>
+          
+          <Form.Item label="自动免提" name="auto_speaker" valuePropName="checked">
+            <Switch 
+              checkedChildren="开启" 
+              unCheckedChildren="关闭"
+              onChange={(checked) => handleUpdateConfig('auto_speaker', checked.toString())}
+            />
+          </Form.Item>
+          <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+            通话接通后自动打开免提
+          </Text>
+          
+          <Form.Item label="自动添加备注" name="auto_add_note" valuePropName="checked">
+            <Switch 
+              checkedChildren="开启" 
+              unCheckedChildren="关闭"
+              onChange={(checked) => handleUpdateConfig('auto_add_note', checked.toString())}
+            />
+          </Form.Item>
+          <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+            通话结束后自动添加备注
+          </Text>
+          
+          <Form.Item 
+            label="默认备注模板" 
+            name="default_note_template"
+            extra="通话备注的默认模板内容"
+          >
+            <TextArea 
+              rows={3} 
+              placeholder="请输入默认备注模板"
+            />
+          </Form.Item>
+          <Button type="primary" onClick={() => handleUpdateConfig('default_note_template', form.getFieldValue('default_note_template'))}>保存模板</Button>
+        </Card>
+
         <Card title="Twilio 基础配置" style={{ marginBottom: 24 }}>
           <Form.Item label="Account SID" name="twilio_account_sid">
             <Input.Password 
