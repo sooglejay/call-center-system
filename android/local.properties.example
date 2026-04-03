@@ -1,9 +1,0 @@
-# Android SDK 路径（根据你的实际路径修改）
-sdk.dir=/Users/你的用户名/Library/Android/sdk
-
-# 默认服务器地址配置（只需要输入域名和端口，不需要/api/后缀）
-DEFAULT_SERVER_URL=http://localhost:8081
-
-# 版本号配置
-VERSION_CODE=4
-VERSION_NAME=1.1.0
