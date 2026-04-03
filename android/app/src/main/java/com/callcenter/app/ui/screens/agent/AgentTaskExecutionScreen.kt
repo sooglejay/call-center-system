@@ -441,8 +441,6 @@ private fun AutoDialProgressCard(
     totalCount: Int,
     taskTitle: String
 ) {
-    val progress = if (totalCount > 0) dialedCount.toFloat() / totalCount else 0f
-
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -478,15 +476,6 @@ private fun AutoDialProgressCard(
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                 )
             }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier.fillMaxWidth(),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.1f)
-            )
 
             Spacer(modifier = Modifier.height(4.dp))
 
