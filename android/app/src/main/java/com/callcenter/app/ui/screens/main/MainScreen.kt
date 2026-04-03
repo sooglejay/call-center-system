@@ -43,6 +43,7 @@ import com.callcenter.app.ui.viewmodel.DashboardViewModel
 import com.callcenter.app.ui.viewmodel.MyStatsViewModel
 import com.callcenter.app.ui.viewmodel.TaskListViewModel
 import com.callcenter.app.util.CallHelper
+import com.callcenter.app.util.VersionInfoUtil
 
 /**
  * 主页面 - 重新设计
@@ -2263,6 +2264,10 @@ private fun ProfileTab(
     var showSwitchAccountConfirmDialog by remember { mutableStateOf(false) }
     var showAutoDialIntervalDialog by remember { mutableStateOf(false) }
     var showCallTimeoutDialog by remember { mutableStateOf(false) }
+    var showReleaseNotesDialog by remember { mutableStateOf(false) }
+
+    // 读取 release notes
+    val releaseNotes = remember { VersionInfoUtil.readReleaseNotes(context) }
 
     LaunchedEffect(Unit) {
         settingsViewModel.loadSettings()
@@ -2364,7 +2369,7 @@ private fun ProfileTab(
                 icon = Icons.Default.Info,
                 title = "版本信息",
                 subtitle = "v${com.callcenter.app.BuildConfig.VERSION_NAME} (${com.callcenter.app.BuildConfig.VERSION_CODE})",
-                onClick = { }
+                onClick = { showReleaseNotesDialog = true }
             )
             SettingsItem(
                 icon = Icons.Default.Help,
@@ -2546,6 +2551,32 @@ private fun ProfileTab(
             dismissButton = {
                 TextButton(onClick = { showCallTimeoutDialog = false }) {
                     Text("取消")
+                }
+            }
+        )
+    }
+
+    // Release Notes 对话框
+    if (showReleaseNotesDialog) {
+        AlertDialog(
+            onDismissRequest = { showReleaseNotesDialog = false },
+            title = { Text("更新日志") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 400.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = releaseNotes,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showReleaseNotesDialog = false }) {
+                    Text("确定")
                 }
             }
         )
