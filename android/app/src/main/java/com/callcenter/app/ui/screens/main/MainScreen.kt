@@ -420,16 +420,6 @@ fun MainScreen(
                 }
             )
         }
-
-        // 通话中客户信息悬浮卡片
-        val currentCustomer = currentDialCustomer
-        if (autoDialRunning && currentCustomer != null) {
-            CallingCustomerCard(
-                currentCustomer = currentCustomer,
-                nextCustomer = nextDialCustomer,
-                onClose = { autoDialViewModel.stopAutoDial() }
-            )
-        }
     }
 }
 
@@ -1824,6 +1814,7 @@ private fun AgentCustomersTab(
     // 自动拨号状态
     val autoDialRunning by autoDialViewModel.isRunning.collectAsState()
     val currentDialCustomer by autoDialViewModel.currentCustomer.collectAsState()
+    val nextDialCustomer by autoDialViewModel.nextCustomer.collectAsState()
     val dialedCount by autoDialViewModel.dialedCount.collectAsState()
     val totalCount by autoDialViewModel.totalCount.collectAsState()
     val currentConfig by autoDialViewModel.currentConfig.collectAsState()
@@ -2007,14 +1998,13 @@ private fun AgentCustomersTab(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // 自动拨号进度
-            if (autoDialRunning) {
-                val scopeDesc = autoDialViewModel.getScopeDescription(currentConfig)
-                AutoDialStatusBar(
+            // 自动拨号时，顶部固定显示当前和下一个客户信息（占据约1/4屏幕）
+            if (autoDialRunning && currentDialCustomer != null) {
+                AutoDialCustomerInfoPanel(
+                    currentCustomer = currentDialCustomer,
+                    nextCustomer = nextDialCustomer,
                     dialedCount = dialedCount,
                     totalCount = totalCount,
-                    scopeDescription = scopeDesc,
-                    currentCustomer = currentDialCustomer,
                     onStop = { autoDialViewModel.stopAutoDial() }
                 )
             }
@@ -2077,6 +2067,173 @@ private fun AgentCustomersTab(
                                 onClick = { onNavigateToCustomerDetail(customer.id) }
                             )
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 自动拨号客户信息面板
+ * 在客户Tab顶部固定显示当前和下一个客户信息
+ */
+@Composable
+private fun AutoDialCustomerInfoPanel(
+    currentCustomer: Customer,
+    nextCustomer: Customer?,
+    dialedCount: Int,
+    totalCount: Int,
+    onStop: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp)
+        ) {
+            // 标题栏：进度和停止按钮
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "自动拨号中: $dialedCount/$totalCount",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                TextButton(
+                    onClick = onStop,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Stop,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("停止", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 当前客户信息（左侧大头像 + 信息）
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // 当前客户头像
+                Surface(
+                    modifier = Modifier.size(48.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primary
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = currentCustomer.name.firstOrNull()?.toString() ?: "?",
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // 当前客户信息
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = currentCustomer.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = currentCustomer.phone,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (!currentCustomer.company.isNullOrBlank()) {
+                        Text(
+                            text = currentCustomer.company,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                // 分隔线
+                Divider(
+                    modifier = Modifier
+                        .height(40.dp)
+                        .width(1.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // 下一个客户信息
+                Column(
+                    modifier = Modifier.width(100.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "下一个",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    if (nextCustomer != null) {
+                        Surface(
+                            modifier = Modifier.size(32.dp),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.secondaryContainer
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = nextCustomer.name.firstOrNull()?.toString() ?: "?",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = nextCustomer.name,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Text(
+                            text = "最后一个",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -3027,259 +3184,6 @@ private fun TaskListItem(
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-    }
-}
-
-// ==================== 通话中客户信息卡片 ====================
-
-/**
- * 通话中客户信息悬浮卡片
- * 显示当前通话客户和下一个客户的信息
- */
-@Composable
-private fun CallingCustomerCard(
-    currentCustomer: Customer,
-    nextCustomer: Customer?,
-    onClose: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        contentAlignment = Alignment.TopCenter
-    ) {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 100.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
-            ) {
-                // 标题栏
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Phone,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "通话中",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    IconButton(onClick = onClose) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "关闭",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // 当前客户信息
-                CurrentCustomerInfo(currentCustomer)
-
-                Spacer(modifier = Modifier.height(16.dp))
-                Divider()
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // 下一个客户信息
-                NextCustomerInfo(nextCustomer)
-            }
-        }
-    }
-}
-
-@Composable
-private fun CurrentCustomerInfo(customer: Customer) {
-    Column {
-        Text(
-            text = "当前客户",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Surface(
-                modifier = Modifier.size(48.dp),
-                shape = MaterialTheme.shapes.medium,
-                color = MaterialTheme.colorScheme.primary
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = customer.name.firstOrNull()?.toString() ?: "?",
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = customer.name,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Phone,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = customer.phone,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-
-        // 公司信息
-        if (!customer.company.isNullOrBlank()) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Business,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = customer.company,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        // 备注信息
-        if (!customer.notes.isNullOrBlank()) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Surface(
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
-                shape = MaterialTheme.shapes.small
-            ) {
-                Text(
-                    text = "备注: ${customer.notes}",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(8.dp),
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun NextCustomerInfo(customer: Customer?) {
-    Column {
-        Text(
-            text = "下一个客户",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        if (customer != null) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    modifier = Modifier.size(40.dp),
-                    shape = MaterialTheme.shapes.medium,
-                    color = MaterialTheme.colorScheme.secondaryContainer
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = customer.name.firstOrNull()?.toString() ?: "?",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = customer.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Phone,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = customer.phone,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            if (!customer.company.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Business,
-                        contentDescription = null,
-                        modifier = Modifier.size(14.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = customer.company,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        } else {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.tertiary
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "已是最后一个客户",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
