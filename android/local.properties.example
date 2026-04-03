@@ -5,5 +5,5 @@ sdk.dir=/Users/你的用户名/Library/Android/sdk
 DEFAULT_SERVER_URL=http://localhost:8081
 
 # 版本号配置
-VERSION_CODE=3
-VERSION_NAME=1.0.3
+VERSION_CODE=4
+VERSION_NAME=1.1.0
