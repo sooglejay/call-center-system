@@ -8,14 +8,17 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.IBinder
 import android.telephony.TelephonyManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.callcenter.app.CallCenterApp
 import com.callcenter.app.MainActivity
 import com.callcenter.app.R
 import com.callcenter.app.data.model.Customer
+import com.callcenter.app.data.model.UpdateTaskCustomerStatusRequest
 import com.callcenter.app.data.local.preferences.AutoDialProgressManager
 import com.callcenter.app.data.local.preferences.AutoDialProgress
+import com.callcenter.app.data.repository.TaskRepository
 import com.callcenter.app.ui.viewmodel.AutoDialScopeType
 import com.callcenter.app.util.CallHelper
 import dagger.hilt.android.AndroidEntryPoint
@@ -83,6 +86,9 @@ class AutoDialService : Service() {
     @Inject
     lateinit var progressManager: AutoDialProgressManager
 
+    @Inject
+    lateinit var taskRepository: TaskRepository
+
     private var job: Job? = null
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
@@ -148,6 +154,10 @@ class AutoDialService : Service() {
             }
             ACTION_PAUSE -> {
                 isPaused = true
+                // 保存当前进度，以便恢复时从当前位置继续
+                serviceScope.launch {
+                    saveProgress()
+                }
                 updateNotification("自动拨号已暂停")
             }
             ACTION_RESUME -> {
@@ -211,15 +221,27 @@ class AutoDialService : Service() {
             saveProgress()
 
             // 拨打电话
-            callHelper.makeCall(customer.phone)
+            try {
+                callHelper.makeCall(customer.phone)
+            } catch (e: Exception) {
+                // 拨号异常，停止自动拨号
+                updateNotification("拨号异常: ${e.message}，自动拨号已停止")
+                stopAutoDial()
+                break
+            }
 
             // 等待通话结束或超时
-            waitForCallEndOrTimeout()
+            val callEndedNormally = waitForCallEndOrTimeout()
+            
+            // 如果服务被停止（如权限异常），则退出循环
+            if (!callEndedNormally) {
+                Log.e("AutoDialService", "callEndedNormally: false")
+                break
+            }
 
-            // 更新状态
+            // 通话结束（挂断）后标记为已拨打
             _dialedCount.value = _dialedCount.value + 1
-
-            // 保存进度
+            markCustomerAsCalled(customer)
             saveProgress()
 
             // 判断是否继续拨打同一客户
@@ -283,7 +305,42 @@ class AutoDialService : Service() {
         progressManager.saveProgress(progress)
     }
 
-    private suspend fun waitForCallEndOrTimeout() {
+    /**
+     * 标记客户为已拨打状态
+     * 不论拨号是否接通，都标记为"called"状态
+     */
+    private suspend fun markCustomerAsCalled(customer: Customer) {
+        val taskId = _taskId.value
+        if (taskId != null) {
+            try {
+                val request = UpdateTaskCustomerStatusRequest(
+                    status = "called",
+                    callResult = "自动拨号完成"
+                )
+                val result = taskRepository.updateTaskCustomerStatus(taskId, customer.id, request)
+                result.fold(
+                    onSuccess = {
+                        updateNotification("已标记客户 ${customer.name} 为已拨打")
+                    },
+                    onFailure = { e ->
+                        updateNotification("标记客户 ${customer.name} 失败: ${e.message}")
+                        e.printStackTrace()
+                    }
+                )
+            } catch (e: Exception) {
+                updateNotification("标记客户 ${customer.name} 异常: ${e.message}")
+                e.printStackTrace()
+            }
+        } else {
+            updateNotification("无法标记客户: taskId为空")
+        }
+    }
+
+    /**
+     * 等待通话结束或超时
+     * @return 是否正常结束（true=正常结束，false=服务被停止）
+     */
+    private suspend fun waitForCallEndOrTimeout(): Boolean {
         var elapsedTime = 0
         var callConnected = false
 
@@ -304,14 +361,16 @@ class AutoDialService : Service() {
                     TelephonyManager.CALL_STATE_IDLE -> {
                         if (callConnected) {
                             // 之前已接通，现在挂断了
-                            return
+                            Log.e("AutoDialService", "SecurityException3: 之前已接通，现在挂断了")
+                            return true
                         }
                         // 电话未接通就被挂断了（如无法连接到移动网络）
                         // 等待一小段时间确保状态稳定
                         delay(500)
                         // 再次检查，如果仍然是IDLE，说明确实已结束
                         if (telephonyManager.callState == TelephonyManager.CALL_STATE_IDLE) {
-                            return
+                            Log.e("AutoDialService", "SecurityException2:")
+                            return true
                         }
                     }
                     TelephonyManager.CALL_STATE_RINGING -> {
@@ -323,10 +382,16 @@ class AutoDialService : Service() {
                 elapsedTime += 500
             }
         } catch (e: SecurityException) {
-            // 没有权限，使用简单的延时策略
-            // 等待拨号完成（通常需要几秒钟）
-            delay(3000)
+            Log.e("AutoDialService", "SecurityException1: ${e.message}")
+            // 没有权限读取通话状态，但应该继续标记该电话已完成
+            // 而不是停止自动拨号任务
+            updateNotification("无法读取通话状态，继续标记为已完成")
+            // 返回true表示正常结束，让流程继续标记该客户为已拨打
+            return true
         }
+        
+        // 正常结束（超时或服务停止）
+        return _isRunning.value
     }
 
     private fun startForeground() {
@@ -341,9 +406,59 @@ class AutoDialService : Service() {
     }
 
     private fun updateNotification(content: String) {
-        val notification = createNotification(content)
+        val currentCustomer = _currentCustomer.value
+        val notification = if (currentCustomer != null) {
+            createNotificationWithCustomer(content, currentCustomer)
+        } else {
+            createNotification(content)
+        }
         val notificationManager = getSystemService(NotificationManager::class.java)
         notificationManager.notify(NOTIFICATION_ID, notification)
+    }
+
+    private fun createNotificationWithCustomer(content: String, customer: Customer): Notification {
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // 构建客户信息文本
+        val customerInfo = buildString {
+            append(customer.name)
+            append(" | ")
+            append(customer.phone)
+            if (!customer.company.isNullOrBlank()) {
+                append(" | ")
+                append(customer.company)
+            }
+        }
+
+        return NotificationCompat.Builder(this, CallCenterApp.CHANNEL_ID_AUTO_DIAL)
+            .setContentTitle(customerInfo)
+            .setContentText(content)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .setStyle(NotificationCompat.BigTextStyle()
+                .setBigContentTitle(customerInfo)
+                .bigText(content))
+            .addAction(
+                NotificationCompat.Action.Builder(
+                    null,
+                    "停止",
+                    PendingIntent.getService(
+                        this,
+                        1,
+                        Intent(this, AutoDialService::class.java).apply {
+                            action = ACTION_STOP
+                        },
+                        PendingIntent.FLAG_IMMUTABLE
+                    )
+                ).build()
+            )
+            .build()
     }
 
     private fun createNotification(content: String): Notification {

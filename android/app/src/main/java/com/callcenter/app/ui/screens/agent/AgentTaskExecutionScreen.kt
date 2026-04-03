@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,6 +17,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -63,10 +65,15 @@ fun AgentTaskExecutionScreen(
     val totalCount by autoDialViewModel.totalCount.collectAsState()
     val currentConfig by autoDialViewModel.currentConfig.collectAsState()
     val callSettings by callSettingsViewModel.callSettings.collectAsState()
+    val recoverableProgress by autoDialViewModel.recoverableProgress.collectAsState()
 
     // 自动拨号配置对话框状态
     var showAutoDialConfigDialog by remember { mutableStateOf(false) }
+    var showResumeProgressDialog by remember { mutableStateOf(false) }
     var pendingCustomersForDial by remember { mutableStateOf<List<com.callcenter.app.data.model.Customer>>(emptyList()) }
+    
+    // 客户列表Tab选中状态，提升到父组件以保持状态
+    var selectedTab by rememberSaveable { mutableStateOf(0) }
 
     // 检查是否正在拨打当前任务
     val isAutoDialingThisTask = autoDialRunning && currentConfig?.taskId == taskId
@@ -95,6 +102,13 @@ fun AgentTaskExecutionScreen(
         viewModel.loadTaskDetail(taskId)
     }
 
+    // 当自动拨号的已拨打数量变化时，刷新任务详情以更新客户列表
+    LaunchedEffect(dialedCount) {
+        if (dialedCount > 0) {
+            viewModel.loadTaskDetail(taskId)
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -115,21 +129,29 @@ fun AgentTaskExecutionScreen(
                         onClick = {
                             if (isAutoDialingThisTask) {
                                 autoDialViewModel.stopAutoDial()
-                        } else {
-                            // 显示配置对话框
-                            if (checkAndRequestCallPermission()) {
-                                pendingCustomersForDial = pendingCustomers.map { tc ->
-                                    com.callcenter.app.data.model.Customer(
-                                        id = tc.id,
-                                        name = tc.name,
-                                        phone = tc.phone,
-                                        email = tc.email,
-                                        company = tc.company
-                                    )
+                            } else {
+                                // 检查是否有可恢复的进度
+                                if (recoverableProgress != null && 
+                                    recoverableProgress?.taskId == taskId &&
+                                    recoverableProgress?.isActive == true) {
+                                    // 显示恢复进度对话框
+                                    showResumeProgressDialog = true
+                                } else {
+                                    // 没有可恢复的进度，开始新的自动拨号
+                                    if (checkAndRequestCallPermission()) {
+                                        pendingCustomersForDial = pendingCustomers.map { tc ->
+                                            com.callcenter.app.data.model.Customer(
+                                                id = tc.id,
+                                                name = tc.name,
+                                                phone = tc.phone,
+                                                email = tc.email,
+                                                company = tc.company
+                                            )
+                                        }
+                                        showAutoDialConfigDialog = true
+                                    }
                                 }
-                                showAutoDialConfigDialog = true
                             }
-                        }
                         },
                         icon = {
                             Icon(
@@ -178,6 +200,8 @@ fun AgentTaskExecutionScreen(
                     isAutoDialing = isAutoDialingThisTask,
                     dialedCount = dialedCount,
                     totalCount = totalCount,
+                    selectedTab = selectedTab,
+                    onTabSelected = { selectedTab = it },
                     onCallCustomer = { phone, taskId, customerId ->
                         // 检查并请求权限，然后拨打电话
                         if (checkAndRequestCallPermission()) {
@@ -315,6 +339,62 @@ fun AgentTaskExecutionScreen(
                 }
             )
         }
+
+        // 恢复进度对话框
+        if (showResumeProgressDialog && recoverableProgress != null) {
+            AlertDialog(
+                onDismissRequest = { showResumeProgressDialog = false },
+                title = { Text("恢复自动拨号") },
+                text = {
+                    Column {
+                        Text("检测到上次有未完成的自动拨号任务：")
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("已拨打: ${recoverableProgress?.dialedCount}/${recoverableProgress?.totalCount}")
+                        Text("剩余: ${recoverableProgress?.remainingCustomers?.size ?: 0} 个客户")
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("是否从上次暂停的位置继续拨打？")
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showResumeProgressDialog = false
+                            // 恢复上次的拨号进度
+                            recoverableProgress?.let { progress ->
+                                autoDialViewModel.restoreProgress(progress)
+                            }
+                        }
+                    ) {
+                        Text("继续拨打")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showResumeProgressDialog = false
+                            // 清除进度，开始新的自动拨号
+                            autoDialViewModel.clearRecoverableProgress()
+                            // 显示配置对话框开始新的拨号
+                            if (checkAndRequestCallPermission()) {
+                                val pendingCustomers = task?.customers?.filter { it.callStatus == "pending" } ?: emptyList()
+                                pendingCustomersForDial = pendingCustomers.map { tc ->
+                                    com.callcenter.app.data.model.Customer(
+                                        id = tc.id,
+                                        name = tc.name,
+                                        phone = tc.phone,
+                                        email = tc.email,
+                                        company = tc.company
+                                    )
+                                }
+                                showAutoDialConfigDialog = true
+                            }
+                        }
+                    ) {
+                        Text("重新开始")
+                    }
+                }
+            )
+        }
     }
 }
 
@@ -324,6 +404,8 @@ private fun TaskExecutionContent(
     isAutoDialing: Boolean,
     dialedCount: Int,
     totalCount: Int,
+    selectedTab: Int,
+    onTabSelected: (Int) -> Unit,
     onCallCustomer: (String, Int, Int) -> Unit,
     onUpdateStatus: (Int, String, String?) -> Unit,
     onEditCustomer: (Int, String?, String?, String?) -> Unit,
@@ -331,24 +413,29 @@ private fun TaskExecutionContent(
 ) {
     val customers = task.customers ?: emptyList()
     val pendingCustomers = customers.filter { it.callStatus == "pending" }
-    val completedCustomers = customers.filter { it.callStatus == "completed" || it.callStatus == "connected" }
+    val calledCustomers = customers.filter { 
+        it.callStatus == "called" || it.callStatus == "completed" || it.callStatus == "connected" 
+    }
+
+    // 根据选中的Tab过滤客户列表
+    val displayedCustomers = when (selectedTab) {
+        0 -> customers // 全部
+        1 -> pendingCustomers // 待拨打
+        2 -> calledCustomers // 已拨打
+        else -> customers
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         // 任务信息卡片
         TaskInfoCard(task = task)
 
-        // 统计信息
-        TaskStatsCard(
-            total = customers.size,
-            completed = completedCustomers.size,
-            pending = pendingCustomers.size
-        )
-
-        // 客户列表标题
-        Text(
-            text = "客户列表 (${customers.size})",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(16.dp)
+        // Tab按钮：全部/待拨打/已拨打
+        CustomerFilterTabs(
+            totalCount = customers.size,
+            pendingCount = pendingCustomers.size,
+            calledCount = calledCustomers.size,
+            selectedTab = selectedTab,
+            onTabSelected = onTabSelected
         )
 
         // 客户列表
@@ -357,20 +444,43 @@ private fun TaskExecutionContent(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(customers) { customer ->
-            TaskCustomerCard(
-                customer = customer,
-                onCall = { onCallCustomer(customer.phone, task.id, customer.id) },
-                onUpdateStatus = { status, result ->
-                    onUpdateStatus(customer.id, status, result)
-                },
-                onEditCustomer = { name, phone, company ->
-                    onEditCustomer(customer.id, name, phone, company)
-                },
-                onDeleteCustomer = {
-                    onDeleteCustomer(customer.id)
+            // 显示当前分组标题
+            item {
+                val title = when (selectedTab) {
+                    0 -> "全部客户"
+                    1 -> "待拨打"
+                    2 -> "已拨打"
+                    else -> "全部客户"
                 }
-            )
+                val count = displayedCustomers.size
+                val color = when (selectedTab) {
+                    0 -> MaterialTheme.colorScheme.primary
+                    1 -> MaterialTheme.colorScheme.primary
+                    2 -> MaterialTheme.colorScheme.tertiary
+                    else -> MaterialTheme.colorScheme.primary
+                }
+                CustomerGroupHeader(
+                    title = title,
+                    count = count,
+                    color = color
+                )
+            }
+
+            // 显示客户列表
+            items(displayedCustomers) { customer ->
+                TaskCustomerCard(
+                    customer = customer,
+                    onCall = { onCallCustomer(customer.phone, task.id, customer.id) },
+                    onUpdateStatus = { status, result ->
+                        onUpdateStatus(customer.id, status, result)
+                    },
+                    onEditCustomer = { name, phone, company ->
+                        onEditCustomer(customer.id, name, phone, company)
+                    },
+                    onDeleteCustomer = {
+                        onDeleteCustomer(customer.id)
+                    }
+                )
             }
         }
     }
@@ -407,7 +517,7 @@ private fun TaskInfoCard(task: Task) {
 }
 
 @Composable
-private fun TaskStatsCard(total: Int, completed: Int, pending: Int) {
+private fun TaskStatsCard(total: Int, called: Int, pending: Int) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -420,7 +530,7 @@ private fun TaskStatsCard(total: Int, completed: Int, pending: Int) {
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
             StatItem(value = total.toString(), label = "总客户")
-            StatItem(value = completed.toString(), label = "已完成")
+            StatItem(value = called.toString(), label = "已拨打")
             StatItem(value = pending.toString(), label = "待拨打")
         }
     }
@@ -439,6 +549,164 @@ private fun StatItem(value: String, label: String) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+/**
+ * 客户筛选Tab按钮
+ * 支持切换显示全部/待拨打/已拨打客户
+ */
+@Composable
+private fun CustomerFilterTabs(
+    totalCount: Int,
+    pendingCount: Int,
+    calledCount: Int,
+    selectedTab: Int,
+    onTabSelected: (Int) -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            // 全部Tab
+            FilterTabItem(
+                label = "全部",
+                count = totalCount,
+                isSelected = selectedTab == 0,
+                onClick = { onTabSelected(0) }
+            )
+
+            // 分隔线
+            Divider(
+                modifier = Modifier
+                    .width(1.dp)
+                    .height(40.dp),
+                color = MaterialTheme.colorScheme.outlineVariant
+            )
+
+            // 待拨打Tab
+            FilterTabItem(
+                label = "待拨打",
+                count = pendingCount,
+                isSelected = selectedTab == 1,
+                onClick = { onTabSelected(1) }
+            )
+
+            // 分隔线
+            Divider(
+                modifier = Modifier
+                    .width(1.dp)
+                    .height(40.dp),
+                color = MaterialTheme.colorScheme.outlineVariant
+            )
+
+            // 已拨打Tab
+            FilterTabItem(
+                label = "已拨打",
+                count = calledCount,
+                isSelected = selectedTab == 2,
+                onClick = { onTabSelected(2) }
+            )
+        }
+    }
+}
+
+/**
+ * 单个筛选Tab项
+ */
+@Composable
+private fun FilterTabItem(
+    label: String,
+    count: Int,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    val backgroundColor = if (isSelected) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        androidx.compose.ui.graphics.Color.Transparent
+    }
+    val contentColor = if (isSelected) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.width(80.dp),
+        color = backgroundColor,
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(vertical = 8.dp)
+        ) {
+            Text(
+                text = count.toString(),
+                style = MaterialTheme.typography.titleLarge,
+                color = if (isSelected) MaterialTheme.colorScheme.primary else contentColor,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = contentColor
+            )
+        }
+    }
+}
+
+/**
+ * 客户分组标题
+ */
+@Composable
+private fun CustomerGroupHeader(
+    title: String,
+    count: Int,
+    color: androidx.compose.ui.graphics.Color
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // 左侧彩色指示条
+        Box(
+            modifier = Modifier
+                .width(4.dp)
+                .height(24.dp)
+                .background(color, shape = MaterialTheme.shapes.small)
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        // 标题
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = color
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        // 数量标签
+        Surface(
+            color = color.copy(alpha = 0.1f),
+            shape = MaterialTheme.shapes.small
+        ) {
+            Text(
+                text = count.toString(),
+                style = MaterialTheme.typography.labelMedium,
+                color = color,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+            )
+        }
     }
 }
 
