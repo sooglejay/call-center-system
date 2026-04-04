@@ -29,6 +29,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.callcenter.app.data.model.Customer
 import com.callcenter.app.data.model.Task
 import com.callcenter.app.data.model.TaskCustomer
+import com.callcenter.app.service.AutoDialService
 import com.callcenter.app.ui.viewmodel.AgentTaskViewModel
 import com.callcenter.app.ui.viewmodel.AutoDialViewModel
 import com.callcenter.app.ui.viewmodel.AutoDialConfig
@@ -456,7 +457,10 @@ fun AgentTaskExecutionScreen(
         AutoFloatingWindow(
             enabled = true,
             onCallStatusMarked = { status ->
-                // 发送通话状态标记到AutoDialService
+                // 同时更新到AutoDialService和本地ViewModel
+                val currentCustomer = AutoDialService.currentCustomer.value
+                
+                // 1. 发送通话状态标记到AutoDialService（用于后台记录）
                 val intent = android.content.Intent(context, com.callcenter.app.service.AutoDialService::class.java).apply {
                     action = when (status) {
                         "connected" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_CONNECTED
@@ -466,6 +470,22 @@ fun AgentTaskExecutionScreen(
                     }
                 }
                 context.startService(intent)
+                
+                // 2. 更新本地客户状态（立即刷新UI）
+                if (currentCustomer != null) {
+                    val callResult = when (status) {
+                        "connected" -> "已接听"
+                        "voicemail" -> "语音信箱"
+                        "unanswered" -> "响铃未接"
+                        else -> null
+                    }
+                    viewModel.updateCustomerStatus(
+                        taskId = taskId,
+                        customerId = currentCustomer.id,
+                        status = "called",
+                        callResult = callResult
+                    )
+                }
             }
         )
     }
@@ -496,7 +516,11 @@ private fun TaskExecutionContent(
     val unansweredCustomers = customers.filter { it.callStatus == "unanswered" || it.callResult == "响铃未接" }
     val failedCustomers = customers.filter { it.callStatus == "failed" || it.callResult == "拨打失败" }
     val otherCalledCustomers = customers.filter { 
-        it.callStatus == "called" || it.callStatus == "completed" 
+        (it.callStatus == "called" || it.callStatus == "completed") && 
+        it.callResult != "已接听" && 
+        it.callResult != "语音信箱" && 
+        it.callResult != "响铃未接" && 
+        it.callResult != "拨打失败"
     }.sortedByDescending { it.calledAt ?: it.callTime ?: "" }
 
     // 根据选中的Tab过滤客户列表
