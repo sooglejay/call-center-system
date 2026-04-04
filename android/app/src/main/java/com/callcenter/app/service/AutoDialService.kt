@@ -470,6 +470,8 @@ class AutoDialService : Service() {
     private suspend fun waitForCallEndOrTimeout(): Boolean {
         var elapsedTime = 0
         var callConnected = false
+        var offHookStartTime: Long = 0
+        val MIN_CALL_DURATION = 3000 // 最小通话持续时间 3 秒
 
         // 尝试使用 TelephonyManager，如果没有权限则使用简单的延时
         try {
@@ -481,25 +483,45 @@ class AutoDialService : Service() {
                 
                 when (state) {
                     TelephonyManager.CALL_STATE_OFFHOOK -> {
-                        // 电话已接通，标记为已连接
-                        callConnected = true
+                        // 电话已接通（包括运营商语音播报的情况）
+                        if (!callConnected) {
+                            callConnected = true
+                            offHookStartTime = System.currentTimeMillis()
+                            Log.d(TAG, "电话已接通/进入通话状态")
+                        }
                     }
                     TelephonyManager.CALL_STATE_IDLE -> {
                         if (callConnected) {
                             // 之前已接通，现在挂断了
-                            Log.d("AutoDialService", "通话已挂断")
-                            return true
-                        }
-                        // 电话未接通就被挂断了（如无法连接到移动网络）
-                        // 等待一小段时间确保状态稳定
-                        delay(500)
-                        // 再次检查，如果仍然是IDLE，说明确实已结束
-                        if (telephonyManager.callState == TelephonyManager.CALL_STATE_IDLE) {
-                            return true
+                            // 确保通话持续时间超过最小值（避免误判运营商语音播报为有效通话）
+                            val callDuration = System.currentTimeMillis() - offHookStartTime
+                            if (callDuration >= MIN_CALL_DURATION) {
+                                Log.d(TAG, "通话已挂断，持续时间: ${callDuration}ms")
+                                return true
+                            } else {
+                                // 通话时间太短，可能是运营商语音播报号码有误
+                                // 等待一下确认状态稳定
+                                Log.d(TAG, "通话时间太短(${callDuration}ms)，等待确认...")
+                                delay(1000)
+                                if (telephonyManager.callState == TelephonyManager.CALL_STATE_IDLE) {
+                                    Log.d(TAG, "确认通话已结束")
+                                    return true
+                                }
+                            }
+                        } else {
+                            // 电话未接通就被挂断了（如无法连接到移动网络）
+                            // 等待一小段时间确保状态稳定
+                            delay(500)
+                            // 再次检查，如果仍然是IDLE，说明确实已结束
+                            if (telephonyManager.callState == TelephonyManager.CALL_STATE_IDLE) {
+                                Log.d(TAG, "电话未接通即结束")
+                                return true
+                            }
                         }
                     }
                     TelephonyManager.CALL_STATE_RINGING -> {
                         // 响铃中，继续等待
+                        Log.d(TAG, "电话响铃中...")
                     }
                 }
                 
@@ -507,7 +529,7 @@ class AutoDialService : Service() {
                 elapsedTime += 500
             }
         } catch (e: SecurityException) {
-            Log.e("AutoDialService", "SecurityException: ${e.message}")
+            Log.e(TAG, "SecurityException: ${e.message}")
             // 没有权限读取通话状态，但应该继续标记该电话已完成
             // 而不是停止自动拨号任务
             // 返回true表示正常结束，让流程继续标记该客户为已拨打
