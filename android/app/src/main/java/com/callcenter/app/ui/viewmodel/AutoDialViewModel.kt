@@ -75,6 +75,7 @@ class AutoDialViewModel @Inject constructor(
         _isRunning.value = AutoDialService.isRunning.value
         _currentCustomer.value = AutoDialService.currentCustomer.value
         _dialedCount.value = AutoDialService.dialedCount.value
+        _totalCount.value = AutoDialService.totalCount.value
 
         // 监听服务状态
         viewModelScope.launch {
@@ -90,6 +91,12 @@ class AutoDialViewModel @Inject constructor(
         viewModelScope.launch {
             AutoDialService.dialedCount.collect { count ->
                 _dialedCount.value = count
+            }
+        }
+        // 监听总客户数变化
+        viewModelScope.launch {
+            AutoDialService.totalCount.collect { total ->
+                _totalCount.value = total
             }
         }
         viewModelScope.launch {
@@ -139,6 +146,7 @@ class AutoDialViewModel @Inject constructor(
         if (customers.isEmpty()) return
 
         _totalCount.value = customers.size
+        _dialedCount.value = dialedCount
         _intervalSeconds.value = config.intervalSeconds
         _timeoutSeconds.value = config.timeoutSeconds
         _currentConfig.value = config
@@ -176,6 +184,10 @@ class AutoDialViewModel @Inject constructor(
      * 恢复上次的拨号进度
      */
     fun restoreProgress(progress: AutoDialProgress) {
+        // 更新总客户数
+        _totalCount.value = progress.totalCount
+        _dialedCount.value = progress.dialedCount
+
         val config = AutoDialConfig(
             scopeType = progress.scopeType,
             taskId = progress.taskId,
