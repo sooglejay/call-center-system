@@ -141,6 +141,12 @@ class AutoDialService : Service() {
                     }
                 }
             }
+
+            override fun onStopDial() {
+                // 停止拨号
+                Log.d(TAG, "用户点击停止拨号按钮")
+                stopAutoDial()
+            }
         }
     }
 

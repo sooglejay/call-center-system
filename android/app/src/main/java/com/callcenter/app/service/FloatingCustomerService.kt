@@ -21,9 +21,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -73,6 +74,7 @@ interface CallStatusCallback {
 interface ManualDialCallback {
     fun onDialNext()
     fun onAutoDialModeChanged(isAutoMode: Boolean)
+    fun onStopDial()
 }
 
 /**
@@ -497,6 +499,8 @@ private fun FloatingCustomerPanel(
 ) {
     // 使用 remember 来保持状态，避免重组时丢失
     var isAutoMode by remember { mutableStateOf(FloatingCustomerService.isAutoDialMode.value) }
+    // 当前选中的通话状态
+    var selectedCallStatus by remember { mutableStateOf<String?>(null) }
 
     Card(
         modifier = Modifier
@@ -570,15 +574,28 @@ private fun FloatingCustomerPanel(
 
                     Spacer(modifier = Modifier.width(4.dp))
 
-                    IconButton(
-                        onClick = onClose,
-                        modifier = Modifier.size(32.dp)
+                    // 停止拨号按钮
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "关闭",
-                            modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        IconButton(
+                            onClick = {
+                                FloatingCustomerService.manualDialCallback?.onStopDial()
+                            },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Stop,
+                                contentDescription = "停止拨号",
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                        Text(
+                            text = "停止拨号",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                            fontSize = 9.sp
                         )
                     }
                 }
@@ -599,6 +616,16 @@ private fun FloatingCustomerPanel(
             // 客户信息卡片
             Spacer(modifier = Modifier.height(16.dp))
             if (customer != null) {
+                // 正在拨号的客户信息提示
+                if (isCalling) {
+                    Text(
+                        text = "正在拨号的客户信息",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -611,28 +638,19 @@ private fun FloatingCustomerPanel(
                         modifier = Modifier.padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // 头像
+                        // 头像 - 显示客户姓名首字母
                         Surface(
                             modifier = Modifier.size(48.dp),
                             shape = CircleShape,
-                            color = if (isCalling) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary,
+                            color = MaterialTheme.colorScheme.primary,
                             shadowElevation = 4.dp
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                if (isCalling) {
-                                    Icon(
-                                        imageVector = Icons.Default.Phone,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                } else {
-                                    Text(
-                                        text = customer.name?.firstOrNull()?.toString() ?: "?",
-                                        style = MaterialTheme.typography.titleLarge,
-                                        color = MaterialTheme.colorScheme.onPrimary
-                                    )
-                                }
+                                Text(
+                                    text = customer.name?.firstOrNull()?.toString() ?: "?",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
                             }
                         }
 
@@ -668,23 +686,36 @@ private fun FloatingCustomerPanel(
                         // 右侧：拨打下一个按钮（手动模式下显示）
                         if (!isAutoMode) {
                             Spacer(modifier = Modifier.width(8.dp))
-                            IconButton(
+                            Surface(
                                 onClick = {
                                     FloatingCustomerService.manualDialCallback?.onDialNext()
                                 },
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier
-                                    .size(40.dp)
-                                    .background(
-                                        color = MaterialTheme.colorScheme.primary,
-                                        shape = CircleShape
-                                    )
+                                    .width(56.dp)
+                                    .fillMaxHeight()
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.PlayArrow,
-                                    contentDescription = "拨打下一个",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(24.dp)
-                                )
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center,
+                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "下一个",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
                             }
                         }
                     }
@@ -708,21 +739,33 @@ private fun FloatingCustomerPanel(
                         StatusButton(
                             text = "已接听",
                             color = Color(0xFF4CAF50),
-                            onClick = { onCallStatusMarked("connected") },
+                            isSelected = selectedCallStatus == "connected",
+                            onClick = {
+                                selectedCallStatus = "connected"
+                                onCallStatusMarked("connected")
+                            },
                             modifier = Modifier.weight(1f)
                         )
                         // 语音信箱按钮
                         StatusButton(
                             text = "语音信箱",
                             color = Color(0xFF2196F3),
-                            onClick = { onCallStatusMarked("voicemail") },
+                            isSelected = selectedCallStatus == "voicemail",
+                            onClick = {
+                                selectedCallStatus = "voicemail"
+                                onCallStatusMarked("voicemail")
+                            },
                             modifier = Modifier.weight(1f)
                         )
                         // 未接听按钮
                         StatusButton(
                             text = "未接听",
                             color = Color(0xFFFF9800),
-                            onClick = { onCallStatusMarked("unanswered") },
+                            isSelected = selectedCallStatus == "unanswered",
+                            onClick = {
+                                selectedCallStatus = "unanswered"
+                                onCallStatusMarked("unanswered")
+                            },
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -802,24 +845,45 @@ private fun FloatingCustomerPanel(
 private fun StatusButton(
     text: String,
     color: Color,
+    isSelected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Button(
         onClick = onClick,
-        modifier = modifier.height(40.dp),
+        modifier = modifier.height(44.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = color
+            containerColor = if (isSelected) color else color.copy(alpha = 0.3f),
+            contentColor = if (isSelected) Color.White else color
         ),
         shape = RoundedCornerShape(8.dp),
-        contentPadding = PaddingValues(horizontal = 8.dp)
+        contentPadding = PaddingValues(horizontal = 8.dp),
+        border = if (isSelected) {
+            androidx.compose.foundation.BorderStroke(
+                width = 2.dp,
+                color = Color.White
+            )
+        } else null
     ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            if (isSelected) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                maxLines = 1
+            )
+        }
     }
 }
 
