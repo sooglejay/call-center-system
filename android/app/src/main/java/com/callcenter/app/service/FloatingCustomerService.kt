@@ -61,6 +61,14 @@ interface CallStatusCallback {
 }
 
 /**
+ * 手动拨号回调接口
+ */
+interface ManualDialCallback {
+    fun onDialNext()
+    fun onAutoDialModeChanged(isAutoMode: Boolean)
+}
+
+/**
  * 悬浮窗客户信息服务
  * 在自动拨号时显示可拖拽的悬浮客户信息面板
  */
@@ -93,6 +101,17 @@ class FloatingCustomerService : Service(), LifecycleOwner, SavedStateRegistryOwn
 
         // 通话状态标记回调
         var callStatusCallback: CallStatusCallback? = null
+
+        // 手动拨号回调
+        var manualDialCallback: ManualDialCallback? = null
+
+        // 是否自动拨号模式（默认手动模式，更安全）
+        private val _isAutoDialMode = MutableStateFlow(false)
+        val isAutoDialMode: StateFlow<Boolean> = _isAutoDialMode
+
+        fun setAutoDialMode(isAuto: Boolean) {
+            _isAutoDialMode.value = isAuto
+        }
     }
 
     private val lifecycleRegistry = LifecycleRegistry(this)
@@ -451,9 +470,12 @@ private fun FloatingCustomerPanel(
     onClose: () -> Unit,
     onCallStatusMarked: (String) -> Unit
 ) {
+    // 使用 remember 来保持状态，避免重组时丢失
+    var isAutoMode by remember { mutableStateOf(FloatingCustomerService.isAutoDialMode.value) }
+
     Card(
         modifier = Modifier
-            .width(300.dp)
+            .width(320.dp)
             .wrapContentHeight(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
@@ -464,7 +486,7 @@ private fun FloatingCustomerPanel(
         Column(
             modifier = Modifier.padding(16.dp)
         ) {
-            // 标题栏：进度和关闭按钮
+            // 标题栏：进度、自动/手动切换和关闭按钮
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -481,23 +503,41 @@ private fun FloatingCustomerPanel(
                         Spacer(modifier = Modifier.width(6.dp))
                     }
                     Text(
-                        text = "自动拨号中",
+                        text = if (isAutoMode) "自动拨号中" else "手动拨号模式",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Medium
                     )
                 }
 
-                IconButton(
-                    onClick = onClose,
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "关闭",
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // 自动/手动切换开关
+                    Text(
+                        text = "自动",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isAutoMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Switch(
+                        checked = isAutoMode,
+                        onCheckedChange = { checked ->
+                            isAutoMode = checked
+                            FloatingCustomerService.setAutoDialMode(checked)
+                            FloatingCustomerService.manualDialCallback?.onAutoDialModeChanged(checked)
+                        },
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    )
+
+                    IconButton(
+                        onClick = onClose,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "关闭",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
 
@@ -635,6 +675,28 @@ private fun FloatingCustomerPanel(
                         }
                     }
                 }
+
+                // 手动模式下显示"拨打下一个"按钮（当不在通话中时）
+                if (!isAutoMode && !isCalling) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = {
+                            FloatingCustomerService.manualDialCallback?.onDialNext()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Phone,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("拨打下一个")
+                    }
+                }
             } else {
                 // 无客户信息状态
                 Box(
@@ -644,10 +706,32 @@ private fun FloatingCustomerPanel(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "准备拨打下一个客户...",
+                        text = if (isAutoMode) "准备拨打下一个客户..." else "点击\"拨打下一个\"继续",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+
+                // 手动模式下显示"拨打下一个"按钮
+                if (!isAutoMode) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            FloatingCustomerService.manualDialCallback?.onDialNext()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Phone,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("拨打下一个")
+                    }
                 }
             }
         }
