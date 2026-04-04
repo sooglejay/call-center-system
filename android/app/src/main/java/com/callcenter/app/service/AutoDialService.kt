@@ -237,6 +237,8 @@ class AutoDialService : Service() {
         val customer = _currentCustomer.value
         val taskId = _taskId.value
         
+        Log.d(TAG, "处理通话状态标记: status=$callStatus, customer=${customer?.id}, taskId=$taskId")
+        
         if (customer != null && taskId != null) {
             serviceScope.launch {
                 try {
@@ -251,11 +253,22 @@ class AutoDialService : Service() {
                             else -> "未知状态"
                         }
                     )
-                    taskRepository.updateTaskCustomerStatus(taskId, customer.id, request)
+                    Log.d(TAG, "发送通话状态更新请求: customerId=${customer.id}, callResult=${request.callResult}")
+                    val result = taskRepository.updateTaskCustomerStatus(taskId, customer.id, request)
+                    result.fold(
+                        onSuccess = {
+                            Log.d(TAG, "通话状态标记成功")
+                        },
+                        onFailure = { e ->
+                            Log.e(TAG, "通话状态标记失败: ${e.message}")
+                        }
+                    )
                 } catch (e: Exception) {
-                    Log.e(TAG, "标记客户状态失败: ${e.message}")
+                    Log.e(TAG, "标记客户状态失败: ${e.message}", e)
                 }
             }
+        } else {
+            Log.w(TAG, "无法标记通话状态: customer=$customer, taskId=$taskId")
         }
     }
 
