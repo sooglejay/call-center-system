@@ -144,52 +144,7 @@ fun AgentTaskExecutionScreen(
             )
         },
         floatingActionButton = {
-            // 自动拨号浮动按钮
-            task?.let { currentTask ->
-                val pendingCustomers = currentTask.customers?.filter { it.callStatus == "pending" } ?: emptyList()
-                if (pendingCustomers.isNotEmpty()) {
-                    ExtendedFloatingActionButton(
-                        onClick = {
-                            if (isAutoDialingThisTask) {
-                                autoDialViewModel.stopAutoDial()
-                            } else {
-                                // 检查是否有可恢复的进度
-                                if (recoverableProgress != null && 
-                                    recoverableProgress?.taskId == taskId &&
-                                    recoverableProgress?.isActive == true) {
-                                    // 显示恢复进度对话框
-                                    showResumeProgressDialog = true
-                                } else {
-                                    // 没有可恢复的进度，开始新的自动拨号
-                                    if (checkAndRequestCallPermission()) {
-                                        pendingCustomersForDial = pendingCustomers.map { tc ->
-                                            com.callcenter.app.data.model.Customer(
-                                                id = tc.id,
-                                                name = tc.name,
-                                                phone = tc.phone,
-                                                email = tc.email,
-                                                company = tc.company
-                                            )
-                                        }
-                                        showAutoDialConfigDialog = true
-                                    }
-                                }
-                            }
-                        },
-                        icon = {
-                            Icon(
-                                if (isAutoDialingThisTask) Icons.Default.Stop else Icons.Default.PlayArrow,
-                                null
-                            )
-                        },
-                        text = { Text(if (isAutoDialingThisTask) "停止拨号" else "自动拨号") },
-                        containerColor = if (isAutoDialingThisTask) 
-                            MaterialTheme.colorScheme.error 
-                        else 
-                            MaterialTheme.colorScheme.primaryContainer
-                    )
-                }
-            }
+            // 自动拨号按钮已移到任务信息卡片内部
         }
     ) { padding ->
         Column(
@@ -256,6 +211,34 @@ fun AgentTaskExecutionScreen(
                     },
                     onDeleteCustomer = { customerId ->
                         viewModel.removeCustomer(taskId, customerId)
+                    },
+                    onAutoDialClick = {
+                        if (isAutoDialingThisTask) {
+                            autoDialViewModel.stopAutoDial()
+                        } else {
+                            // 检查是否有可恢复的进度
+                            if (recoverableProgress != null && 
+                                recoverableProgress?.taskId == taskId &&
+                                recoverableProgress?.isActive == true) {
+                                // 显示恢复进度对话框
+                                showResumeProgressDialog = true
+                            } else {
+                                // 没有可恢复的进度，开始新的自动拨号
+                                val pendingCustomers = task?.customers?.filter { it.callStatus == "pending" } ?: emptyList()
+                                if (checkAndRequestCallPermission()) {
+                                    pendingCustomersForDial = pendingCustomers.map { tc ->
+                                        com.callcenter.app.data.model.Customer(
+                                            id = tc.id,
+                                            name = tc.name,
+                                            phone = tc.phone,
+                                            email = tc.email,
+                                            company = tc.company
+                                        )
+                                    }
+                                    showAutoDialConfigDialog = true
+                                }
+                            }
+                        }
                     }
                 )
             }
@@ -501,7 +484,8 @@ private fun TaskExecutionContent(
     onCallCustomer: (String, Int, Int) -> Unit,
     onUpdateStatus: (Int, String, String?) -> Unit,
     onEditCustomer: (Int, String?, String?, String?) -> Unit,
-    onDeleteCustomer: (Int) -> Unit
+    onDeleteCustomer: (Int) -> Unit,
+    onAutoDialClick: () -> Unit = {}
 ) {
     val customers = task.customers ?: emptyList()
     
@@ -528,8 +512,13 @@ private fun TaskExecutionContent(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // 任务信息卡片
-        TaskInfoCard(task = task)
+        // 任务信息卡片（包含自动拨号按钮）
+        TaskInfoCard(
+            task = task,
+            isAutoDialing = isAutoDialing,
+            hasPendingCustomers = pendingCustomers.isNotEmpty(),
+            onAutoDialClick = onAutoDialClick
+        )
 
         // Tab按钮：全部/待拨打/已接听/语音信箱/响铃未接/拨打失败/其他
         CustomerFilterTabsWithCallStatus(
@@ -607,30 +596,69 @@ private fun TaskExecutionContent(
 }
 
 @Composable
-private fun TaskInfoCard(task: Task) {
+private fun TaskInfoCard(
+    task: Task,
+    isAutoDialing: Boolean = false,
+    hasPendingCustomers: Boolean = false,
+    onAutoDialClick: () -> Unit = {}
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(16.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = task.title,
-                style = MaterialTheme.typography.headlineSmall
-            )
-            if (!task.description.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(4.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 左侧：任务信息
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = task.description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = task.title,
+                    style = MaterialTheme.typography.headlineSmall
                 )
+                if (!task.description.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = task.description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TaskStatusChip(status = task.status)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    TaskPriorityChip(priority = task.priority)
+                }
             }
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TaskStatusChip(status = task.status)
-                Spacer(modifier = Modifier.width(8.dp))
-                TaskPriorityChip(priority = task.priority)
+
+            // 右侧：自动拨号按钮
+            if (hasPendingCustomers) {
+                Spacer(modifier = Modifier.width(12.dp))
+                Button(
+                    onClick = onAutoDialClick,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isAutoDialing)
+                            MaterialTheme.colorScheme.error
+                        else
+                            MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Icon(
+                        imageVector = if (isAutoDialing) Icons.Default.Stop else Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = if (isAutoDialing) "停止" else "自动拨号",
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
             }
         }
     }
