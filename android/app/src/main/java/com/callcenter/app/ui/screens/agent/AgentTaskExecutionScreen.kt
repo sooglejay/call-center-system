@@ -35,6 +35,8 @@ import com.callcenter.app.ui.viewmodel.AutoDialConfig
 import com.callcenter.app.ui.viewmodel.AutoDialScopeType
 import com.callcenter.app.ui.viewmodel.CallSettingsViewModel
 import com.callcenter.app.util.CallHelper
+import com.callcenter.app.util.FloatingWindowManager
+import com.callcenter.app.util.AutoFloatingWindow
 import com.google.accompanist.swiperefresh.SwipeRefresh
 import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
 
@@ -73,11 +75,31 @@ fun AgentTaskExecutionScreen(
     var showResumeProgressDialog by remember { mutableStateOf(false) }
     var pendingCustomersForDial by remember { mutableStateOf<List<com.callcenter.app.data.model.Customer>>(emptyList()) }
     
+    // 悬浮窗权限提示对话框
+    var showFloatingWindowPermissionDialog by remember { mutableStateOf(false) }
+
+    // 检查并请求悬浮窗权限
+    fun checkAndRequestFloatingWindowPermission(): Boolean {
+        return if (FloatingWindowManager.canDrawOverlays(context)) {
+            true
+        } else {
+            showFloatingWindowPermissionDialog = true
+            false
+        }
+    }
+    
     // 客户列表Tab选中状态，提升到父组件以保持状态
     var selectedTab by rememberSaveable { mutableStateOf(0) }
 
     // 检查是否正在拨打当前任务
-    val isAutoDialingThisTask = autoDialRunning && currentConfig?.taskId == taskId
+    val isAutoDialingThisTask = autoDialRunning && (currentConfig?.taskId == taskId || currentConfig?.taskId == null)
+
+    // 当自动拨号状态变化时，刷新任务详情
+    LaunchedEffect(autoDialRunning, dialedCount) {
+        if (autoDialRunning) {
+            viewModel.loadTaskDetail(taskId)
+        }
+    }
 
     val callPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -176,7 +198,7 @@ fun AgentTaskExecutionScreen(
                 .padding(padding)
         ) {
             // 自动拨号时，顶部固定显示当前客户信息
-            if (isAutoDialingThisTask && currentDialCustomer != null) {
+            if (isAutoDialingThisTask) {
                 TaskAutoDialCustomerPanel(
                     currentCustomer = currentDialCustomer,
                     dialedCount = dialedCount,
@@ -323,6 +345,10 @@ fun AgentTaskExecutionScreen(
                     TextButton(
                         onClick = {
                             showAutoDialConfigDialog = false
+                            // 检查悬浮窗权限，如果没有则显示提示并返回
+                            if (!checkAndRequestFloatingWindowPermission()) {
+                                return@TextButton
+                            }
                             // 开始自动拨号，使用本地配置
                             val config = AutoDialConfig(
                                 scopeType = AutoDialScopeType.SPECIFIC_TASK,
@@ -367,6 +393,10 @@ fun AgentTaskExecutionScreen(
                     TextButton(
                         onClick = {
                             showResumeProgressDialog = false
+                            // 检查悬浮窗权限，如果没有则显示提示并返回
+                            if (!checkAndRequestFloatingWindowPermission()) {
+                                return@TextButton
+                            }
                             // 恢复上次的拨号进度
                             recoverableProgress?.let { progress ->
                                 autoDialViewModel.restoreProgress(progress)
@@ -403,6 +433,58 @@ fun AgentTaskExecutionScreen(
                 }
             )
         }
+
+        // 悬浮窗权限提示对话框
+        if (showFloatingWindowPermissionDialog) {
+            AlertDialog(
+                onDismissRequest = { showFloatingWindowPermissionDialog = false },
+                title = { Text("需要悬浮窗权限") },
+                text = {
+                    Text(
+                        "为了在拨号时持续显示客户信息，需要开启悬浮窗权限。\n\n" +
+                        "开启后，您可以在通话过程中看到当前客户的详细信息，并且可以拖拽移动到屏幕任意位置。"
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showFloatingWindowPermissionDialog = false
+                            // 跳转到设置页面请求权限
+                            val activity = context as? android.app.Activity
+                            activity?.let {
+                                FloatingWindowManager.requestOverlayPermission(it)
+                            }
+                        }
+                    ) {
+                        Text("去开启")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { showFloatingWindowPermissionDialog = false }
+                    ) {
+                        Text("暂不开启")
+                    }
+                }
+            )
+        }
+
+        // 自动悬浮窗组件 - 在自动拨号时自动显示悬浮窗
+        AutoFloatingWindow(
+            enabled = true,
+            onCallStatusMarked = { status ->
+                // 发送通话状态标记到AutoDialService
+                val intent = android.content.Intent(context, com.callcenter.app.service.AutoDialService::class.java).apply {
+                    action = when (status) {
+                        "connected" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_CONNECTED
+                        "voicemail" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_VOICEMAIL
+                        "unanswered" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_UNANSWERED
+                        else -> return@AutoFloatingWindow
+                    }
+                }
+                context.startService(intent)
+            }
+        )
     }
 }
 
@@ -1222,8 +1304,6 @@ private fun TaskAutoDialCustomerPanel(
     totalCount: Int,
     onStop: () -> Unit
 ) {
-    if (currentCustomer == null) return
-
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -1269,54 +1349,64 @@ private fun TaskAutoDialCustomerPanel(
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            // 当前客户信息（如果有）
+            if (currentCustomer != null) {
+                Spacer(modifier = Modifier.height(8.dp))
 
-            // 当前客户信息
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // 当前客户头像
-                Surface(
-                    modifier = Modifier.size(48.dp),
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primary
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = (currentCustomer.name?.firstOrNull()?.toString() ?: "?"),
-                            style = MaterialTheme.typography.headlineMedium,
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
+                    // 当前客户头像
+                    Surface(
+                        modifier = Modifier.size(48.dp),
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primary
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = (currentCustomer.name?.firstOrNull()?.toString() ?: "?"),
+                                style = MaterialTheme.typography.headlineMedium,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
                     }
-                }
 
-                Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
 
-                // 当前客户信息
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = currentCustomer.name ?: "未命名",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = currentCustomer.phone ?: "",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    if (!currentCustomer.company.isNullOrBlank()) {
+                    // 当前客户信息
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = currentCustomer.company,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            text = currentCustomer.name ?: "未命名",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
+                        Text(
+                            text = currentCustomer.phone ?: "",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (!currentCustomer.company.isNullOrBlank()) {
+                            Text(
+                                text = currentCustomer.company,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
+            } else {
+                // 等待状态
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "准备拨打下一个客户...",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

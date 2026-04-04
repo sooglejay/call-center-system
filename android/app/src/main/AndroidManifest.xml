@@ -26,6 +26,10 @@
     <!-- 通知 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- 悬浮窗权限 -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
     <!-- 存储权限 - 用于下载APK -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
@@ -58,19 +62,19 @@
             </intent-filter>
         </activity>
 
-        <!-- 通话状态监听服务 -->
-        <service
-            android:name=".service.CallMonitorService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="phoneCall" />
-
         <!-- 自动拨号服务 -->
         <service
             android:name=".service.AutoDialService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="phoneCall" />
+
+        <!-- 悬浮窗客户信息服务 -->
+        <service
+            android:name=".service.FloatingCustomerService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse" />
 
         <!-- 电话状态接收器 -->
         <receiver

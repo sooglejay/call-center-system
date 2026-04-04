@@ -44,6 +44,8 @@ import com.callcenter.app.ui.viewmodel.MyStatsViewModel
 import com.callcenter.app.ui.viewmodel.TaskListViewModel
 import com.callcenter.app.util.CallHelper
 import com.callcenter.app.util.VersionInfoUtil
+import com.callcenter.app.util.FloatingWindowManager
+import com.callcenter.app.util.AutoFloatingWindow
 
 /**
  * 主页面 - 重新设计
@@ -132,6 +134,19 @@ fun MainScreen(
 
     // 自动拨号配置对话框状态
     var showAutoDialConfigDialog by remember { mutableStateOf(false) }
+
+    // 悬浮窗权限提示对话框
+    var showFloatingWindowPermissionDialog by remember { mutableStateOf(false) }
+
+    // 检查并请求悬浮窗权限
+    fun checkAndRequestFloatingWindowPermission(): Boolean {
+        return if (FloatingWindowManager.canDrawOverlays(context)) {
+            true
+        } else {
+            showFloatingWindowPermissionDialog = true
+            false
+        }
+    }
 
     // 自动拨号权限请求
     val callPermissionLauncher = rememberLauncherForActivityResult(
@@ -397,6 +412,10 @@ fun MainScreen(
                     TextButton(
                         onClick = {
                             showAutoDialConfigDialog = false
+                            // 检查悬浮窗权限，如果没有则显示提示并返回
+                            if (!checkAndRequestFloatingWindowPermission()) {
+                                return@TextButton
+                            }
                             // 开始自动拨号，使用本地配置
                             val config = AutoDialConfig(
                                 scopeType = AutoDialScopeType.ALL_PENDING,
@@ -419,6 +438,58 @@ fun MainScreen(
                 }
             )
         }
+
+        // 悬浮窗权限提示对话框
+        if (showFloatingWindowPermissionDialog) {
+            AlertDialog(
+                onDismissRequest = { showFloatingWindowPermissionDialog = false },
+                title = { Text("需要悬浮窗权限") },
+                text = {
+                    Text(
+                        "为了在拨号时持续显示客户信息，需要开启悬浮窗权限。\n\n" +
+                        "开启后，您可以在通话过程中看到当前客户的详细信息，并且可以拖拽移动到屏幕任意位置。"
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showFloatingWindowPermissionDialog = false
+                            // 跳转到设置页面请求权限
+                            val activity = context as? android.app.Activity
+                            activity?.let {
+                                FloatingWindowManager.requestOverlayPermission(it)
+                            }
+                        }
+                    ) {
+                        Text("去开启")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { showFloatingWindowPermissionDialog = false }
+                    ) {
+                        Text("暂不开启")
+                    }
+                }
+            )
+        }
+
+        // 自动悬浮窗组件 - 在自动拨号时自动显示悬浮窗
+        AutoFloatingWindow(
+            enabled = true,
+            onCallStatusMarked = { status ->
+                // 发送通话状态标记到AutoDialService
+                val intent = android.content.Intent(context, com.callcenter.app.service.AutoDialService::class.java).apply {
+                    action = when (status) {
+                        "connected" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_CONNECTED
+                        "voicemail" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_VOICEMAIL
+                        "unanswered" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_UNANSWERED
+                        else -> return@AutoFloatingWindow
+                    }
+                }
+                context.startService(intent)
+            }
+        )
     }
 }
 

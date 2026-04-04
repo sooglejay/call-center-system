@@ -65,9 +65,14 @@ fun CallCenterTheme(
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
-            val window = (view.context as Activity).window
-            window.statusBarColor = colorScheme.primary.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+            // 只在 context 是 Activity 时设置状态栏颜色
+            // 在 Service 中使用时不设置（如悬浮窗）
+            val activity = view.context as? Activity
+            activity?.let {
+                val window = it.window
+                window.statusBarColor = colorScheme.primary.toArgb()
+                WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+            }
         }
     }
 
