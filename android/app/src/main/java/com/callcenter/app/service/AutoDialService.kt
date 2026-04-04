@@ -44,6 +44,7 @@ class AutoDialService : Service() {
         const val ACTION_CALL_STATUS_VOICEMAIL = "com.callcenter.app.action.CALL_STATUS_VOICEMAIL"
         const val ACTION_CALL_STATUS_UNANSWERED = "com.callcenter.app.action.CALL_STATUS_UNANSWERED"
         const val ACTION_CALL_STATUS_FAILED = "com.callcenter.app.action.CALL_STATUS_FAILED"
+        const val ACTION_DIAL_NEXT = "com.callcenter.app.action.DIAL_NEXT"  // 手动拨打下一个
 
         const val EXTRA_INTERVAL = "interval_seconds"
         const val EXTRA_TIMEOUT = "timeout_seconds"
@@ -80,6 +81,10 @@ class AutoDialService : Service() {
         private val _taskCompleted = MutableStateFlow<Int?>(null)
         val taskCompleted: StateFlow<Int?> = _taskCompleted
 
+        // 是否自动拨号模式
+        private val _isAutoDialMode = MutableStateFlow(false)
+        val isAutoDialMode: StateFlow<Boolean> = _isAutoDialMode
+
         private const val NOTIFICATION_ID = 1001
         private const val TAG = "AutoDialService"
     }
@@ -108,7 +113,40 @@ class AutoDialService : Service() {
     private var currentIndex: Int = 0
     private var scopeType: AutoDialScopeType = AutoDialScopeType.ALL_PENDING
 
+    // 手动拨号等待协程
+    private var manualDialWaitJob: Job? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        // 设置悬浮窗手动拨号回调
+        FloatingCustomerService.manualDialCallback = object : ManualDialCallback {
+            override fun onDialNext() {
+                // 手动点击拨打下一个
+                serviceScope.launch {
+                    resumeManualDial()
+                }
+            }
+
+            override fun onAutoDialModeChanged(isAutoMode: Boolean) {
+                // 切换自动/手动模式
+                _isAutoDialMode.value = isAutoMode
+                Log.d(TAG, "自动拨号模式切换为: $isAutoMode")
+
+                // 如果从手动切换到自动，且当前正在等待手动拨号，则继续
+                if (isAutoMode && manualDialWaitJob?.isActive == true) {
+                    serviceScope.launch {
+                        resumeManualDial()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun resumeManualDial() {
+        manualDialWaitJob?.cancel()
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
@@ -143,6 +181,10 @@ class AutoDialService : Service() {
                 currentIndex = intent.getIntExtra(EXTRA_START_INDEX, 0)
                 _dialedCount.value = intent.getIntExtra(EXTRA_DIALED_COUNT, 0)
 
+                // 默认手动模式（更安全）
+                _isAutoDialMode.value = false
+                FloatingCustomerService.setAutoDialMode(false)
+
                 // 保存初始进度
                 serviceScope.launch {
                     saveProgress()
@@ -172,6 +214,12 @@ class AutoDialService : Service() {
             ACTION_CALL_STATUS_UNANSWERED, ACTION_CALL_STATUS_FAILED -> {
                 // 处理通话状态确认
                 handleCallStatusAction(intent.action)
+            }
+            ACTION_DIAL_NEXT -> {
+                // 手动拨打下一个
+                serviceScope.launch {
+                    resumeManualDial()
+                }
             }
         }
         return START_STICKY
@@ -328,7 +376,12 @@ class AutoDialService : Service() {
                 
                 // 等待间隔时间后继续下一个
                 if (currentIndex < customerQueue.size && _isRunning.value) {
-                    delay(intervalSeconds * 1000L)
+                    // 手动模式下等待用户点击
+                    if (!_isAutoDialMode.value) {
+                        waitForManualDial()
+                    } else {
+                        delay(intervalSeconds * 1000L)
+                    }
                 }
                 continue
             }
@@ -338,7 +391,7 @@ class AutoDialService : Service() {
             
             // 如果服务被停止（如权限异常），则退出循环
             if (!callEndedNormally) {
-                Log.e("AutoDialService", "callEndedNormally: false")
+                Log.e(TAG, "callEndedNormally: false")
                 break
             }
 
@@ -353,7 +406,12 @@ class AutoDialService : Service() {
                 currentDialRound++
                 // 等待间隔时间后继续拨打同一客户
                 if (_isRunning.value) {
-                    delay(intervalSeconds * 1000L)
+                    // 手动模式下等待用户点击
+                    if (!_isAutoDialMode.value) {
+                        waitForManualDial()
+                    } else {
+                        delay(intervalSeconds * 1000L)
+                    }
                 }
             } else {
                 // 当前客户所有轮次完成，流转到下一个客户
@@ -362,7 +420,12 @@ class AutoDialService : Service() {
 
                 // 如果不是最后一个客户，等待间隔时间
                 if (currentIndex < customerQueue.size && _isRunning.value) {
-                    delay(intervalSeconds * 1000L)
+                    // 手动模式下等待用户点击
+                    if (!_isAutoDialMode.value) {
+                        waitForManualDial()
+                    } else {
+                        delay(intervalSeconds * 1000L)
+                    }
                 }
             }
         }
@@ -377,6 +440,30 @@ class AutoDialService : Service() {
             }
             stopAutoDial()
             stopSelf()
+    }
+
+    /**
+     * 等待手动拨号（手动模式下使用）
+     */
+    private suspend fun waitForManualDial() {
+        Log.d(TAG, "手动模式：等待用户点击拨打下一个...")
+        
+        // 更新悬浮窗显示"等待中"状态
+        updateFloatingWindow()
+        
+        // 创建一个可取消的等待任务
+        manualDialWaitJob = serviceScope.launch {
+            // 无限等待，直到用户点击或切换到自动模式
+            while (_isRunning.value && !_isAutoDialMode.value) {
+                delay(500)
+            }
+        }
+        
+        // 等待任务完成（用户点击或切换到自动模式）
+        manualDialWaitJob?.join()
+        manualDialWaitJob = null
+        
+        Log.d(TAG, "手动模式：继续拨打下一个")
     }
 
     private suspend fun saveProgress() {
@@ -580,5 +667,7 @@ class AutoDialService : Service() {
         super.onDestroy()
         stopAutoDial()
         serviceScope.cancel()
+        // 清理回调
+        FloatingCustomerService.manualDialCallback = null
     }
 }
