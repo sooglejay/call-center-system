@@ -464,8 +464,8 @@ class AutoDialService : Service() {
     }
 
     /**
-     * 等待通话结束或超时
-     * @return 是否正常结束（true=正常结束，false=服务被停止）
+     * 等待通话结束
+     * @return 是否正常结束（true=通话已挂断，false=服务被停止）
      */
     private suspend fun waitForCallEndOrTimeout(): Boolean {
         var elapsedTime = 0
@@ -477,10 +477,11 @@ class AutoDialService : Service() {
         try {
             val telephonyManager = getSystemService(TELEPHONY_SERVICE) as TelephonyManager
 
-            // 等待电话接通或失败
-            while (_isRunning.value && elapsedTime < timeoutSeconds * 1000) {
+            // 等待电话接通
+            Log.d(TAG, "等待电话接通...")
+            while (_isRunning.value) {
                 val state = telephonyManager.callState
-                
+
                 when (state) {
                     TelephonyManager.CALL_STATE_OFFHOOK -> {
                         // 电话已接通（包括运营商语音播报的情况）
@@ -521,23 +522,26 @@ class AutoDialService : Service() {
                     }
                     TelephonyManager.CALL_STATE_RINGING -> {
                         // 响铃中，继续等待
-                        Log.d(TAG, "电话响铃中...")
+                        if (elapsedTime % 5000 == 0) { // 每5秒打印一次日志
+                            Log.d(TAG, "电话响铃中...")
+                        }
                     }
                 }
-                
+
                 delay(500)
                 elapsedTime += 500
             }
         } catch (e: SecurityException) {
             Log.e(TAG, "SecurityException: ${e.message}")
-            // 没有权限读取通话状态，但应该继续标记该电话已完成
-            // 而不是停止自动拨号任务
-            // 返回true表示正常结束，让流程继续标记该客户为已拨打
-            return true
+            // 没有权限读取通话状态，使用超时机制作为后备
+            Log.w(TAG, "无通话状态权限，使用${timeoutSeconds}秒超时")
+            delay(timeoutSeconds * 1000L)
+            return _isRunning.value
         }
-        
-        // 正常结束（超时或服务停止）
-        return _isRunning.value
+
+        // 服务被停止
+        Log.d(TAG, "服务被停止，结束等待")
+        return false
     }
 
     private fun startForeground() {
