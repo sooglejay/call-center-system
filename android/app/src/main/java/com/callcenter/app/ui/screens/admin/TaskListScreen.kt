@@ -325,30 +325,20 @@ private fun TaskListItem(
                     modifier = Modifier.weight(1f)
                 )
 
-                // 状态
+                // 状态 - 根据实际拨打进度计算
+                val (statusText, statusColor) = when {
+                    task.customerCount > 0 && task.calledCount >= task.customerCount -> "已完成" to Color(0xFF4CAF50)
+                    task.calledCount > 0 -> "进行中" to Color(0xFF2196F3)
+                    else -> "待处理" to Color(0xFFFF9800)
+                }
                 Surface(
                     shape = RoundedCornerShape(4.dp),
-                    color = when (task.status) {
-                        "pending" -> Color(0xFFFF9800).copy(alpha = 0.2f)
-                        "in_progress" -> Color(0xFF2196F3).copy(alpha = 0.2f)
-                        "completed" -> Color(0xFF4CAF50).copy(alpha = 0.2f)
-                        else -> Color(0xFF9E9E9E).copy(alpha = 0.2f)
-                    }
+                    color = statusColor.copy(alpha = 0.2f)
                 ) {
                     Text(
-                        text = when (task.status) {
-                            "pending" -> "待处理"
-                            "in_progress" -> "进行中"
-                            "completed" -> "已完成"
-                            else -> "未知"
-                        },
+                        text = statusText,
                         style = MaterialTheme.typography.labelSmall,
-                        color = when (task.status) {
-                            "pending" -> Color(0xFFFF9800)
-                            "in_progress" -> Color(0xFF2196F3)
-                            "completed" -> Color(0xFF4CAF50)
-                            else -> Color(0xFF9E9E9E)
-                        },
+                        color = statusColor,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }

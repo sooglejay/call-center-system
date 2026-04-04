@@ -654,7 +654,7 @@ private fun TaskInfoCard(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TaskStatusChip(status = task.status)
+                    TaskStatusChip(task = task)
                     Spacer(modifier = Modifier.width(8.dp))
                     TaskPriorityChip(priority = task.priority)
                 }
@@ -1270,12 +1270,15 @@ private fun CustomerStatusChip(status: String) {
 }
 
 @Composable
-private fun TaskStatusChip(status: String) {
-    val (color, text) = when (status) {
-        "completed" -> MaterialTheme.colorScheme.primary to "已完成"
-        "in_progress" -> MaterialTheme.colorScheme.tertiary to "进行中"
-        "cancelled" -> MaterialTheme.colorScheme.error to "已取消"
-        else -> MaterialTheme.colorScheme.outline to "待处理"
+private fun TaskStatusChip(task: Task) {
+    // 根据实际拨打进度计算状态
+    val (color, text) = when {
+        task.customerCount > 0 && task.calledCount >= task.customerCount ->
+            MaterialTheme.colorScheme.primary to "已完成"
+        task.calledCount > 0 ->
+            MaterialTheme.colorScheme.tertiary to "进行中"
+        else ->
+            MaterialTheme.colorScheme.outline to "待处理"
     }
 
     Surface(

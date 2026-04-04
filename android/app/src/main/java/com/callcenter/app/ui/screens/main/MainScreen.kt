@@ -843,10 +843,10 @@ private fun TaskItem(
                 )
             }
 
-            // 状态标签
-            val (statusText, statusColor) = when (task.status) {
-                "completed" -> "已完成" to Color(0xFF4CAF50)
-                "in_progress" -> "进行中" to Color(0xFF2196F3)
+            // 状态标签 - 根据实际进度计算状态
+            val (statusText, statusColor) = when {
+                task.customerCount > 0 && task.calledCount >= task.customerCount -> "已完成" to Color(0xFF4CAF50)
+                task.calledCount > 0 -> "进行中" to Color(0xFF2196F3)
                 else -> "待开始" to Color(0xFFFF9800)
             }
             Surface(
@@ -1101,10 +1101,10 @@ private fun AgentTaskItem(
                     )
                 }
 
-                // 状态标签
-                val (statusText, statusColor) = when (task.status) {
-                    "completed" -> "已完成" to Color(0xFF4CAF50)
-                    "in_progress" -> "进行中" to Color(0xFF2196F3)
+                // 状态标签 - 根据实际进度计算状态
+                val (statusText, statusColor) = when {
+                    task.customerCount > 0 && task.calledCount >= task.customerCount -> "已完成" to Color(0xFF4CAF50)
+                    task.calledCount > 0 -> "进行中" to Color(0xFF2196F3)
                     else -> "待开始" to Color(0xFFFF9800)
                 }
                 Surface(
@@ -1787,10 +1787,10 @@ private fun AgentTaskItemWithProgress(
                         }
                     }
                 } else {
-                    // 状态标签
-                    val (statusText, statusColor) = when (task.status) {
-                        "completed" -> "已完成" to Color(0xFF4CAF50)
-                        "in_progress" -> "进行中" to Color(0xFF2196F3)
+                    // 状态标签 - 根据实际进度计算状态
+                    val (statusText, statusColor) = when {
+                        task.customerCount > 0 && task.calledCount >= task.customerCount -> "已完成" to Color(0xFF4CAF50)
+                        task.calledCount > 0 -> "进行中" to Color(0xFF2196F3)
                         else -> "待开始" to Color(0xFFFF9800)
                     }
                     Surface(
@@ -1832,8 +1832,8 @@ private fun AgentTaskItemWithProgress(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
-                    // 开始拨号按钮
-                    if (!isAutoDialing && task.status != "completed") {
+                    // 开始拨号按钮 - 根据实际进度判断是否已完成
+                    if (!isAutoDialing && !(task.customerCount > 0 && task.calledCount >= task.customerCount)) {
                         TextButton(
                             onClick = onStartDial,
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)

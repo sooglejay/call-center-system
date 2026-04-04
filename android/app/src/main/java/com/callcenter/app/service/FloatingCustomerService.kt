@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -48,11 +49,16 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.callcenter.app.CallCenterApp
 import com.callcenter.app.MainActivity
 import com.callcenter.app.R
+import com.callcenter.app.data.local.preferences.AutoDialSettingsManager
 import com.callcenter.app.data.model.Customer
 import com.callcenter.app.ui.theme.CallCenterTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Dispatchers
 
 /**
  * 通话状态标记回调接口
@@ -112,8 +118,18 @@ class FloatingCustomerService : Service(), LifecycleOwner, SavedStateRegistryOwn
 
         fun setAutoDialMode(isAuto: Boolean) {
             _isAutoDialMode.value = isAuto
+            // 保存到本地
+            val context = CallCenterApp.instance?.applicationContext
+            context?.let {
+                kotlinx.coroutines.GlobalScope.launch {
+                    AutoDialSettingsManager(it).setAutoDialMode(isAuto)
+                }
+            }
         }
     }
+
+    private lateinit var settingsManager: AutoDialSettingsManager
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private val lifecycleRegistry = LifecycleRegistry(this)
     private val savedStateRegistryController = SavedStateRegistryController.create(this)
@@ -150,6 +166,14 @@ class FloatingCustomerService : Service(), LifecycleOwner, SavedStateRegistryOwn
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+
+        // 初始化设置管理器并加载保存的设置
+        settingsManager = AutoDialSettingsManager(this)
+        serviceScope.launch {
+            settingsManager.isAutoDialModeFlow.collect { isAutoMode ->
+                _isAutoDialMode.value = isAutoMode
+            }
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder = LocalBinder()
@@ -620,6 +644,7 @@ private fun FloatingCustomerPanel(
                                 text = customer.name ?: "未知客户",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -636,6 +661,29 @@ private fun FloatingCustomerPanel(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        // 右侧：拨打下一个按钮（手动模式下显示）
+                        if (!isAutoMode) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            IconButton(
+                                onClick = {
+                                    FloatingCustomerService.manualDialCallback?.onDialNext()
+                                },
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .background(
+                                        color = MaterialTheme.colorScheme.primary,
+                                        shape = CircleShape
+                                    )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow,
+                                    contentDescription = "拨打下一个",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(24.dp)
                                 )
                             }
                         }

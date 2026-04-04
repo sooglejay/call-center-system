@@ -178,7 +178,7 @@ private fun TaskHeader(task: Task) {
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f)
             )
-            TaskStatusChip(status = task.status)
+            TaskStatusChip(task = task)
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -445,13 +445,15 @@ private fun TaskCustomerItem(customer: TaskCustomer) {
 }
 
 @Composable
-private fun TaskStatusChip(status: String) {
-    val (color, text) = when (status) {
-        "pending" -> Color(0xFFFF9800) to "待处理"
-        "in_progress" -> Color(0xFF2196F3) to "进行中"
-        "completed" -> Color(0xFF4CAF50) to "已完成"
-        "cancelled" -> Color(0xFF9E9E9E) to "已取消"
-        else -> Color(0xFF9E9E9E) to "未知"
+private fun TaskStatusChip(task: Task) {
+    // 根据实际拨打进度计算状态
+    val (color, text) = when {
+        task.customerCount > 0 && task.calledCount >= task.customerCount ->
+            Color(0xFF4CAF50) to "已完成"
+        task.calledCount > 0 ->
+            Color(0xFF2196F3) to "进行中"
+        else ->
+            Color(0xFFFF9800) to "待处理"
     }
 
     Surface(
