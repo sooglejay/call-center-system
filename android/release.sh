@@ -268,15 +268,23 @@ echo ""
 # 步骤 5: 创建版本
 echo -e "${BLUE}[5/6] 创建版本...${NC}"
 
-# 读取更新日志
+# 从 RELEASE_NOTES.md 读取当前版本的更新日志
 UPDATE_LOG=""
-if [ -f "CHANGELOG.md" ]; then
-    UPDATE_LOG=$(cat CHANGELOG.md)
-elif [ -f "release-notes.txt" ]; then
-    UPDATE_LOG=$(cat release-notes.txt)
+RELEASE_NOTES_FILE="app/src/main/assets/RELEASE_NOTES.md"
+
+if [ -f "$RELEASE_NOTES_FILE" ]; then
+    # 提取当前版本的更新日志（从版本标题到下一个 --- 或文件结束）
+    UPDATE_LOG=$(awk -v ver="v$VERSION_NAME" '
+        BEGIN { found=0; content="" }
+        $0 ~ "^## " ver { found=1; next }
+        found && /^---$/ { found=0 }
+        found && /^## v[0-9]/ { found=0 }
+        found { content = content $0 "\n" }
+        END { print content }
+    ' "$RELEASE_NOTES_FILE" | sed '/^$/N;/^\n$/D')
 fi
 
-# 如果没有更新日志，使用默认内容
+# 如果没有找到更新日志，使用默认内容
 if [ -z "$UPDATE_LOG" ]; then
     UPDATE_LOG="版本 $VERSION_NAME 更新"
 fi

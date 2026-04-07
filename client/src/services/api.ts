@@ -185,6 +185,24 @@ export const dataImportApi = {
   clearRealData: () => api.delete('/data-import/real')
 };
 
+// 版本管理API
+export const versionApi = {
+  // 获取最新版本
+  getLatestVersion: () => api.get('/version/latest'),
+  // 获取版本列表
+  getVersions: (params?: any) => api.get('/version/list', { params }),
+  // 获取单个版本
+  getVersion: (id: number) => api.get(`/version/${id}`),
+  // 创建版本（管理员）
+  createVersion: (data: any) => api.post('/version/create', data),
+  // 上传APK（管理员）
+  uploadApk: (formData: FormData) => api.post('/version/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  // 删除版本（管理员）
+  deleteVersion: (id: number) => api.delete(`/version/${id}`)
+};
+
 import type { User, Customer, CallRecord, Task, AgentConfig, SystemConfig, Stats, DashboardStats, AgentRanking } from '../types';
 export type { User, Customer, CallRecord, Task, AgentConfig, SystemConfig, Stats, DashboardStats, AgentRanking };
 

@@ -13,7 +13,8 @@ import {
   QuestionCircleOutlined,
   ScheduleOutlined,
   MenuFoldOutlined,
-  MenuUnfoldOutlined
+  MenuUnfoldOutlined,
+  AndroidOutlined
 } from '@ant-design/icons';
 import { useAuthStore } from '../../stores';
 
@@ -40,6 +41,7 @@ export default function AgentLayout() {
     { key: '/agent/calls', icon: <PhoneOutlined />, label: '电话列表' },
     { key: '/agent/communication', icon: <AudioOutlined />, label: '通信记录' },
     { key: '/agent/stats', icon: <BarChartOutlined />, label: '我的业绩' },
+    { key: '/agent/download', icon: <AndroidOutlined />, label: 'App下载' },
     { key: '/agent/settings', icon: <SettingOutlined />, label: '拨号设置' },
   ];
 

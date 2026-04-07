@@ -18,6 +18,7 @@ import CallList from './pages/agent/CallList';
 import CommunicationRecords from './pages/agent/CommunicationRecords';
 import MyStats from './pages/agent/MyStats';
 import Settings from './pages/agent/Settings';
+import AppDownload from './pages/agent/AppDownload';
 import HelpDocumentation from './pages/HelpDocumentation';
 import PrivateRoute, { getAuth } from './components/PrivateRoute';
 
@@ -95,6 +96,7 @@ function App() {
           <Route path="calls" element={<CallList />} />
           <Route path="communication" element={<CommunicationRecords />} />
           <Route path="stats" element={<MyStats />} />
+          <Route path="download" element={<AppDownload />} />
           <Route path="settings" element={<Settings />} />
         </Route>
         
