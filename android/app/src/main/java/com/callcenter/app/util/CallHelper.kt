@@ -9,6 +9,7 @@ import android.net.Uri
 import android.telephony.TelephonyManager
 import android.widget.Toast
 import androidx.core.content.ContextCompat
+import com.callcenter.app.service.CallStateMonitorService
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -35,10 +36,23 @@ class CallHelper @Inject constructor(
      * 拨打电话
      * @param phoneNumber 电话号码
      * @param directCall 是否直接拨打（需要 CALL_PHONE 权限）
+     * @param autoSpeaker 是否自动开启免提（默认开启）
+     * @param speakerDelayMs 开启免提的延迟时间（毫秒）
      */
-    fun makeCall(phoneNumber: String, directCall: Boolean = true) {
+    fun makeCall(
+        phoneNumber: String,
+        directCall: Boolean = true,
+        autoSpeaker: Boolean = true,
+        speakerDelayMs: Long = CallStateMonitorService.DEFAULT_SPEAKER_DELAY
+    ) {
         val cleanNumber = phoneNumber.replace(Regex("[^0-9+]"), "")
-        
+
+        // 启动通话状态监听服务（在拨号前启动，确保能捕获到通话状态）
+        if (autoSpeaker) {
+            CallStateMonitorService.startService(context, autoSpeaker = true, delayMs = speakerDelayMs)
+            android.util.Log.d("CallHelper", "已启动通话监听服务，将在接通后自动开启免提")
+        }
+
         if (directCall && hasCallPermission()) {
             // 直接拨打
             val intent = Intent(Intent.ACTION_CALL).apply {
@@ -54,6 +68,13 @@ class CallHelper @Inject constructor(
             }
             context.startActivity(intent)
         }
+    }
+
+    /**
+     * 拨打电话（简化版，默认自动开启免提）
+     */
+    fun makeCallWithAutoSpeaker(phoneNumber: String) {
+        makeCall(phoneNumber, directCall = true, autoSpeaker = true)
     }
 
     /**

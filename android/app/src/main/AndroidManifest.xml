@@ -39,6 +39,15 @@
     <!-- 安装应用权限 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- 修改音频设置权限 -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <!-- Root 权限相关（用于执行 shell 命令）-->
+    <uses-permission android:name="android.permission.WRITE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
+
     <application
         android:name=".CallCenterApp"
         android:allowBackup="true"
@@ -75,6 +84,13 @@
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="specialUse" />
+
+        <!-- 通话状态监听服务 -->
+        <service
+            android:name=".service.CallStateMonitorService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="phoneCall" />
 
         <!-- FileProvider - 用于安装APK -->
         <provider

@@ -1,5 +1,22 @@
 # 智能呼叫中心 - 版本更新日志
 
+## v1.8.2 (2026-04-08) - 自动免提功能
+
+### 新功能
+- **自动开启免提**: 拨打电话时自动开启扬声器（免提）模式
+  - 拨号后自动启动通话状态监听服务
+  - 检测到通话接通后自动开启免提
+  - 支持 Root 设备的多种免提开启方式（service call audio、am broadcast、settings）
+  - 可配置延迟时间（默认 800ms）
+
+### 技术更新
+- 新增 RootUtil 工具类，支持执行 root 权限的 shell 命令
+- 新增 CallStateMonitorService 前台服务，监听通话状态变化
+- CallHelper 新增 autoSpeaker 参数，默认启用自动免提
+- 添加 MODIFY_AUDIO_SETTINGS、WRITE_SETTINGS、WRITE_SECURE_SETTINGS 权限
+
+---
+
 ## v1.8.1 (2026-04-08) - 手动拨号与通讯录
 
 ### 新功能
