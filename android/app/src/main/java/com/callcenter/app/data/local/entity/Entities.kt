@@ -102,3 +102,19 @@ data class UserEntity(
     val dataAccessType: String? = "all",
     val syncStatus: String = "synced"
 )
+
+/**
+ * 通讯录联系人实体
+ */
+@Entity(tableName = "contacts")
+data class ContactEntity(
+    @PrimaryKey(autoGenerate = true)
+    val id: Int = 0,
+    val name: String,
+    val phone: String,
+    val email: String? = null,
+    val company: String? = null,
+    val notes: String? = null,
+    val createdAt: String? = null,
+    val updatedAt: String? = null
+)

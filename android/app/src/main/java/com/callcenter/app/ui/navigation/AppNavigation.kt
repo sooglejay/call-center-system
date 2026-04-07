@@ -23,6 +23,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.callcenter.app.service.AutoDialService
 import com.callcenter.app.ui.screens.admin.AgentDetailScreen
+import com.callcenter.app.util.CallHelper
 import com.callcenter.app.ui.screens.admin.AgentListScreen
 import com.callcenter.app.ui.screens.admin.CreateTaskScreen
 import com.callcenter.app.ui.screens.admin.DashboardScreen
@@ -37,8 +38,10 @@ import com.callcenter.app.ui.screens.agent.AgentTaskExecutionScreen
 import com.callcenter.app.ui.screens.agent.AgentTaskListScreen
 import com.callcenter.app.ui.screens.stats.MyStatsScreen
 import com.callcenter.app.ui.screens.help.HelpScreen
+import com.callcenter.app.ui.screens.dialer.DialerScreen
+import com.callcenter.app.ui.screens.contact.ContactListScreen
+import com.callcenter.app.ui.screens.contact.AddEditContactScreen
 import com.callcenter.app.ui.viewmodel.AuthViewModel
-import com.callcenter.app.util.CallHelper
 
 /**
  * 导航路由定义
@@ -62,6 +65,16 @@ sealed class Screen(val route: String) {
     object Settings : Screen("settings")
     object AutoDialSettings : Screen("auto_dial_settings")
     object PermissionTest : Screen("permission_test")
+
+    // 拨号
+    object Dialer : Screen("dialer")
+
+    // 通讯录
+    object ContactList : Screen("contacts")
+    object AddContact : Screen("contacts/add")
+    object EditContact : Screen("contacts/edit/{contactId}") {
+        fun createRoute(contactId: Int) = "contacts/edit/$contactId"
+    }
     
     // 客服个人
     object MyStats : Screen("my_stats")
@@ -178,6 +191,9 @@ fun AppNavigation(
                 onNavigateToPermissionTest = {
                     navController.navigate(Screen.PermissionTest.route)
                 },
+                onNavigateToDialer = {
+                    navController.navigate(Screen.Dialer.route)
+                },
                 onLogout = {
                     stopAutoDialAndLogout()
                     authViewModel.logout {
@@ -266,6 +282,51 @@ fun AppNavigation(
 
         composable(Screen.PermissionTest.route) {
             com.callcenter.app.ui.screens.settings.PermissionTestScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        // 手动拨号页面
+        composable(Screen.Dialer.route) {
+            DialerScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToContacts = {
+                    navController.navigate(Screen.ContactList.route)
+                }
+            )
+        }
+
+        // 通讯录列表页面
+        composable(Screen.ContactList.route) {
+            val context = LocalContext.current
+            val callHelper = CallHelper(context)
+            ContactListScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onContactClick = { phone ->
+                    // 直接拨打选中的号码
+                    callHelper.makeCall(phone, directCall = true)
+                },
+                onAddContact = {
+                    navController.navigate(Screen.AddContact.route)
+                }
+            )
+        }
+
+        // 添加联系人页面
+        composable(Screen.AddContact.route) {
+            AddEditContactScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        // 编辑联系人页面
+        composable(
+            route = Screen.EditContact.route,
+            arguments = listOf(navArgument("contactId") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val contactId = backStackEntry.arguments?.getInt("contactId") ?: 0
+            // TODO: 加载联系人数据并传入
+            AddEditContactScreen(
                 onNavigateBack = { navController.popBackStack() }
             )
         }

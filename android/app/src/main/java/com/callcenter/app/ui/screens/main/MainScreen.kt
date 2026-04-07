@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material3.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.*
@@ -70,6 +71,7 @@ fun MainScreen(
     onNavigateToAgentTaskExecution: (Int) -> Unit,
     onNavigateToHelp: () -> Unit,
     onNavigateToPermissionTest: () -> Unit,
+    onNavigateToDialer: () -> Unit,
     onLogout: () -> Unit,
     onSwitchAccount: () -> Unit,
     authViewModel: AuthViewModel = hiltViewModel(),
@@ -253,6 +255,7 @@ fun MainScreen(
                     onNavigateToAgents = onNavigateToAgents,
                     onNavigateToTasks = onNavigateToTasks,
                     onNavigateToTaskDetail = onNavigateToTaskDetail,
+                    onNavigateToDialer = onNavigateToDialer,
                     dashboardViewModel = dashboardViewModel,
                     taskListViewModel = taskListViewModel
                 )
@@ -281,6 +284,7 @@ fun MainScreen(
                     padding = padding,
                     onNavigateToMyStats = onNavigateToMyStats,
                     onNavigateToAgentTaskExecution = onNavigateToAgentTaskExecution,
+                    onNavigateToDialer = onNavigateToDialer,
                     authViewModel = authViewModel,
                     taskListViewModel = taskListViewModel,
                     myStatsViewModel = myStatsViewModel,
@@ -509,6 +513,7 @@ private fun AdminHomeTab(
     onNavigateToAgents: () -> Unit,
     onNavigateToTasks: () -> Unit,
     onNavigateToTaskDetail: (Int) -> Unit,
+    onNavigateToDialer: () -> Unit,
     dashboardViewModel: DashboardViewModel,
     taskListViewModel: TaskListViewModel
 ) {
@@ -628,20 +633,50 @@ private fun AdminHomeTab(
                 modifier = Modifier.weight(1f),
                 title = "仪表盘",
                 icon = Icons.Default.Dashboard,
+                containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
                 onClick = onNavigateToDashboard
             )
             QuickActionButton(
                 modifier = Modifier.weight(1f),
                 title = "客服管理",
                 icon = Icons.Default.Group,
+                containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f),
                 onClick = onNavigateToAgents
             )
             QuickActionButton(
                 modifier = Modifier.weight(1f),
                 title = "任务管理",
                 icon = Icons.Default.Assignment,
+                containerColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f),
                 onClick = onNavigateToTasks
             )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 第二行快捷入口
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            QuickActionButton(
+                modifier = Modifier.weight(1f),
+                title = "手动拨号",
+                icon = Icons.Default.Phone,
+                containerColor = Color(0xFF4CAF50).copy(alpha = 0.1f),
+                onClick = onNavigateToDialer
+            )
+            QuickActionButton(
+                modifier = Modifier.weight(1f),
+                title = "数据统计",
+                icon = Icons.Default.BarChart,
+                containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                onClick = onNavigateToDashboard
+            )
+            // 占位保持对齐
+            Box(modifier = Modifier.weight(1f))
         }
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -1150,6 +1185,7 @@ private fun AgentWorkTab(
     padding: PaddingValues,
     onNavigateToMyStats: () -> Unit,
     onNavigateToAgentTaskExecution: (Int) -> Unit,
+    onNavigateToDialer: () -> Unit,
     authViewModel: AuthViewModel,
     taskListViewModel: TaskListViewModel,
     myStatsViewModel: MyStatsViewModel,
@@ -1624,6 +1660,46 @@ private fun AgentWorkTab(
 
             Spacer(modifier = Modifier.height(16.dp))
         }
+
+        // 快捷操作按钮
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Text(
+                    text = "快捷操作",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    QuickActionButton(
+                        modifier = Modifier.weight(1f),
+                        title = "手动拨号",
+                        icon = Icons.Default.Phone,
+                        containerColor = Color(0xFF4CAF50).copy(alpha = 0.1f),
+                        onClick = onNavigateToDialer
+                    )
+                    QuickActionButton(
+                        modifier = Modifier.weight(1f),
+                        title = "我的统计",
+                        icon = Icons.Default.BarChart,
+                        onClick = onNavigateToMyStats
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         // 我的任务列表
         if (myTasks.isNotEmpty()) {
