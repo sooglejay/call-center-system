@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Card, Descriptions, QRCode, Tag, Button, Spin, Typography, Divider } from 'antd';
+import { Card, Descriptions, QRCode, Button, Spin, Typography, Divider } from 'antd';
 import { DownloadOutlined, AndroidOutlined, QrcodeOutlined } from '@ant-design/icons';
 import { versionApi } from '../../services/api';
 
