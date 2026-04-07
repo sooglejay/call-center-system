@@ -98,7 +98,7 @@ class SequentialAutoDialViewModel @Inject constructor(
                         it.callStatus == "pending" 
                     }?.map { tc ->
                         Customer(
-                            id = tc.id,
+                            id = tc.id ?: tc.taskCustomerId,  // 使用 taskCustomerId 作为备选
                             name = tc.name,
                             phone = tc.phone,
                             email = tc.email,

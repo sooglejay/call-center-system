@@ -14,7 +14,9 @@ import {
   Descriptions,
   Typography,
   Divider,
-  Alert
+  Alert,
+  Space,
+  QRCode
 } from 'antd';
 import {
   UploadOutlined,
@@ -22,7 +24,9 @@ import {
   DeleteOutlined,
   MobileOutlined,
   CheckCircleOutlined,
-  ExclamationCircleOutlined
+  ExclamationCircleOutlined,
+  DownloadOutlined,
+  QrcodeOutlined
 } from '@ant-design/icons';
 import type { UploadFile } from 'antd/es/upload/interface';
 
@@ -182,7 +186,7 @@ export default function VersionManagement() {
       dataIndex: 'version_code',
       key: 'version_code',
       width: 100,
-      sorter: (a: VersionInfo, b: VersionInfo) => b.version_code - a.version_code,
+      sorter: (b: VersionInfo, a: VersionInfo) => b.version_code - a.version_code,
       defaultSortOrder: 'descend' as const
     },
     {
@@ -224,8 +228,8 @@ export default function VersionManagement() {
       dataIndex: 'created_at',
       key: 'created_at',
       width: 180,
-      render: (date: string) => new Date(date).toLocaleString(),
-      sorter: (a: VersionInfo, b: VersionInfo) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      sorter: (b: VersionInfo, a: VersionInfo) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      render: (date: string) => new Date(date).toLocaleString()
     },
     {
       title: '操作',
@@ -260,22 +264,66 @@ export default function VersionManagement() {
 
       {/* 当前版本信息 */}
       {currentVersion && (
-        <Card title="当前版本" style={{ marginBottom: 24 }}>
+        <Card 
+          title="当前版本" 
+          style={{ marginBottom: 24 }}
+          extra={
+            <Space>
+              <Button
+                type="primary"
+                icon={<DownloadOutlined />}
+                href={currentVersion.apk_url}
+                target="_blank"
+              >
+                下载APK
+              </Button>
+            </Space>
+          }
+        >
           <Descriptions bordered column={3}>
             <Descriptions.Item label="版本号">{currentVersion.version_code}</Descriptions.Item>
             <Descriptions.Item label="版本名称">{currentVersion.version_name}</Descriptions.Item>
             <Descriptions.Item label="强制更新">
               {currentVersion.force_update === 1 ? <Tag color="red">是</Tag> : <Tag color="default">否</Tag>}
             </Descriptions.Item>
-            <Descriptions.Item label="最低版本号">{currentVersion.min_version_code}</Descriptions.Item>
             <Descriptions.Item label="发布人">{currentVersion.created_by_name}</Descriptions.Item>
             <Descriptions.Item label="发布时间">
               {new Date(currentVersion.created_at).toLocaleString()}
+            </Descriptions.Item>
+            <Descriptions.Item label="下载地址">
+              <Text copyable style={{ fontSize: 12 }}>{currentVersion.apk_url}</Text>
             </Descriptions.Item>
             <Descriptions.Item label="更新日志" span={3}>
               <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{currentVersion.update_log}</pre>
             </Descriptions.Item>
           </Descriptions>
+          
+          <Divider />
+          
+          {/* 二维码下载区域 */}
+          <div style={{ textAlign: 'center', padding: '24px 0' }}>
+            <Title level={5} style={{ marginBottom: 16 }}>
+              <QrcodeOutlined style={{ marginRight: 8 }} />
+              扫码下载最新版本
+            </Title>
+            <div style={{ 
+              display: 'inline-block', 
+              padding: 16, 
+              background: '#fff', 
+              borderRadius: 8,
+              border: '1px solid #f0f0f0'
+            }}>
+              <QRCode 
+                value={currentVersion.apk_url} 
+                size={200}
+                icon="/logo.png"
+                iconSize={40}
+              />
+            </div>
+            <Paragraph type="secondary" style={{ marginTop: 16 }}>
+              使用手机浏览器扫描二维码即可下载安装
+            </Paragraph>
+          </div>
         </Card>
       )}
 

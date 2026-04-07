@@ -274,10 +274,56 @@ class CustomerRepository @Inject constructor(
     }
 
     /**
-     * 刷新数据
+     * 删除客户
      */
-    suspend fun refresh() {
-        getCustomers(forceRefresh = true)
+    suspend fun deleteCustomer(customerId: Int): Result<Unit> {
+        android.util.Log.d("CustomerRepository", "开始删除客户: customerId=$customerId")
+        return try {
+            android.util.Log.d("CustomerRepository", "调用API删除客户: customerId=$customerId")
+            val response = apiService.deleteCustomer(customerId)
+            android.util.Log.d("CustomerRepository", "API响应: isSuccessful=${response.isSuccessful}, code=${response.code()}, message=${response.message()}")
+            
+            if (response.isSuccessful) {
+                android.util.Log.d("CustomerRepository", "API删除成功，删除本地数据: customerId=$customerId")
+                // 从本地数据库删除
+                customerDao.deleteById(customerId)
+                android.util.Log.d("CustomerRepository", "本地数据删除完成: customerId=$customerId")
+                // 更新内存中的列表
+                _customers.value = _customers.value.filter { it.id != customerId }
+                android.util.Log.d("CustomerRepository", "内存列表更新完成，剩余客户数: ${_customers.value.size}")
+                Result.success(Unit)
+            } else {
+                val errorBody = response.errorBody()?.string()
+                android.util.Log.e("CustomerRepository", "API删除失败: code=${response.code()}, errorBody=$errorBody")
+                Result.failure(Exception("删除失败: $errorBody"))
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("CustomerRepository", "删除异常: ${e.message}", e)
+            Result.failure(Exception("删除失败: ${e.message}"))
+        }
+    }
+
+    /**
+     * 批量删除客户
+     */
+    suspend fun deleteCustomers(customerIds: List<Int>): Result<Unit> {
+        var successCount = 0
+        var failCount = 0
+        
+        customerIds.forEach { id ->
+            val result = deleteCustomer(id)
+            if (result.isSuccess) {
+                successCount++
+            } else {
+                failCount++
+            }
+        }
+        
+        return if (failCount == 0) {
+            Result.success(Unit)
+        } else {
+            Result.failure(Exception("缺乏管理员权限，无法删除客户: 成功 $successCount 个, 失败 $failCount 个"))
+        }
     }
 
     /**

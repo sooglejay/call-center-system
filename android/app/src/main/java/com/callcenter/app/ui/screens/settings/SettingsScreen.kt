@@ -61,7 +61,7 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("设置") },
+                title = { Text(VersionInfoUtil.getTitleWithVersion(context, "设置")) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, "返回")
@@ -192,7 +192,8 @@ fun SettingsScreen(
             onConfirm = { newUrl ->
                 viewModel.updateServerUrl(newUrl)
                 showServerUrlDialog = false
-                Toast.makeText(context, "服务器地址已更新，请重新登录", Toast.LENGTH_LONG).show()
+                // 重启应用使新服务器地址生效
+                com.callcenter.app.util.AppRestartUtil.restartApp(context)
             }
         )
     }
@@ -540,7 +541,7 @@ private fun ServerUrlDialog(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "修改后需要重新登录",
+                    text = "修改后应用将自动重启",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

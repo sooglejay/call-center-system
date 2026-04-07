@@ -1,14 +1,40 @@
 package com.callcenter.app.util
 
 import android.content.Context
+import android.content.pm.PackageManager
 import java.io.BufferedReader
 import java.io.InputStreamReader
 
 /**
  * 版本信息工具类
- * 用于读取 release notes
+ * 用于读取 release notes 和获取版本号
  */
 object VersionInfoUtil {
+
+    /**
+     * 获取应用版本号
+     * @param context 上下文
+     * @return 版本号字符串，如 "1.7.7"
+     */
+    fun getVersionName(context: Context): String {
+        return try {
+            val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            packageInfo.versionName ?: "未知版本"
+        } catch (e: Exception) {
+            "未知版本"
+        }
+    }
+
+    /**
+     * 获取带版本号的标题
+     * @param context 上下文
+     * @param title 原始标题
+     * @return 带版本号的标题，如 "任务执行(v1.7.7)"
+     */
+    fun getTitleWithVersion(context: Context, title: String): String {
+        val version = getVersionName(context)
+        return "$title(v$version)"
+    }
 
     /**
      * 读取 release notes 内容

@@ -175,7 +175,7 @@ data class Task(
 data class TaskCustomer(
     @SerializedName("task_customer_id")
     val taskCustomerId: Int,
-    val id: Int,
+    val id: Int? = null,  // 改为可空，因为后端可能返回 null
     val name: String? = null,
     val phone: String? = null,
     val email: String? = null,

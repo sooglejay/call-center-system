@@ -77,12 +77,23 @@ class AuthRepository @Inject constructor(
 
     /**
      * 检查是否已登录
+     * 添加超时处理，避免网络异常导致卡住
      */
     suspend fun isLoggedIn(): Boolean {
         val isLoggedIn = tokenManager.isLoggedIn()
         if (isLoggedIn && _currentUser.value == null) {
-            // 尝试获取用户信息
-            getCurrentUser()
+            // 尝试获取用户信息，但添加超时处理
+            try {
+                kotlinx.coroutines.withTimeout(5000) { // 5秒超时
+                    getCurrentUser()
+                }
+            } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                // 超时了，但不影响登录状态检查
+                android.util.Log.w("AuthRepository", "获取用户信息超时")
+            } catch (e: Exception) {
+                // 其他异常也不影响登录状态检查
+                android.util.Log.w("AuthRepository", "获取用户信息失败: ${e.message}")
+            }
         }
         return isLoggedIn
     }

@@ -1,5 +1,6 @@
 package com.callcenter.app.data.repository
 
+import android.util.Log
 import com.callcenter.app.data.api.ApiService
 import com.callcenter.app.data.local.dao.TaskDao
 import com.callcenter.app.data.local.entity.TaskEntity
@@ -29,7 +30,12 @@ class TaskRepository @Inject constructor(
             assignedTo = this.assignedTo,
             dueDate = this.dueDate,
             createdAt = this.createdAt,
-            updatedAt = this.updatedAt
+            updatedAt = this.updatedAt,
+            // 统计字段
+            customerCount = this.customerCount,
+            completedCount = this.completedCount,
+            calledCount = this.calledCount,
+            progress = this.progress
         )
     }
 
@@ -46,7 +52,12 @@ class TaskRepository @Inject constructor(
             assignedTo = this.assignedTo,
             dueDate = this.dueDate,
             createdAt = this.createdAt,
-            updatedAt = this.updatedAt
+            updatedAt = this.updatedAt,
+            // 统计字段
+            customerCount = this.customerCount,
+            completedCount = this.completedCount,
+            calledCount = this.calledCount,
+            progress = this.progress
         )
     }
 
@@ -105,24 +116,37 @@ class TaskRepository @Inject constructor(
 
     /**
      * 获取任务详情
+     * 注意：任务详情包含客户列表，只能从网络获取，不缓存到本地
      */
     suspend fun getTask(taskId: Int): Result<Task> {
         return try {
             val response = apiService.getTask(taskId)
             if (response.isSuccessful && response.body() != null) {
-                Result.success(response.body()!!)
+                val task = response.body()!!
+                Log.d("TaskRepository", "获取任务详情成功: taskId=$taskId, customers=${task.customers?.size ?: 0}, customerCount=${task.customerCount}")
+                // 只缓存任务基本信息，不缓存客户列表
+                taskDao.insertTask(task.toEntity())
+                Result.success(task)
             } else {
+                Log.w("TaskRepository", "获取任务详情失败: ${response.code()}, ${response.errorBody()?.string()}")
+                // API 请求失败，尝试从本地获取
                 val localTask = taskDao.getTaskById(taskId)
                 if (localTask != null) {
-                    Result.success(localTask.toTask())
+                    // 本地只有基本信息，没有客户列表，返回带空列表的任务
+                    val task = localTask.toTask().copy(customers = emptyList())
+                    Result.success(task)
                 } else {
                     Result.failure(Exception("任务不存在"))
                 }
             }
         } catch (e: Exception) {
+            Log.e("TaskRepository", "获取任务详情异常: ${e.message}", e)
+            // 网络异常，尝试从本地获取
             val localTask = taskDao.getTaskById(taskId)
             if (localTask != null) {
-                Result.success(localTask.toTask())
+                // 本地只有基本信息，没有客户列表，返回带空列表的任务
+                val task = localTask.toTask().copy(customers = emptyList())
+                Result.success(task)
             } else {
                 Result.failure(e)
             }

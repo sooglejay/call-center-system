@@ -47,6 +47,9 @@ class AutoDialViewModel @Inject constructor(
     private val _isRunning = MutableStateFlow(false)
     val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
 
+    private val _isAutoDialMode = MutableStateFlow(true)
+    val isAutoDialMode: StateFlow<Boolean> = _isAutoDialMode.asStateFlow()
+
     private val _currentCustomer = MutableStateFlow<Customer?>(null)
     val currentCustomer: StateFlow<Customer?> = _currentCustomer.asStateFlow()
 
@@ -73,6 +76,7 @@ class AutoDialViewModel @Inject constructor(
     init {
         // 立即同步服务的当前状态（用于处理返回App时的情况）
         _isRunning.value = AutoDialService.isRunning.value
+        _isAutoDialMode.value = AutoDialService.isAutoDialMode.value
         _currentCustomer.value = AutoDialService.currentCustomer.value
         _dialedCount.value = AutoDialService.dialedCount.value
         _totalCount.value = AutoDialService.totalCount.value
@@ -81,6 +85,11 @@ class AutoDialViewModel @Inject constructor(
         viewModelScope.launch {
             AutoDialService.isRunning.collect { running ->
                 _isRunning.value = running
+            }
+        }
+        viewModelScope.launch {
+            AutoDialService.isAutoDialMode.collect { isAutoMode ->
+                _isAutoDialMode.value = isAutoMode
             }
         }
         viewModelScope.launch {

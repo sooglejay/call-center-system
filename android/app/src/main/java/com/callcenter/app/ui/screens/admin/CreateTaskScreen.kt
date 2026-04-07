@@ -21,10 +21,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.callcenter.app.data.model.CreateTaskRequest
 import com.callcenter.app.data.model.Customer
 import com.callcenter.app.data.model.User
+import com.callcenter.app.util.VersionInfoUtil
 import com.callcenter.app.ui.viewmodel.CreateTaskViewModel
 
 /**
@@ -37,6 +39,7 @@ fun CreateTaskScreen(
     onNavigateBack: () -> Unit,
     viewModel: CreateTaskViewModel = hiltViewModel()
 ) {
+    val context = LocalContext.current
     val agents by viewModel.agents.collectAsState()
     val customers by viewModel.customers.collectAsState()
     val nameLetterStats by viewModel.nameLetterStats.collectAsState()
@@ -81,7 +84,7 @@ fun CreateTaskScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("创建任务") },
+                title = { Text(VersionInfoUtil.getTitleWithVersion(context, "创建任务")) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")

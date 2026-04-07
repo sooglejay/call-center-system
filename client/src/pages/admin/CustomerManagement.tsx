@@ -562,14 +562,27 @@ export default function CustomerManagement() {
     connected: '已接听',
     voicemail: '语音信箱',
     unanswered: '响铃未接',
+    rejected: '对方拒接',
+    busy: '对方忙线',
+    power_off: '关机/停机',
+    no_answer: '无人接听',
+    ivr: 'IVR语音',
+    other: '其他',
     failed: '拨打失败',
     completed: '已完成'
   };
 
   const columns = [
-    { 
-      title: '客户姓名', 
-      dataIndex: 'name', 
+    {
+      title: '序号',
+      key: 'index',
+      width: 60,
+      align: 'center' as const,
+      render: (_: any, __: any, index: number) => (currentPage - 1) * pageSize + index + 1
+    },
+    {
+      title: '客户姓名',
+      dataIndex: 'name',
       key: 'name',
       render: (name: string, record: Customer) => (
         <Space direction="vertical" size={0}>
@@ -785,8 +798,15 @@ export default function CustomerManagement() {
               { value: 'connected', label: '已接听' },
               { value: 'voicemail', label: '语音信箱' },
               { value: 'unanswered', label: '响铃未接' },
+              { value: 'rejected', label: '对方拒接' },
+              { value: 'busy', label: '对方忙线' },
+              { value: 'power_off', label: '关机/停机' },
+              { value: 'no_answer', label: '无人接听' },
+              { value: 'ivr', label: 'IVR语音' },
               { value: 'failed', label: '拨打失败' },
-              { value: 'completed', label: '已完成' }
+              { value: 'completed', label: '已完成' },
+              { value: 'called', label: '其他已拨打' },              
+              { value: 'other', label: '其他' }
             ]}
           />
           <Select 
@@ -925,7 +945,8 @@ export default function CustomerManagement() {
               loading={loading}
               rowSelection={{
                 selectedRowKeys,
-                onChange: (keys) => setSelectedRowKeys(keys as number[])
+                onChange: (keys) => setSelectedRowKeys(keys as number[]),
+                preserveSelectedRowKeys: true
               }}
               pagination={{
                 current: currentPage,

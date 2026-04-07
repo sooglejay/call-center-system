@@ -18,8 +18,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.callcenter.app.data.model.Stats
+import com.callcenter.app.util.VersionInfoUtil
 import com.callcenter.app.ui.viewmodel.MyStatsViewModel
 
 /**
@@ -31,6 +33,7 @@ fun MyStatsScreen(
     onNavigateBack: () -> Unit,
     viewModel: MyStatsViewModel = hiltViewModel()
 ) {
+    val context = LocalContext.current
     val stats by viewModel.stats.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
@@ -38,7 +41,7 @@ fun MyStatsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("我的统计") },
+                title = { Text(VersionInfoUtil.getTitleWithVersion(context, "我的统计")) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")

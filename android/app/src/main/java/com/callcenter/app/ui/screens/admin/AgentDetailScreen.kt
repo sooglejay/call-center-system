@@ -20,9 +20,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.callcenter.app.data.model.Stats
 import com.callcenter.app.data.model.User
+import com.callcenter.app.util.VersionInfoUtil
 import com.callcenter.app.ui.viewmodel.AgentDetailViewModel
 
 /**
@@ -36,6 +38,7 @@ fun AgentDetailScreen(
     onNavigateBack: () -> Unit,
     viewModel: AgentDetailViewModel = hiltViewModel()
 ) {
+    val context = LocalContext.current
     val isNewAgent = agentId == 0
     val agent by viewModel.agent.collectAsState()
     val stats by viewModel.stats.collectAsState()
@@ -87,7 +90,7 @@ fun AgentDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (isNewAgent) "添加客服" else "客服详情") },
+                title = { Text(VersionInfoUtil.getTitleWithVersion(context, if (isNewAgent) "添加客服" else "客服详情")) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")

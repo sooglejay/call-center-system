@@ -41,8 +41,8 @@ export const getTasks = async (req: Request, res: Response) => {
        LEFT JOIN (
          SELECT task_id, 
                 COUNT(*) as total_customers,
-                SUM(CASE WHEN status = 'completed' OR status = 'connected' THEN 1 ELSE 0 END) as completed_customers,
-                SUM(CASE WHEN status = 'called' THEN 1 ELSE 0 END) as called_customers
+                SUM(CASE WHEN status != 'pending' THEN 1 ELSE 0 END) as completed_customers,
+                SUM(CASE WHEN status != 'pending' THEN 1 ELSE 0 END) as called_customers
          FROM task_customers
          GROUP BY task_id
        ) tc_stats ON t.id = tc_stats.task_id
@@ -168,10 +168,10 @@ export const getTaskById = async (req: Request, res: Response) => {
     // 统计信息
     const totalCustomers = customersResult.rows.length;
     const completedCustomers = customersResult.rows.filter((c: any) => 
-      c.call_status === 'completed' || c.call_status === 'connected'
+      c.call_status !== 'pending'
     ).length;
     const calledCustomers = customersResult.rows.filter((c: any) => 
-      c.call_status === 'called' || c.call_status === 'completed' || c.call_status === 'connected'
+      c.call_status !== 'pending'
     ).length;
     
     res.json({
@@ -317,8 +317,8 @@ export const getMyTasks = async (req: any, res: Response) => {
     const taskCustomersResult = await query(`
       SELECT task_id, 
              COUNT(*) as total_customers,
-             SUM(CASE WHEN status = 'completed' OR status = 'connected' THEN 1 ELSE 0 END) as completed_customers,
-             SUM(CASE WHEN status = 'called' THEN 1 ELSE 0 END) as called_customers
+             SUM(CASE WHEN status != 'pending' THEN 1 ELSE 0 END) as completed_customers,
+             SUM(CASE WHEN status != 'pending' THEN 1 ELSE 0 END) as called_customers
       FROM task_customers
       WHERE task_id IN (SELECT id FROM tasks WHERE assigned_to = $1)
       GROUP BY task_id

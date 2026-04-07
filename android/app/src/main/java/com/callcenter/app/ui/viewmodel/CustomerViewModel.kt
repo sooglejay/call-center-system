@@ -107,6 +107,84 @@ class CustomerViewModel @Inject constructor(
         loadCustomers(forceRefresh = true)
     }
 
+    // 多选删除相关状态
+    private val _isMultiSelectMode = MutableStateFlow(false)
+    val isMultiSelectMode: StateFlow<Boolean> = _isMultiSelectMode.asStateFlow()
+
+    private val _selectedCustomerIds = MutableStateFlow<Set<Int>>(emptySet())
+    val selectedCustomerIds: StateFlow<Set<Int>> = _selectedCustomerIds.asStateFlow()
+
+    fun toggleMultiSelectMode() {
+        _isMultiSelectMode.value = !_isMultiSelectMode.value
+        if (!_isMultiSelectMode.value) {
+            _selectedCustomerIds.value = emptySet()
+        }
+    }
+
+    fun exitMultiSelectMode() {
+        _isMultiSelectMode.value = false
+        _selectedCustomerIds.value = emptySet()
+    }
+
+    fun toggleCustomerSelection(customerId: Int) {
+        val currentSelection = _selectedCustomerIds.value.toMutableSet()
+        if (currentSelection.contains(customerId)) {
+            currentSelection.remove(customerId)
+        } else {
+            currentSelection.add(customerId)
+        }
+        _selectedCustomerIds.value = currentSelection
+    }
+
+    fun selectAllCustomers(customerIds: List<Int>) {
+        _selectedCustomerIds.value = customerIds.toSet()
+    }
+
+    fun deleteCustomer(customerId: Int, onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}) {
+        android.util.Log.d("CustomerViewModel", "删除客户请求: customerId=$customerId")
+        viewModelScope.launch {
+            _isLoading.value = true
+            android.util.Log.d("CustomerViewModel", "调用Repository删除客户: customerId=$customerId")
+            val result = customerRepository.deleteCustomer(customerId)
+            result.fold(
+                onSuccess = {
+                    android.util.Log.d("CustomerViewModel", "删除成功: customerId=$customerId")
+                    _selectedCustomerIds.value = _selectedCustomerIds.value - customerId
+                    _customers.value = _customers.value.filter { it.id != customerId }
+                    onSuccess()
+                },
+                onFailure = { exception ->
+                    android.util.Log.e("CustomerViewModel", "删除失败: ${exception.message}")
+                    _error.value = exception.message ?: "删除失败"
+                    onError(_error.value!!)
+                }
+            )
+            _isLoading.value = false
+        }
+    }
+
+    fun deleteSelectedCustomers(onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            val idsToDelete = _selectedCustomerIds.value.toList()
+            val result = customerRepository.deleteCustomers(idsToDelete)
+            result.fold(
+                onSuccess = {
+                    _customers.value = _customers.value.filter { it.id !in idsToDelete }
+                    _selectedCustomerIds.value = emptySet()
+                    _isMultiSelectMode.value = false
+                    onSuccess()
+                },
+                onFailure = { exception ->
+                    _error.value = exception.message ?: "批量删除失败"
+                    onError(_error.value!!)
+                    // 刷新列表以同步状态
+                    loadCustomers()
+                }
+            )
+            _isLoading.value = false
+        }
+    }
     // 获取待拨打客户数量
     fun getPendingCount(): Int {
         return _customers.value.count { it.status == "pending" }

@@ -37,26 +37,36 @@ interface TaskDetail extends Task {
   customers?: TaskCustomer[];
 }
 
-// 通话结果选项
+// 通话结果选项 - 与 Android 端对齐
+// Android 端状态：connected, voicemail, unanswered, rejected, busy, power_off, no_answer, ivr, other
 const CALL_RESULTS = [
-  { value: 'interested', label: '有意向', color: 'green' },
-  { value: 'not_interested', label: '无意向', color: 'orange' },
-  { value: 'callback', label: '需回拨', color: 'blue' },
-  { value: 'wrong_number', label: '号码错误', color: 'red' },
+  { value: 'connected', label: '已接听', color: 'green' },
+  { value: 'voicemail', label: '语音信箱', color: 'blue' },
+  { value: 'unanswered', label: '响铃未接', color: 'orange' },
+  { value: 'rejected', label: '对方拒接', color: 'red' },
+  { value: 'busy', label: '对方忙线', color: 'orange' },
+  { value: 'power_off', label: '关机/停机', color: 'default' },
   { value: 'no_answer', label: '无人接听', color: 'default' },
-  { value: 'busy', label: '占线', color: 'default' },
-  { value: 'voicemail', label: '语音信箱', color: 'purple' },
+  { value: 'ivr', label: 'IVR语音', color: 'cyan' },
   { value: 'other', label: '其他', color: 'default' }
 ];
 
-// 通话状态筛选选项
+// 通话状态筛选选项 - 与 Android 端对齐
 const CALL_STATUS_TABS = [
   { key: 'all', label: '全部', filter: () => true },
   { key: 'pending', label: '待拨打', filter: (c: TaskCustomer) => c.call_status === 'pending' },
-  { key: 'connected', label: '已接通', filter: (c: TaskCustomer) => c.call_status === 'connected' },
-  { key: 'voicemail', label: '语音信箱', filter: (c: TaskCustomer) => c.call_result === 'voicemail' },
-  { key: 'unanswered', label: '未接听', filter: (c: TaskCustomer) => c.call_result === 'no_answer' || c.call_result === 'busy' },
-  { key: 'failed', label: '拨打失败', filter: (c: TaskCustomer) => c.call_status === 'failed' && !c.call_result },
+  { key: 'connected', label: '已接听', filter: (c: TaskCustomer) => c.call_result === '已接听' || c.call_result === 'connected' },
+  { key: 'voicemail', label: '语音信箱', filter: (c: TaskCustomer) => c.call_result === '语音信箱' || c.call_result === 'voicemail' },
+  { key: 'unanswered', label: '响铃未接', filter: (c: TaskCustomer) => c.call_result === '响铃未接' || c.call_result === 'unanswered' },
+  { key: 'failed', label: '拨打失败', filter: (c: TaskCustomer) => 
+    c.call_result === '对方拒接' || c.call_result === 'rejected' ||
+    c.call_result === '对方忙线' || c.call_result === 'busy' ||
+    c.call_result === '关机/停机' || c.call_result === 'power_off' ||
+    c.call_result === '无人接听' || c.call_result === 'no_answer' ||
+    c.call_result === 'IVR语音' || c.call_result === 'ivr' ||
+    c.call_result === '其他' || c.call_result === 'other' ||
+    (c.call_status === 'failed' && !c.call_result)
+  },
   { key: 'called', label: '已拨打', filter: (c: TaskCustomer) => c.call_status !== 'pending' }
 ];
 
@@ -157,12 +167,17 @@ export default function AgentTaskExecution() {
     if (!currentCustomer || !taskId) return;
     
     try {
-      const isConnected = selectedResult === 'interested' || selectedResult === 'not_interested' || selectedResult === 'callback';
+      // 与 Android 端对齐：已接听为成功状态，其他为失败状态
+      const isConnected = selectedResult === 'connected';
       const finalStatus = isConnected ? 'connected' : 'failed';
+      
+      // 获取中文显示名称
+      const resultConfig = CALL_RESULTS.find(r => r.value === selectedResult);
+      const callResultText = resultConfig ? resultConfig.label : selectedResult;
       
       await taskApi.updateCustomerStatus(Number(taskId), currentCustomer.id, {
         status: finalStatus,
-        call_result: callNotes || selectedResult
+        call_result: callResultText
       });
       
       message.success('通话结果已保存');

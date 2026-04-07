@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -60,6 +61,7 @@ sealed class Screen(val route: String) {
     // 设置
     object Settings : Screen("settings")
     object AutoDialSettings : Screen("auto_dial_settings")
+    object PermissionTest : Screen("permission_test")
     
     // 客服个人
     object MyStats : Screen("my_stats")
@@ -93,6 +95,15 @@ fun AppNavigation(
     val context = LocalContext.current
     val isLoggedIn by authViewModel.isLoggedIn.collectAsState()
     val isCheckingAuth by authViewModel.isCheckingAuth.collectAsState()
+    val authError by authViewModel.error.collectAsState()
+
+    // 显示错误提示
+    LaunchedEffect(authError) {
+        authError?.let { error ->
+            android.widget.Toast.makeText(context, error, android.widget.Toast.LENGTH_LONG).show()
+            authViewModel.clearError()
+        }
+    }
 
     // 显示启动加载界面，避免冷启动时的闪烁
     if (isCheckingAuth) {
@@ -163,6 +174,9 @@ fun AppNavigation(
                 },
                 onNavigateToHelp = {
                     navController.navigate(Screen.Help.route)
+                },
+                onNavigateToPermissionTest = {
+                    navController.navigate(Screen.PermissionTest.route)
                 },
                 onLogout = {
                     stopAutoDialAndLogout()
@@ -246,6 +260,12 @@ fun AppNavigation(
 
         composable(Screen.AutoDialSettings.route) {
             CallSettingsScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.PermissionTest.route) {
+            com.callcenter.app.ui.screens.settings.PermissionTestScreen(
                 onNavigateBack = { navController.popBackStack() }
             )
         }

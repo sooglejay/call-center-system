@@ -12,7 +12,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.callcenter.app.data.model.Customer
 import com.callcenter.app.service.AutoDialService
@@ -116,12 +118,16 @@ object FloatingWindowManager {
         customer: Customer?,
         isCalling: Boolean = false
     ) {
-        val intent = Intent(context, FloatingCustomerService::class.java).apply {
-            action = FloatingCustomerService.ACTION_UPDATE_CUSTOMER
-            putExtra(FloatingCustomerService.EXTRA_CUSTOMER, customer)
-            putExtra(FloatingCustomerService.EXTRA_IS_CALLING, isCalling)
+        try {
+            val intent = Intent(context, FloatingCustomerService::class.java).apply {
+                action = FloatingCustomerService.ACTION_UPDATE_CUSTOMER
+                putExtra(FloatingCustomerService.EXTRA_CUSTOMER, customer)
+                putExtra(FloatingCustomerService.EXTRA_IS_CALLING, isCalling)
+            }
+            context.startService(intent)
+        } catch (e: Exception) {
+            android.util.Log.e("FloatingWindowManager", "更新客户信息失败: ${e.message}")
         }
-        context.startService(intent)
     }
 
     /**
@@ -132,23 +138,39 @@ object FloatingWindowManager {
         dialedCount: Int,
         totalCount: Int
     ) {
-        val intent = Intent(context, FloatingCustomerService::class.java).apply {
-            action = FloatingCustomerService.ACTION_UPDATE_PROGRESS
-            putExtra(FloatingCustomerService.EXTRA_DIALED_COUNT, dialedCount)
-            putExtra(FloatingCustomerService.EXTRA_TOTAL_COUNT, totalCount)
+        try {
+            val intent = Intent(context, FloatingCustomerService::class.java).apply {
+                action = FloatingCustomerService.ACTION_UPDATE_PROGRESS
+                putExtra(FloatingCustomerService.EXTRA_DIALED_COUNT, dialedCount)
+                putExtra(FloatingCustomerService.EXTRA_TOTAL_COUNT, totalCount)
+            }
+            context.startService(intent)
+        } catch (e: Exception) {
+            android.util.Log.e("FloatingWindowManager", "更新进度信息失败: ${e.message}")
         }
-        context.startService(intent)
+    }
+
+    /**
+     * 更新悬浮窗状态文本
+     */
+    fun updateStatus(status: String) {
+        // 通过 FloatingCustomerService 更新状态
+        FloatingCustomerService.updateStatus(status)
     }
 }
 
 /**
  * Composable函数：自动管理悬浮窗显示
  * 在自动拨号过程中自动显示/更新/隐藏悬浮窗
+ * 规则：
+ * 1. 仅在拨打电话时显示悬浮窗（currentCustomer != null）
+ * 2. App回到前台时隐藏悬浮窗
+ * 3. 拨打电话时（currentCustomer变化且有值）显示悬浮窗
  */
 @Composable
 fun AutoFloatingWindow(
     enabled: Boolean = true,
-    onCallStatusMarked: ((String) -> Unit)? = null
+    onCallStatusMarked: ((String, (() -> Unit)?) -> Unit)? = null
 ) {
     val context = LocalContext.current
 
@@ -156,13 +178,19 @@ fun AutoFloatingWindow(
     val isRunning by AutoDialService.isRunning.collectAsState()
     val currentCustomer by AutoDialService.currentCustomer.collectAsState()
     val dialedCount by AutoDialService.dialedCount.collectAsState()
+    
+    // 收集应用前后台状态
+    val isAppInForeground by AppLifecycleManager.isAppInForeground.collectAsState()
+    
+    // 记录上一个客户，用于检测是否开始拨打新客户
+    var previousCustomer by remember { mutableStateOf<com.callcenter.app.data.model.Customer?>(null) }
 
     // 设置通话状态标记回调
     LaunchedEffect(onCallStatusMarked) {
         onCallStatusMarked?.let { callback ->
             FloatingWindowManager.setCallStatusCallback(object : CallStatusCallback {
-                override fun onCallStatusMarked(status: String) {
-                    callback(status)
+                override fun onCallStatusMarked(status: String, onComplete: (() -> Unit)?) {
+                    callback(status, onComplete)
                 }
             })
         } ?: run {
@@ -170,8 +198,8 @@ fun AutoFloatingWindow(
         }
     }
 
-    // 监听自动拨号状态变化，控制悬浮窗
-    LaunchedEffect(isRunning, currentCustomer, dialedCount, enabled) {
+    // 监听自动拨号状态变化和应用前后台状态，控制悬浮窗
+    LaunchedEffect(isRunning, currentCustomer, dialedCount, enabled, isAppInForeground) {
         if (!enabled) {
             if (FloatingWindowManager.isShowing.value) {
                 FloatingWindowManager.hideFloatingWindow(context)
@@ -180,23 +208,44 @@ fun AutoFloatingWindow(
         }
 
         if (isRunning) {
-            // 自动拨号进行中，显示/更新悬浮窗
+            // 自动拨号进行中
             if (!FloatingWindowManager.canDrawOverlays(context)) {
                 return@LaunchedEffect
             }
 
-            FloatingWindowManager.showFloatingWindow(
-                context = context,
-                customer = currentCustomer,
-                dialedCount = dialedCount,
-                totalCount = currentCustomer?.let { dialedCount + 1 } ?: dialedCount,
-                isCalling = currentCustomer != null
-            )
+            // 规则1：App回到前台时隐藏悬浮窗
+            if (isAppInForeground) {
+                if (FloatingWindowManager.isShowing.value) {
+                    Log.d("AutoFloatingWindow", "App回到前台，隐藏悬浮窗")
+                    FloatingWindowManager.hideFloatingWindow(context)
+                }
+                // 更新previousCustomer，这样当App再次进入后台时不会立即显示
+                previousCustomer = currentCustomer
+            } else {
+                // App在后台
+                // 规则2：仅在开始拨打电话时（currentCustomer从null变为有值）显示悬浮窗
+                val isStartingCall = currentCustomer != null && previousCustomer == null
+                
+                if (isStartingCall && !FloatingWindowManager.isShowing.value) {
+                    Log.d("AutoFloatingWindow", "开始拨打电话，显示悬浮窗")
+                    FloatingWindowManager.showFloatingWindow(
+                        context = context,
+                        customer = currentCustomer,
+                        dialedCount = dialedCount,
+                        totalCount = currentCustomer?.let { dialedCount + 1 } ?: dialedCount,
+                        isCalling = true
+                    )
+                }
+                
+                // 更新previousCustomer
+                previousCustomer = currentCustomer
+            }
         } else {
             // 自动拨号停止，隐藏悬浮窗
             if (FloatingWindowManager.isShowing.value) {
                 FloatingWindowManager.hideFloatingWindow(context)
             }
+            previousCustomer = null
         }
     }
 

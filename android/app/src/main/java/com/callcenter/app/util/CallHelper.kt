@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.net.Uri
 import android.telephony.TelephonyManager
 import android.widget.Toast
@@ -18,6 +19,8 @@ import javax.inject.Singleton
 class CallHelper @Inject constructor(
     private val context: Context
 ) {
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
     /**
      * 检查是否有拨打电话权限
      */
@@ -66,6 +69,43 @@ class CallHelper @Inject constructor(
      */
     fun isInCall(): Boolean {
         return getCallState() != TelephonyManager.CALL_STATE_IDLE
+    }
+
+    /**
+     * 打开扬声器（免提）
+     * 需要在通话接通后调用
+     */
+    fun enableSpeakerphone(): Boolean {
+        return try {
+            audioManager.mode = AudioManager.MODE_IN_CALL
+            audioManager.isSpeakerphoneOn = true
+            android.util.Log.d("CallHelper", "扬声器已打开")
+            true
+        } catch (e: Exception) {
+            android.util.Log.e("CallHelper", "打开扬声器失败: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * 关闭扬声器
+     */
+    fun disableSpeakerphone(): Boolean {
+        return try {
+            audioManager.isSpeakerphoneOn = false
+            android.util.Log.d("CallHelper", "扬声器已关闭")
+            true
+        } catch (e: Exception) {
+            android.util.Log.e("CallHelper", "关闭扬声器失败: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * 检查扬声器状态
+     */
+    fun isSpeakerphoneOn(): Boolean {
+        return audioManager.isSpeakerphoneOn
     }
 
     /**

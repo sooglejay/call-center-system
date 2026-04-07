@@ -11,8 +11,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.callcenter.app.data.model.Task
+import com.callcenter.app.util.VersionInfoUtil
 import com.callcenter.app.ui.viewmodel.AgentTaskViewModel
 
 /**
@@ -26,6 +28,7 @@ fun AgentTaskListScreen(
     onTaskClick: (Int) -> Unit,
     viewModel: AgentTaskViewModel = hiltViewModel()
 ) {
+    val context = LocalContext.current
     val tasks by viewModel.tasks.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
@@ -37,7 +40,7 @@ fun AgentTaskListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("我的任务") },
+                title = { Text(VersionInfoUtil.getTitleWithVersion(context, "我的任务")) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
@@ -120,7 +123,7 @@ private fun TaskCard(
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f)
                 )
-                TaskStatusChip(status = task.status)
+                TaskStatusChip(task = task)
             }
 
             if (!task.description.isNullOrBlank()) {
@@ -182,12 +185,15 @@ private fun TaskCard(
 }
 
 @Composable
-private fun TaskStatusChip(status: String) {
-    val (color, text) = when (status) {
-        "completed" -> MaterialTheme.colorScheme.primary to "已完成"
-        "in_progress" -> MaterialTheme.colorScheme.tertiary to "进行中"
-        "cancelled" -> MaterialTheme.colorScheme.error to "已取消"
-        else -> MaterialTheme.colorScheme.outline to "待处理"
+private fun TaskStatusChip(task: Task) {
+    // 根据实际拨打进度计算状态
+    val (color, text) = when {
+        task.customerCount > 0 && task.calledCount >= task.customerCount -> 
+            MaterialTheme.colorScheme.primary to "已完成"
+        task.calledCount > 0 -> 
+            MaterialTheme.colorScheme.tertiary to "进行中"
+        else -> 
+            MaterialTheme.colorScheme.outline to "待处理"
     }
 
     Surface(

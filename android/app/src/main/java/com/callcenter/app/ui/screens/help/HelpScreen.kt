@@ -13,7 +13,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.callcenter.app.util.VersionInfoUtil
 
 /**
  * 本地帮助文档页面
@@ -24,10 +26,11 @@ import androidx.compose.ui.unit.dp
 fun HelpScreen(
     onNavigateBack: () -> Unit
 ) {
+    val context = LocalContext.current
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("使用说明") },
+                title = { Text(VersionInfoUtil.getTitleWithVersion(context, "使用说明")) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")

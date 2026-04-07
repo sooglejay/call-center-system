@@ -16,9 +16,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.callcenter.app.data.model.Task
 import com.callcenter.app.data.model.TaskCustomer
+import com.callcenter.app.util.VersionInfoUtil
 import com.callcenter.app.ui.viewmodel.TaskDetailViewModel
 
 /**
@@ -31,6 +33,7 @@ fun TaskDetailScreen(
     onNavigateBack: () -> Unit,
     viewModel: TaskDetailViewModel = hiltViewModel()
 ) {
+    val context = LocalContext.current
     val task by viewModel.task.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
@@ -42,7 +45,7 @@ fun TaskDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("任务详情") },
+                title = { Text(VersionInfoUtil.getTitleWithVersion(context, "任务详情")) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")
@@ -178,7 +181,7 @@ private fun TaskHeader(task: Task) {
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f)
             )
-            TaskStatusChip(status = task.status)
+            TaskStatusChip(task = task)
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -357,7 +360,7 @@ private fun TaskCustomerItem(customer: TaskCustomer) {
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = customer.name!!,
+                        text = customer.name ?: "未知客户",
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium
                     )
@@ -370,7 +373,7 @@ private fun TaskCustomerItem(customer: TaskCustomer) {
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = customer.phone!!,
+                            text = customer.phone ?: "无号码",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -445,13 +448,15 @@ private fun TaskCustomerItem(customer: TaskCustomer) {
 }
 
 @Composable
-private fun TaskStatusChip(status: String) {
-    val (color, text) = when (status) {
-        "pending" -> Color(0xFFFF9800) to "待处理"
-        "in_progress" -> Color(0xFF2196F3) to "进行中"
-        "completed" -> Color(0xFF4CAF50) to "已完成"
-        "cancelled" -> Color(0xFF9E9E9E) to "已取消"
-        else -> Color(0xFF9E9E9E) to "未知"
+private fun TaskStatusChip(task: Task) {
+    // 根据实际拨打进度计算状态
+    val (color, text) = when {
+        task.customerCount > 0 && task.calledCount >= task.customerCount ->
+            Color(0xFF4CAF50) to "已完成"
+        task.calledCount > 0 ->
+            Color(0xFF2196F3) to "进行中"
+        else ->
+            Color(0xFFFF9800) to "待处理"
     }
 
     Surface(

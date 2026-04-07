@@ -18,8 +18,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.callcenter.app.data.model.User
+import com.callcenter.app.util.VersionInfoUtil
 import com.callcenter.app.ui.viewmodel.AgentListViewModel
 
 /**
@@ -33,6 +35,7 @@ fun AgentListScreen(
     onAddAgent: () -> Unit,
     viewModel: AgentListViewModel = hiltViewModel()
 ) {
+    val context = LocalContext.current
     val agents by viewModel.agents.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
@@ -49,7 +52,7 @@ fun AgentListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("客服管理") },
+                title = { Text(VersionInfoUtil.getTitleWithVersion(context, "客服管理")) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")

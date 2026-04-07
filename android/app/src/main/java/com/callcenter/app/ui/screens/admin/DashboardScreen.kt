@@ -20,10 +20,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.callcenter.app.data.model.AgentRanking
 import com.callcenter.app.data.model.CallRecord
 import com.callcenter.app.data.model.DashboardStats
+import com.callcenter.app.util.VersionInfoUtil
 import com.callcenter.app.ui.viewmodel.DashboardViewModel
 
 /**
@@ -38,6 +40,7 @@ fun DashboardScreen(
     onNavigateToAgentDetail: (Int) -> Unit,
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
+    val context = LocalContext.current
     val dashboardStats by viewModel.dashboardStats.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
@@ -45,7 +48,7 @@ fun DashboardScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("管理仪表盘") },
+                title = { Text(VersionInfoUtil.getTitleWithVersion(context, "管理仪表盘")) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")

@@ -53,12 +53,19 @@ class AuthViewModel @Inject constructor(
     private fun checkLoginState() {
         viewModelScope.launch {
             _isCheckingAuth.value = true
-            _isLoggedIn.value = authRepository.isLoggedIn()
-            _currentUser.value = authRepository.currentUser.value
-            _savedServerUrl.value = authRepository.getServerUrl() ?: ""
-            _savedUsername.value = authRepository.getSavedUsername() ?: ""
-            _savedPassword.value = authRepository.getSavedPassword() ?: ""
-            _isCheckingAuth.value = false
+            try {
+                _isLoggedIn.value = authRepository.isLoggedIn()
+                _currentUser.value = authRepository.currentUser.value
+                _savedServerUrl.value = authRepository.getServerUrl() ?: ""
+                _savedUsername.value = authRepository.getSavedUsername() ?: ""
+                _savedPassword.value = authRepository.getSavedPassword() ?: ""
+            } catch (e: Exception) {
+                // 检查登录状态时发生异常，可能是网络问题
+                _error.value = "网络连接异常，请检查网络后重试"
+                _isLoggedIn.value = false
+            } finally {
+                _isCheckingAuth.value = false
+            }
         }
     }
 

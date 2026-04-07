@@ -41,17 +41,25 @@ class TaskListViewModel @Inject constructor(
             _isLoading.value = true
             _error.value = null
 
-            val result = taskRepository.getTasks()
-
-            result.fold(
-                onSuccess = { taskList ->
-                    _tasks.value = taskList
-                    _error.value = null
-                },
-                onFailure = { exception ->
-                    _error.value = exception.message ?: "加载任务列表失败"
+            try {
+                val result = kotlinx.coroutines.withTimeout(10000) { // 10秒超时
+                    taskRepository.getTasks()
                 }
-            )
+
+                result.fold(
+                    onSuccess = { taskList ->
+                        _tasks.value = taskList
+                        _error.value = null
+                    },
+                    onFailure = { exception ->
+                        _error.value = exception.message ?: "加载任务列表失败"
+                    }
+                )
+            } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                _error.value = "加载任务列表超时，请检查网络连接"
+            } catch (e: Exception) {
+                _error.value = "加载任务列表失败: ${e.message}"
+            }
 
             _isLoading.value = false
         }
@@ -66,21 +74,29 @@ class TaskListViewModel @Inject constructor(
             _isLoading.value = true
             _error.value = null
 
-            val result = taskRepository.getMyTasks()
-
-            result.fold(
-                onSuccess = { taskList ->
-                    // 为每个任务加载详情（包含客户列表）
-                    val tasksWithCustomers = taskList.map { task ->
-                        taskRepository.getTask(task.id).getOrNull() ?: task
-                    }
-                    _tasks.value = tasksWithCustomers
-                    _error.value = null
-                },
-                onFailure = { exception ->
-                    _error.value = exception.message ?: "加载任务列表失败"
+            try {
+                val result = kotlinx.coroutines.withTimeout(15000) { // 15秒超时（因为要加载多个任务详情）
+                    taskRepository.getMyTasks()
                 }
-            )
+
+                result.fold(
+                    onSuccess = { taskList ->
+                        // 为每个任务加载详情（包含客户列表）
+                        val tasksWithCustomers = taskList.map { task ->
+                            taskRepository.getTask(task.id).getOrNull() ?: task
+                        }
+                        _tasks.value = tasksWithCustomers
+                        _error.value = null
+                    },
+                    onFailure = { exception ->
+                        _error.value = exception.message ?: "加载任务列表失败"
+                    }
+                )
+            } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                _error.value = "加载任务列表超时，请检查网络连接"
+            } catch (e: Exception) {
+                _error.value = "加载任务列表失败: ${e.message}"
+            }
 
             _isLoading.value = false
         }
@@ -153,5 +169,12 @@ class TaskListViewModel @Inject constructor(
                 }
             )
         }
+    }
+
+    /**
+     * 清除错误信息
+     */
+    fun clearError() {
+        _error.value = null
     }
 }

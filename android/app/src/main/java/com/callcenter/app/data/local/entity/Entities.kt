@@ -78,7 +78,12 @@ data class TaskEntity(
     val dueDate: String? = null,
     val createdAt: String? = null,
     val updatedAt: String? = null,
-    val syncStatus: String = "synced"
+    val syncStatus: String = "synced",
+    // 任务统计字段
+    val customerCount: Int = 0,
+    val completedCount: Int = 0,
+    val calledCount: Int = 0,
+    val progress: Int = 0
 )
 
 /**

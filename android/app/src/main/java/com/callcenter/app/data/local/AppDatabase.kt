@@ -17,7 +17,7 @@ import com.callcenter.app.data.local.entity.*
         TaskEntity::class,
         UserEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(Converters::class)

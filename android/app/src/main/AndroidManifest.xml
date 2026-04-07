@@ -76,26 +76,6 @@
             android:exported="false"
             android:foregroundServiceType="specialUse" />
 
-        <!-- 电话状态接收器 -->
-        <receiver
-            android:name=".receiver.PhoneStateReceiver"
-            android:enabled="true"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.PHONE_STATE" />
-            </intent-filter>
-        </receiver>
-
-        <!-- 开机启动接收器 -->
-        <receiver
-            android:name=".receiver.BootReceiver"
-            android:enabled="true"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-            </intent-filter>
-        </receiver>
-
         <!-- FileProvider - 用于安装APK -->
         <provider
             android:name="androidx.core.content.FileProvider"

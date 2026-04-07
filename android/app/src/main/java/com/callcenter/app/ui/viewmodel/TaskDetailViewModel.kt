@@ -1,5 +1,6 @@
 package com.callcenter.app.ui.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.callcenter.app.data.model.Task
@@ -36,14 +37,17 @@ class TaskDetailViewModel @Inject constructor(
             _isLoading.value = true
             _error.value = null
 
+            Log.d("TaskDetailViewModel", "开始加载任务详情: taskId=$taskId")
             val result = taskRepository.getTask(taskId)
 
             result.fold(
                 onSuccess = { task ->
+                    Log.d("TaskDetailViewModel", "加载任务详情成功: taskId=${task.id}, customers=${task.customers?.size ?: 0}, customerCount=${task.customerCount}")
                     _task.value = task
                     _error.value = null
                 },
                 onFailure = { exception ->
+                    Log.e("TaskDetailViewModel", "加载任务详情失败: ${exception.message}")
                     _error.value = exception.message ?: "加载任务详情失败"
                 }
             )

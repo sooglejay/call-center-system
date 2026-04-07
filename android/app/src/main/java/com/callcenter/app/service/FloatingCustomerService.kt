@@ -21,8 +21,15 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -48,17 +55,48 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.callcenter.app.CallCenterApp
 import com.callcenter.app.MainActivity
 import com.callcenter.app.R
+import com.callcenter.app.data.local.preferences.AutoDialSettingsManager
 import com.callcenter.app.data.model.Customer
 import com.callcenter.app.ui.theme.CallCenterTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Dispatchers
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import com.callcenter.app.util.root.RootCallState
+import com.callcenter.app.util.root.getDisplayInfo
+
+/**
+ * 通话状态历史记录项
+ */
+data class CallStateHistoryItem(
+    val timestamp: Long = System.currentTimeMillis(),
+    val state: String,           // 状态描述
+    val number: String?,         // 号码
+    val customerName: String?,   // 客户名字
+    val duration: Long = 0       // 通话时长（毫秒）
+) {
+    fun getFormattedTime(): String {
+        val sdf = SimpleDateFormat("MM月dd日 HH:mm:ss", Locale.CHINA)
+        return sdf.format(Date(timestamp))
+    }
+}
 
 /**
  * 通话状态标记回调接口
  */
 interface CallStatusCallback {
-    fun onCallStatusMarked(status: String)
+    /**
+     * 标记通话状态
+     * @param status 状态值：connected(已接听), voicemail(语音信箱), unanswered(未接听)
+     * @param onComplete 完成回调，在状态更新成功后调用
+     */
+    fun onCallStatusMarked(status: String, onComplete: (() -> Unit)? = null)
 }
 
 /**
@@ -67,6 +105,7 @@ interface CallStatusCallback {
 interface ManualDialCallback {
     fun onDialNext()
     fun onAutoDialModeChanged(isAutoMode: Boolean)
+    fun onStopDial()
 }
 
 /**
@@ -110,10 +149,70 @@ class FloatingCustomerService : Service(), LifecycleOwner, SavedStateRegistryOwn
         private val _isAutoDialMode = MutableStateFlow(false)
         val isAutoDialMode: StateFlow<Boolean> = _isAutoDialMode
 
-        fun setAutoDialMode(isAuto: Boolean) {
+        // 内部方法供 AutoDialService 调用，避免循环
+        internal fun updateAutoDialModeFromService(isAuto: Boolean) {
             _isAutoDialMode.value = isAuto
         }
+
+        // 是否折叠状态
+        private val _isCollapsed = MutableStateFlow(false)
+        val isCollapsed: StateFlow<Boolean> = _isCollapsed
+
+        fun setAutoDialMode(isAuto: Boolean) {
+            _isAutoDialMode.value = isAuto
+            // 同步到 AutoDialService
+            AutoDialService.setAutoDialMode(isAuto)
+            // 保存到本地
+            val context = CallCenterApp.instance?.applicationContext
+            context?.let {
+                kotlinx.coroutines.GlobalScope.launch {
+                    AutoDialSettingsManager(it).setAutoDialMode(isAuto)
+                }
+            }
+        }
+
+        fun setCollapsed(isCollapsed: Boolean) {
+            _isCollapsed.value = isCollapsed
+        }
+
+        // 状态文本
+        private val _statusText = MutableStateFlow("")
+        val statusText: StateFlow<String> = _statusText
+
+        // 通话状态历史记录
+        private val _callStateHistory = MutableStateFlow<List<CallStateHistoryItem>>(emptyList())
+        val callStateHistory: StateFlow<List<CallStateHistoryItem>> = _callStateHistory
+
+        /**
+         * 添加通话状态历史记录
+         */
+        fun addCallStateHistory(state: String, number: String? = null, customerName: String? = null, duration: Long = 0) {
+            val newItem = CallStateHistoryItem(
+                state = state,
+                number = number,
+                customerName = customerName,
+                duration = duration
+            )
+            _callStateHistory.value = _callStateHistory.value + newItem
+        }
+
+        /**
+         * 清空通话状态历史记录
+         */
+        fun clearCallStateHistory() {
+            _callStateHistory.value = emptyList()
+        }
+
+        /**
+         * 更新状态文本
+         */
+        fun updateStatus(status: String) {
+            _statusText.value = status
+        }
     }
+
+    private lateinit var settingsManager: AutoDialSettingsManager
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private val lifecycleRegistry = LifecycleRegistry(this)
     private val savedStateRegistryController = SavedStateRegistryController.create(this)
@@ -150,6 +249,17 @@ class FloatingCustomerService : Service(), LifecycleOwner, SavedStateRegistryOwn
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+
+        // 初始化设置管理器并加载保存的设置
+        settingsManager = AutoDialSettingsManager(this)
+        serviceScope.launch {
+            // 优先从 AutoDialService 同步状态，如果不一致则更新
+            AutoDialService.isAutoDialMode.collect { isAutoMode ->
+                _isAutoDialMode.value = isAutoMode
+                // 同步保存到本地设置
+                settingsManager.setAutoDialMode(isAutoMode)
+            }
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder = LocalBinder()
@@ -235,14 +345,17 @@ class FloatingCustomerService : Service(), LifecycleOwner, SavedStateRegistryOwn
         val composeView = ComposeView(this).apply {
             setContent {
                 CallCenterTheme {
+                    val isCollapsed by FloatingCustomerService.isCollapsed.collectAsState()
                     FloatingCustomerPanel(
                         customer = lastCustomer,
                         dialedCount = lastDialedCount,
                         totalCount = lastTotalCount,
                         isCalling = isCalling,
+                        isCollapsed = isCollapsed,
                         onClose = { hideFloatingWindow() },
-                        onCallStatusMarked = { status ->
-                            callStatusCallback?.onCallStatusMarked(status)
+                        onToggleCollapse = { FloatingCustomerService.setCollapsed(!isCollapsed) },
+                        onCallStatusMarked = { status, onComplete ->
+                            callStatusCallback?.onCallStatusMarked(status, onComplete)
                         }
                     )
                 }
@@ -280,6 +393,16 @@ class FloatingCustomerService : Service(), LifecycleOwner, SavedStateRegistryOwn
             _dialProgress.value = dialedCount to totalCount
             lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
             Log.d(TAG, "悬浮窗显示成功")
+        } catch (e: android.view.WindowManager.BadTokenException) {
+            Log.e(TAG, "显示悬浮窗失败: BadTokenException - ${e.message}")
+            // 清理资源
+            floatingView?.let {
+                try {
+                    windowManager?.removeView(it)
+                } catch (ignored: Exception) {}
+            }
+            floatingView = null
+            _isShowing.value = false
         } catch (e: Exception) {
             Log.e(TAG, "显示悬浮窗失败: ${e.message}")
             stopSelf()
@@ -338,23 +461,37 @@ class FloatingCustomerService : Service(), LifecycleOwner, SavedStateRegistryOwn
         return false
     }
 
+    private var isShowingWindow = false
+
     private fun updateCustomer(customer: Customer?, calling: Boolean) {
         lastCustomer = customer
         isCalling = calling
         _currentCustomer.value = customer
 
+        // 如果悬浮窗未显示，先显示它
+        if (floatingView == null && !isShowingWindow) {
+            Log.w(TAG, "悬浮窗未显示，尝试重新显示")
+            isShowingWindow = true
+            showFloatingWindow(customer, lastDialedCount, lastTotalCount, calling)
+            isShowingWindow = false
+            return
+        }
+
         // 刷新Compose内容
         (floatingView as? FrameLayout)?.getChildAt(0)?.let { childView ->
             (childView as? ComposeView)?.setContent {
                 CallCenterTheme {
+                    val isCollapsed by FloatingCustomerService.isCollapsed.collectAsState()
                     FloatingCustomerPanel(
                         customer = lastCustomer,
                         dialedCount = lastDialedCount,
                         totalCount = lastTotalCount,
                         isCalling = isCalling,
+                        isCollapsed = isCollapsed,
                         onClose = { hideFloatingWindow() },
-                        onCallStatusMarked = { status ->
-                            callStatusCallback?.onCallStatusMarked(status)
+                        onToggleCollapse = { FloatingCustomerService.setCollapsed(!isCollapsed) },
+                        onCallStatusMarked = { status, onComplete ->
+                            callStatusCallback?.onCallStatusMarked(status, onComplete)
                         }
                     )
                 }
@@ -370,18 +507,27 @@ class FloatingCustomerService : Service(), LifecycleOwner, SavedStateRegistryOwn
         lastTotalCount = totalCount
         _dialProgress.value = dialedCount to totalCount
 
+        // 如果悬浮窗未显示，不执行更新
+        if (floatingView == null) {
+            Log.w(TAG, "悬浮窗未显示，跳过进度更新")
+            return
+        }
+
         // 刷新Compose内容
         (floatingView as? FrameLayout)?.getChildAt(0)?.let { childView ->
             (childView as? ComposeView)?.setContent {
                 CallCenterTheme {
+                    val isCollapsed by FloatingCustomerService.isCollapsed.collectAsState()
                     FloatingCustomerPanel(
                         customer = lastCustomer,
                         dialedCount = lastDialedCount,
                         totalCount = lastTotalCount,
                         isCalling = isCalling,
+                        isCollapsed = isCollapsed,
                         onClose = { hideFloatingWindow() },
-                        onCallStatusMarked = { status ->
-                            callStatusCallback?.onCallStatusMarked(status)
+                        onToggleCollapse = { FloatingCustomerService.setCollapsed(!isCollapsed) },
+                        onCallStatusMarked = { status, onComplete ->
+                            callStatusCallback?.onCallStatusMarked(status, onComplete)
                         }
                     )
                 }
@@ -461,6 +607,7 @@ class FloatingCustomerService : Service(), LifecycleOwner, SavedStateRegistryOwn
 
 /**
  * 悬浮客户信息面板Compose组件
+ * 支持折叠/展开两种状态
  */
 @Composable
 private fun FloatingCustomerPanel(
@@ -468,24 +615,152 @@ private fun FloatingCustomerPanel(
     dialedCount: Int,
     totalCount: Int,
     isCalling: Boolean,
+    isCollapsed: Boolean,
     onClose: () -> Unit,
-    onCallStatusMarked: (String) -> Unit
+    onToggleCollapse: () -> Unit,
+    onCallStatusMarked: (String, (() -> Unit)?) -> Unit
 ) {
     // 使用 remember 来保持状态，避免重组时丢失
     var isAutoMode by remember { mutableStateOf(FloatingCustomerService.isAutoDialMode.value) }
+    // 当前选中的通话状态
+    var selectedCallStatus by remember { mutableStateOf<String?>(null) }
+    // 正在更新中的状态（用于显示loading）
+    var updatingStatus by remember { mutableStateOf<String?>(null) }
+    // 是否显示状态历史记录
+    var showHistory by remember { mutableStateOf(false) }
+    // 当前通话状态（用于自动标记）
+    var currentCallState by remember { mutableStateOf<RootCallState?>(null) }
+    // 通话状态历史记录
+    val callStateHistory by FloatingCustomerService.callStateHistory.collectAsState()
 
+    // 监听自动拨号模式变化
+    LaunchedEffect(Unit) {
+        FloatingCustomerService.isAutoDialMode.collect { mode ->
+            isAutoMode = mode
+        }
+    }
+
+    // 监听通话状态变化，自动标记和记录历史
+    LaunchedEffect(isCalling, customer) {
+        if (isCalling && customer != null) {
+            // 开始拨号时清空历史并添加第一条记录
+            FloatingCustomerService.clearCallStateHistory()
+            FloatingCustomerService.addCallStateHistory("拨号中", customer.phone, customer.name)
+            currentCallState = RootCallState.DIALING
+            
+            // 重置通话状态标记（新客户）
+            selectedCallStatus = null
+            updatingStatus = null
+        }
+    }
+    
+    // 监听客户变化，重置状态
+    LaunchedEffect(customer?.id) {
+        // 当客户变化时，重置所有状态标记
+        selectedCallStatus = null
+        updatingStatus = null
+    }
+
+    // 根据折叠状态显示不同的UI
+    if (isCollapsed) {
+        // 折叠状态：显示圆形 Floating Button
+        CollapsedFloatingButton(
+            isAutoMode = isAutoMode,
+            isCalling = isCalling,
+            onToggleCollapse = onToggleCollapse
+        )
+    } else {
+        // 展开状态：显示完整的悬浮窗
+        ExpandedFloatingPanel(
+            customer = customer,
+            dialedCount = dialedCount,
+            totalCount = totalCount,
+            isCalling = isCalling,
+            isAutoMode = isAutoMode,
+            selectedCallStatus = selectedCallStatus,
+            updatingStatus = updatingStatus,
+            showHistory = showHistory,
+            currentCallState = currentCallState,
+            callStateHistory = callStateHistory,
+            onClose = onClose,
+            onToggleCollapse = onToggleCollapse,
+            onCallStatusMarked = onCallStatusMarked,
+            onSelectedCallStatusChange = { selectedCallStatus = it },
+            onUpdatingStatusChange = { updatingStatus = it },
+            onShowHistoryChange = { showHistory = it },
+            onCurrentCallStateChange = { currentCallState = it }
+        )
+    }
+}
+
+/**
+ * 折叠状态的圆形 Floating Button
+ */
+@Composable
+private fun CollapsedFloatingButton(
+    isAutoMode: Boolean,
+    isCalling: Boolean,
+    onToggleCollapse: () -> Unit
+) {
+    Surface(
+        onClick = onToggleCollapse,
+        shape = CircleShape,
+        color = when {
+            isCalling -> Color(0xFF4CAF50)
+            isAutoMode -> MaterialTheme.colorScheme.primary
+            else -> Color(0xFFFFA726)
+        },
+        modifier = Modifier.size(56.dp),
+        shadowElevation = 4.dp
+    ) {
+        Box(
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Phone,
+                contentDescription = "展开",
+                tint = Color.White,
+                modifier = Modifier.size(28.dp)
+            )
+        }
+    }
+}
+
+/**
+ * 展开状态的完整悬浮窗面板
+ */
+@Composable
+private fun ExpandedFloatingPanel(
+    customer: Customer?,
+    dialedCount: Int,
+    totalCount: Int,
+    isCalling: Boolean,
+    isAutoMode: Boolean,
+    selectedCallStatus: String?,
+    updatingStatus: String?,
+    showHistory: Boolean,
+    currentCallState: RootCallState?,
+    callStateHistory: List<CallStateHistoryItem>,
+    onClose: () -> Unit,
+    onToggleCollapse: () -> Unit,
+    onCallStatusMarked: (String, (() -> Unit)?) -> Unit,
+    onSelectedCallStatusChange: (String?) -> Unit,
+    onUpdatingStatusChange: (String?) -> Unit,
+    onShowHistoryChange: (Boolean) -> Unit,
+    onCurrentCallStateChange: (RootCallState?) -> Unit
+) {
     Card(
         modifier = Modifier
-            .width(340.dp)
+            .width(320.dp)
             .wrapContentHeight(),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
     ) {
         Column(
-            modifier = Modifier.padding(20.dp)
+            modifier = Modifier.padding(16.dp)
         ) {
             // 标题栏：模式标识、进度和关闭按钮
             Row(
@@ -510,12 +785,27 @@ private fun FloatingCustomerPanel(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
-                        Text(
-                            text = if (isAutoMode) "自动拨号" else "手动拨号",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        // 标题行：模式文案 + Switch
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (isAutoMode) "自动拨号" else "手动拨号",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            // 自动/手动切换开关（放在文案后面，不显示文字）
+                            Switch(
+                                checked = isAutoMode,
+                                onCheckedChange = { checked ->
+                                    FloatingCustomerService.setAutoDialMode(checked)
+                                    FloatingCustomerService.manualDialCallback?.onAutoDialModeChanged(checked)
+                                },
+                                modifier = Modifier.scale(0.7f)
+                            )
+                        }
                         Text(
                             text = "$dialedCount / $totalCount",
                             style = MaterialTheme.typography.labelSmall,
@@ -524,227 +814,670 @@ private fun FloatingCustomerPanel(
                     }
                 }
 
-                // 右侧：自动开关 + 关闭按钮
+                // 右侧：折叠按钮、停止拨号按钮和关闭按钮
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // 自动/手动切换开关
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    // 折叠按钮
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        IconButton(
+                            onClick = onToggleCollapse,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowDown,
+                                contentDescription = "折叠",
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         Text(
-                            text = "自动",
+                            text = "折叠",
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (isAutoMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Switch(
-                            checked = isAutoMode,
-                            onCheckedChange = { checked ->
-                                isAutoMode = checked
-                                FloatingCustomerService.setAutoDialMode(checked)
-                                FloatingCustomerService.manualDialCallback?.onAutoDialModeChanged(checked)
-                            },
-                            modifier = Modifier.scale(0.8f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 9.sp
                         )
                     }
-
+                    
                     Spacer(modifier = Modifier.width(4.dp))
-
-                    IconButton(
-                        onClick = onClose,
-                        modifier = Modifier.size(32.dp)
+                    
+                    // 停止拨号按钮
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "关闭",
-                            modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        IconButton(
+                            onClick = {
+                                // 停止拨号并关闭悬浮窗
+                                FloatingCustomerService.manualDialCallback?.onStopDial()
+                                onClose()
+                            },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Stop,
+                                contentDescription = "停止拨号",
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                        Text(
+                            text = "停止拨号",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                            fontSize = 9.sp
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.width(4.dp))
+                    
+                    // 关闭悬浮窗按钮
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        IconButton(
+                            onClick = {
+                                // 关闭悬浮窗
+                                onClose()
+                            },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "关闭",
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Text(
+                            text = "关闭",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 9.sp
                         )
                     }
                 }
             }
 
             // 进度条
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             LinearProgressIndicator(
                 progress = { if (totalCount > 0) dialedCount.toFloat() / totalCount else 0f },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp)),
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp)),
                 color = MaterialTheme.colorScheme.primary,
                 trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
             )
 
             // 客户信息卡片
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
             if (customer != null) {
-                Card(
+                // 正在拨号的客户信息提示
+                if (isCalling) {
+                    Text(
+                        text = "正在拨号的客户信息",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
+
+                // 客户信息行
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    // 客户头像
+                    Surface(
+                        modifier = Modifier.size(44.dp),
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer
                     ) {
-                        // 头像
-                        Surface(
-                            modifier = Modifier.size(48.dp),
-                            shape = CircleShape,
-                            color = if (isCalling) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary,
-                            shadowElevation = 4.dp
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                if (isCalling) {
-                                    Icon(
-                                        imageVector = Icons.Default.Phone,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                } else {
-                                    Text(
-                                        text = customer.name?.firstOrNull()?.toString() ?: "?",
-                                        style = MaterialTheme.typography.titleLarge,
-                                        color = MaterialTheme.colorScheme.onPrimary
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        // 客户信息
-                        Column(modifier = Modifier.weight(1f)) {
+                        Box(contentAlignment = Alignment.Center) {
                             Text(
-                                text = customer.name ?: "未知客户",
+                                text = (customer.name?.firstOrNull()?.toString() ?: "?"),
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    // 客户信息
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = customer.name ?: "未命名",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = customer.phone ?: "",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (!customer.company.isNullOrBlank()) {
+                            Text(
+                                text = customer.company,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            Text(
-                                text = customer.phone ?: "",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 16.sp
-                            )
-                            if (!customer.company.isNullOrBlank()) {
-                                Text(
-                                    text = customer.company,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                        }
+                    }
+
+                    // 右侧：拨打下一个按钮（常驻显示）
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Surface(
+                        onClick = {
+                            android.util.Log.d("FloatingCustomerPanel", "下一个按钮被点击，直接调用 onDialNext")
+                            // 直接调用 onDialNext，与任务执行页面逻辑一致
+                            FloatingCustomerService.manualDialCallback?.let { callback ->
+                                android.util.Log.d("FloatingCustomerPanel", "调用 onDialNext 回调")
+                                callback.onDialNext()
+                            } ?: run {
+                                android.util.Log.e("FloatingCustomerPanel", "manualDialCallback 为 null，无法拨打下一个")
                             }
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.width(48.dp)
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                            modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "下一个",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium
+                            )
                         }
                     }
                 }
 
-                // 通话状态标记按钮（只在通话中显示）
+                // 通话状态标记按钮（已隐藏，完全依靠程序自动识别打标）
+                // 自动识别逻辑在 AutoDialService.setupCallStateListener() 中实现
+                /*
                 if (isCalling) {
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text = "标记通话结果：",
-                        style = MaterialTheme.typography.labelMedium,
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = FontWeight.Medium
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
+                    // 第一行：已接听、语音信箱、响铃未接
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        // 已接听按钮
                         StatusButton(
                             text = "已接听",
                             color = Color(0xFF4CAF50),
-                            onClick = { onCallStatusMarked("connected") },
+                            isSelected = selectedCallStatus == "connected",
+                            isLoading = updatingStatus == "connected",
+                            onClick = {
+                                onSelectedCallStatusChange("connected")
+                                onUpdatingStatusChange("connected")
+                                onCallStatusMarked("connected") {
+                                    onUpdatingStatusChange(null)
+                                }
+                            },
                             modifier = Modifier.weight(1f)
                         )
-                        // 语音信箱按钮
                         StatusButton(
                             text = "语音信箱",
                             color = Color(0xFF2196F3),
-                            onClick = { onCallStatusMarked("voicemail") },
+                            isSelected = selectedCallStatus == "voicemail",
+                            isLoading = updatingStatus == "voicemail",
+                            onClick = {
+                                onSelectedCallStatusChange("voicemail")
+                                onUpdatingStatusChange("voicemail")
+                                onCallStatusMarked("voicemail") {
+                                    onUpdatingStatusChange(null)
+                                }
+                            },
                             modifier = Modifier.weight(1f)
                         )
-                        // 未接听按钮
                         StatusButton(
-                            text = "未接听",
+                            text = "响铃未接",
                             color = Color(0xFFFF9800),
-                            onClick = { onCallStatusMarked("unanswered") },
+                            isSelected = selectedCallStatus == "unanswered",
+                            isLoading = updatingStatus == "unanswered",
+                            onClick = {
+                                onSelectedCallStatusChange("unanswered")
+                                onUpdatingStatusChange("unanswered")
+                                onCallStatusMarked("unanswered") {
+                                    onUpdatingStatusChange(null)
+                                }
+                            },
                             modifier = Modifier.weight(1f)
                         )
                     }
-                }
-
-                // 手动模式下显示"拨打下一个"按钮（当不在通话中时）
-                if (!isAutoMode && !isCalling) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    NextDialButton(
-                        onClick = {
-                            FloatingCustomerService.manualDialCallback?.onDialNext()
+                    
+                    // 第二行：拒接、忙线、关机/停机
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        StatusButton(
+                            text = "拒接",
+                            color = Color(0xFFE91E63),
+                            isSelected = selectedCallStatus == "rejected",
+                            isLoading = updatingStatus == "rejected",
+                            onClick = {
+                                onSelectedCallStatusChange("rejected")
+                                onUpdatingStatusChange("rejected")
+                                onCallStatusMarked("rejected") {
+                                    onUpdatingStatusChange(null)
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                        StatusButton(
+                            text = "忙线",
+                            color = Color(0xFFFF9800),
+                            isSelected = selectedCallStatus == "busy",
+                            isLoading = updatingStatus == "busy",
+                            onClick = {
+                                onSelectedCallStatusChange("busy")
+                                onUpdatingStatusChange("busy")
+                                onCallStatusMarked("busy") {
+                                    onUpdatingStatusChange(null)
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                        StatusButton(
+                            text = "关机/停机",
+                            color = Color(0xFF607D8B),
+                            isSelected = selectedCallStatus == "power_off",
+                            isLoading = updatingStatus == "power_off",
+                            onClick = {
+                                onSelectedCallStatusChange("power_off")
+                                onUpdatingStatusChange("power_off")
+                                onCallStatusMarked("power_off") {
+                                    onUpdatingStatusChange(null)
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    
+                    // 第三行：无人接听、IVR语音、其他
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        StatusButton(
+                            text = "无人接听",
+                            color = Color(0xFFFF9800),
+                            isSelected = selectedCallStatus == "no_answer",
+                            isLoading = updatingStatus == "no_answer",
+                            onClick = {
+                                onSelectedCallStatusChange("no_answer")
+                                onUpdatingStatusChange("no_answer")
+                                onCallStatusMarked("no_answer") {
+                                    onUpdatingStatusChange(null)
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                        StatusButton(
+                            text = "IVR语音",
+                            color = Color(0xFF00BCD4),
+                            isSelected = selectedCallStatus == "ivr",
+                            isLoading = updatingStatus == "ivr",
+                            onClick = {
+                                onSelectedCallStatusChange("ivr")
+                                onUpdatingStatusChange("ivr")
+                                onCallStatusMarked("ivr") {
+                                    onUpdatingStatusChange(null)
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                        StatusButton(
+                            text = "其他",
+                            color = Color(0xFF9E9E9E),
+                            isSelected = selectedCallStatus == "other",
+                            isLoading = updatingStatus == "other",
+                            onClick = {
+                                onSelectedCallStatusChange("other")
+                                onUpdatingStatusChange("other")
+                                onCallStatusMarked("other") {
+                                    onUpdatingStatusChange(null)
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    
+                    // 显示状态更新中提示
+                    if (updatingStatus != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "状态更新中...",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Medium
+                            )
                         }
+                    }
+                }
+                */
+
+                // 通话状态历史记录
+                if (callStateHistory.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    CallStateHistorySection(
+                        history = callStateHistory,
+                        isExpanded = showHistory,
+                        onToggleExpand = { onShowHistoryChange(!showHistory) }
                     )
                 }
             } else {
-                // 无客户信息状态 - 等待中
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                // 等待状态
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "准备拨打下一个客户...",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 通话状态历史记录区域组件
+ */
+@Composable
+private fun CallStateHistorySection(
+    history: List<CallStateHistoryItem>,
+    isExpanded: Boolean,
+    onToggleExpand: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ),
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(8.dp)
+        ) {
+            // 标题栏（可点击展开/收起）
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onToggleExpand() },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        if (isAutoMode) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(32.dp),
-                                strokeWidth = 3.dp
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = "准备拨打下一个客户...",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.Phone,
-                                contentDescription = null,
-                                modifier = Modifier.size(32.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "等待拨打下一个",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                    Icon(
+                        imageVector = Icons.Default.History,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "通话状态记录 (${history.size})",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Icon(
+                    imageVector = if (isExpanded) 
+                        Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (isExpanded) "收起" else "展开",
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            
+            // 展开时显示历史记录列表
+            if (isExpanded) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    history.forEach { item ->
+                        CallStateHistoryItemRow(item = item)
                     }
                 }
+            } else {
+                // 收起时只显示最后一条
+                history.lastOrNull()?.let { lastItem ->
+                    Spacer(modifier = Modifier.height(4.dp))
+                    CallStateHistoryItemRow(item = lastItem, isCompact = true)
+                }
+            }
+        }
+    }
+}
 
-                // 手动模式下显示"拨打下一个"按钮
-                if (!isAutoMode) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    NextDialButton(
-                        onClick = {
-                            FloatingCustomerService.manualDialCallback?.onDialNext()
-                        }
+/**
+ * 通话状态历史记录单项
+ */
+@Composable
+private fun CallStateHistoryItemRow(
+    item: CallStateHistoryItem,
+    isCompact: Boolean = false
+) {
+    // 尝试匹配状态获取显示信息
+    val stateInfo = try {
+        val stateEnum = com.callcenter.app.util.root.RootCallState.valueOf(item.state.uppercase().replace(" ", "_"))
+        stateInfoToDisplay(stateEnum.getDisplayInfo())
+    } catch (e: Exception) {
+        // 如果无法匹配枚举，使用状态字符串的默认显示
+        StateDisplayInfo(
+            displayName = item.state,
+            color = when {
+                item.state.contains("拨号") -> Color(0xFF2196F3)
+                item.state.contains("响铃") -> Color(0xFFFF9800)
+                item.state.contains("接通") || item.state.contains("接听") -> Color(0xFF4CAF50)
+                item.state.contains("保持") -> Color(0xFF9C27B0)
+                item.state.contains("挂断") || item.state.contains("结束") -> Color(0xFF757575)
+                item.state.contains("语音信箱") -> Color(0xFF2196F3)
+                item.state.contains("未接听") || item.state.contains("未接通") -> Color(0xFFFF5722)
+                item.state.contains("忙线") -> Color(0xFFFF9800)
+                item.state.contains("关机") -> Color(0xFF607D8B)
+                item.state.contains("停机") -> Color(0xFF607D8B)
+                item.state.contains("无效") -> Color(0xFF607D8B)
+                item.state.contains("失败") || item.state.contains("错误") -> Color(0xFFF44336)
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            icon = "📞"
+        )
+    }
+    
+    if (isCompact) {
+        // 紧凑模式（收起时）
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .background(stateInfo.color, CircleShape)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = item.getFormattedTime(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 10.sp
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            // 显示客户名字
+            item.customerName?.let { name ->
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+            Text(
+                text = "${stateInfo.icon} ${stateInfo.displayName}",
+                style = MaterialTheme.typography.labelSmall,
+                color = stateInfo.color,
+                fontWeight = FontWeight.Medium
+            )
+            item.number?.let { number ->
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = number,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    } else {
+        // 完整模式（展开时）
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top
+        ) {
+            // 时间线指示器
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .background(stateInfo.color, CircleShape)
+                )
+            }
+            
+            Spacer(modifier = Modifier.width(8.dp))
+            
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                // 时间和客户名字
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "${item.getFormattedTime()}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 10.sp
+                    )
+                    // 显示客户名字
+                    item.customerName?.let { name ->
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = name,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                // 状态和号码
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "${stateInfo.icon} ${stateInfo.displayName}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = stateInfo.color,
+                        fontWeight = FontWeight.Medium
+                    )
+                    item.number?.let { number ->
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = number,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                // 通话时长（如果有）
+                if (item.duration > 0) {
+                    Text(
+                        text = "通话时长: ${formatDuration(item.duration)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                        fontSize = 10.sp
                     )
                 }
             }
         }
     }
+}
+
+/**
+ * 状态显示信息（简化版，用于Compose）
+ */
+private data class StateDisplayInfo(
+    val displayName: String,
+    val color: Color,
+    val icon: String
+)
+
+/**
+ * 将 CallStateDisplayInfo 转换为 StateDisplayInfo
+ */
+private fun stateInfoToDisplay(info: com.callcenter.app.util.root.CallStateDisplayInfo): StateDisplayInfo {
+    return StateDisplayInfo(
+        displayName = info.displayName,
+        color = info.color,
+        icon = info.icon
+    )
 }
 
 /**
@@ -754,24 +1487,58 @@ private fun FloatingCustomerPanel(
 private fun StatusButton(
     text: String,
     color: Color,
+    isSelected: Boolean,
+    isLoading: Boolean = false,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Button(
         onClick = onClick,
-        modifier = modifier.height(40.dp),
+        modifier = modifier.height(36.dp),
+        enabled = !isLoading,
         colors = ButtonDefaults.buttonColors(
-            containerColor = color
+            containerColor = if (isSelected) color else color.copy(alpha = 0.3f),
+            contentColor = if (isSelected) Color.White else color,
+            disabledContainerColor = color.copy(alpha = 0.2f),
+            disabledContentColor = color.copy(alpha = 0.5f)
         ),
-        shape = RoundedCornerShape(8.dp),
-        contentPadding = PaddingValues(horizontal = 8.dp)
+        shape = RoundedCornerShape(6.dp),
+        contentPadding = PaddingValues(horizontal = 6.dp),
+        border = if (isSelected) {
+            androidx.compose.foundation.BorderStroke(
+                width = 2.dp,
+                color = Color.White
+            )
+        } else null
     ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            when {
+                isLoading -> {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp),
+                        strokeWidth = 2.dp,
+                        color = if (isSelected) Color.White else color
+                    )
+                }
+                isSelected -> {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(2.dp))
+                }
+            }
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                maxLines = 1
+            )
+        }
     }
 }
 
@@ -787,22 +1554,32 @@ private fun NextDialButton(
         onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
-            .height(48.dp),
+            .height(40.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = MaterialTheme.colorScheme.primary
         ),
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(10.dp)
     ) {
         Icon(
             imageVector = Icons.Default.Phone,
             contentDescription = null,
-            modifier = Modifier.size(20.dp)
+            modifier = Modifier.size(18.dp)
         )
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(6.dp))
         Text(
             "拨打下一个",
-            style = MaterialTheme.typography.labelLarge,
+            style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold
         )
     }
+}
+
+/**
+ * 格式化时长
+ */
+private fun formatDuration(durationMs: Long): String {
+    val seconds = durationMs / 1000
+    val minutes = seconds / 60
+    val hours = minutes / 60
+    return String.format("%02d:%02d:%02d", hours, minutes % 60, seconds % 60)
 }

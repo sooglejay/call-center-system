@@ -5,7 +5,9 @@ import android.content.pm.PackageManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -67,6 +69,7 @@ fun MainScreen(
     onNavigateToTaskDetail: (Int) -> Unit,
     onNavigateToAgentTaskExecution: (Int) -> Unit,
     onNavigateToHelp: () -> Unit,
+    onNavigateToPermissionTest: () -> Unit,
     onLogout: () -> Unit,
     onSwitchAccount: () -> Unit,
     authViewModel: AuthViewModel = hiltViewModel(),
@@ -89,7 +92,16 @@ fun MainScreen(
     val currentDialCustomer by autoDialViewModel.currentCustomer.collectAsState()
     val customers by customerViewModel.customers.collectAsState()
     val tasks by taskListViewModel.tasks.collectAsState()
+    val taskListError by taskListViewModel.error.collectAsState()
     val callSettings by callSettingsViewModel.callSettings.collectAsState()
+
+    // 显示任务列表加载错误提示
+    LaunchedEffect(taskListError) {
+        taskListError?.let { error ->
+            Toast.makeText(context, error, Toast.LENGTH_LONG).show()
+            taskListViewModel.clearError()
+        }
+    }
 
     // 合并所有客户：任务客户 + 分配客户（用于客户Tab的自动拨号）
     val allCustomersForDial = remember(tasks, customers) {
@@ -100,7 +112,7 @@ fun MainScreen(
             task.customers?.forEach { taskCustomer ->
                 taskCustomers.add(
                     Customer(
-                        id = taskCustomer.id,
+                        id = taskCustomer.id ?: taskCustomer.taskCustomerId,  // 使用 taskCustomerId 作为备选
                         name = taskCustomer.name,
                         phone = taskCustomer.phone,
                         email = taskCustomer.email,
@@ -229,32 +241,7 @@ fun MainScreen(
             }
         },
         floatingActionButton = {
-            // 只在客服的客户列表页显示自动拨号按钮
-            if (!isAdmin && selectedTab == 2) {
-                ExtendedFloatingActionButton(
-                    onClick = {
-                        if (autoDialRunning) {
-                            autoDialViewModel.stopAutoDial()
-                        } else if (checkAndRequestCallPermission()) {
-                            // 显示配置对话框
-                            if (allCustomersForDial.isNotEmpty()) {
-                                showAutoDialConfigDialog = true
-                            }
-                        }
-                    },
-                    icon = {
-                        Icon(
-                            if (autoDialRunning) Icons.Default.Stop else Icons.Default.PlayArrow,
-                            contentDescription = if (autoDialRunning) "停止拨号" else "自动拨号"
-                        )
-                    },
-                    text = { Text(if (autoDialRunning) "停止拨号" else "自动拨号") },
-                    containerColor = if (autoDialRunning)
-                        MaterialTheme.colorScheme.error
-                    else
-                        MaterialTheme.colorScheme.primaryContainer
-                )
-            }
+            // 自动拨号按钮已移除（根据需求）
         }
     ) { padding ->
         when {
@@ -284,6 +271,7 @@ fun MainScreen(
                     onLogout = onLogout,
                     onSwitchAccount = onSwitchAccount,
                     onNavigateToHelp = onNavigateToHelp,
+                    onNavigateToPermissionTest = onNavigateToPermissionTest,
                     authViewModel = authViewModel
                 )
             }
@@ -323,6 +311,7 @@ fun MainScreen(
                     onLogout = onLogout,
                     onSwitchAccount = onSwitchAccount,
                     onNavigateToHelp = onNavigateToHelp,
+                    onNavigateToPermissionTest = onNavigateToPermissionTest,
                     authViewModel = authViewModel
                 )
             }
@@ -477,17 +466,22 @@ fun MainScreen(
         // 自动悬浮窗组件 - 在自动拨号时自动显示悬浮窗
         AutoFloatingWindow(
             enabled = true,
-            onCallStatusMarked = { status ->
+            onCallStatusMarked = { status, onComplete ->
                 // 发送通话状态标记到AutoDialService
                 val intent = android.content.Intent(context, com.callcenter.app.service.AutoDialService::class.java).apply {
                     action = when (status) {
                         "connected" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_CONNECTED
                         "voicemail" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_VOICEMAIL
                         "unanswered" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_UNANSWERED
-                        else -> return@AutoFloatingWindow
+                        else -> {
+                            onComplete?.invoke()
+                            return@AutoFloatingWindow
+                        }
                     }
                 }
                 context.startService(intent)
+                // 立即调用完成回调（MainScreen没有网络请求）
+                onComplete?.invoke()
             }
         )
     }
@@ -843,10 +837,10 @@ private fun TaskItem(
                 )
             }
 
-            // 状态标签
-            val (statusText, statusColor) = when (task.status) {
-                "completed" -> "已完成" to Color(0xFF4CAF50)
-                "in_progress" -> "进行中" to Color(0xFF2196F3)
+            // 状态标签 - 根据实际进度计算状态
+            val (statusText, statusColor) = when {
+                task.customerCount > 0 && task.calledCount >= task.customerCount -> "已完成" to Color(0xFF4CAF50)
+                task.calledCount > 0 -> "进行中" to Color(0xFF2196F3)
                 else -> "待开始" to Color(0xFFFF9800)
             }
             Surface(
@@ -1101,10 +1095,10 @@ private fun AgentTaskItem(
                     )
                 }
 
-                // 状态标签
-                val (statusText, statusColor) = when (task.status) {
-                    "completed" -> "已完成" to Color(0xFF4CAF50)
-                    "in_progress" -> "进行中" to Color(0xFF2196F3)
+                // 状态标签 - 根据实际进度计算状态
+                val (statusText, statusColor) = when {
+                    task.customerCount > 0 && task.calledCount >= task.customerCount -> "已完成" to Color(0xFF4CAF50)
+                    task.calledCount > 0 -> "进行中" to Color(0xFF2196F3)
                     else -> "待开始" to Color(0xFFFF9800)
                 }
                 Surface(
@@ -1787,10 +1781,10 @@ private fun AgentTaskItemWithProgress(
                         }
                     }
                 } else {
-                    // 状态标签
-                    val (statusText, statusColor) = when (task.status) {
-                        "completed" -> "已完成" to Color(0xFF4CAF50)
-                        "in_progress" -> "进行中" to Color(0xFF2196F3)
+                    // 状态标签 - 根据实际进度计算状态
+                    val (statusText, statusColor) = when {
+                        task.customerCount > 0 && task.calledCount >= task.customerCount -> "已完成" to Color(0xFF4CAF50)
+                        task.calledCount > 0 -> "进行中" to Color(0xFF2196F3)
                         else -> "待开始" to Color(0xFFFF9800)
                     }
                     Surface(
@@ -1832,8 +1826,8 @@ private fun AgentTaskItemWithProgress(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
-                    // 开始拨号按钮
-                    if (!isAutoDialing && task.status != "completed") {
+                    // 开始拨号按钮 - 根据实际进度判断是否已完成
+                    if (!isAutoDialing && !(task.customerCount > 0 && task.calledCount >= task.customerCount)) {
                         TextButton(
                             onClick = onStartDial,
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
@@ -1876,6 +1870,8 @@ private fun AgentCustomersTab(
     val isLoadingAssigned by customerViewModel.isLoading.collectAsState()
     val searchQuery by customerViewModel.searchQuery.collectAsState()
     val statusFilter by customerViewModel.statusFilter.collectAsState()
+    val isMultiSelectMode by customerViewModel.isMultiSelectMode.collectAsState()
+    val selectedCustomerIds by customerViewModel.selectedCustomerIds.collectAsState()
 
     // 从TaskListViewModel获取任务列表
     val tasks by taskListViewModel.tasks.collectAsState()
@@ -1893,6 +1889,7 @@ private fun AgentCustomersTab(
 
     var showSearchBar by remember { mutableStateOf(false) }
     var showFilterMenu by remember { mutableStateOf(false) }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
     // 合并所有客户：任务客户 + 分配客户
     val allCustomers = remember(tasks, assignedCustomers) {
@@ -1903,7 +1900,7 @@ private fun AgentCustomersTab(
             task.customers?.forEach { taskCustomer ->
                 taskCustomers.add(
                     Customer(
-                        id = taskCustomer.id,
+                        id = taskCustomer.id ?: taskCustomer.taskCustomerId,  // 使用 taskCustomerId 作为备选
                         name = taskCustomer.name,
                         phone = taskCustomer.phone,
                         email = taskCustomer.email,
@@ -1996,67 +1993,103 @@ private fun AgentCustomersTab(
         topBar = {
             TopAppBar(
                 title = {
-                    if (showSearchBar) {
-                        OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = { customerViewModel.setSearchQuery(it) },
-                            placeholder = { Text("搜索客户...") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            trailingIcon = {
-                                IconButton(onClick = {
-                                    showSearchBar = false
-                                    customerViewModel.setSearchQuery("")
-                                }) {
-                                    Icon(Icons.Default.Close, "关闭搜索")
+                    when {
+                        showSearchBar -> {
+                            OutlinedTextField(
+                                value = searchQuery,
+                                onValueChange = { customerViewModel.setSearchQuery(it) },
+                                placeholder = { Text("搜索客户...") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                trailingIcon = {
+                                    IconButton(onClick = {
+                                        showSearchBar = false
+                                        customerViewModel.setSearchQuery("")
+                                    }) {
+                                        Icon(Icons.Default.Close, "关闭搜索")
+                                    }
                                 }
-                            }
-                        )
-                    } else {
-                        Text("客户列表 (${filteredCustomers.size})")
+                            )
+                        }
+                        isMultiSelectMode -> {
+                            Text(VersionInfoUtil.getTitleWithVersion(context, "已选择 ${selectedCustomerIds.size} 个客户"))
+                        }
+                        else -> {
+                            Text(VersionInfoUtil.getTitleWithVersion(context, "客户列表 (${filteredCustomers.size})"))
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                    containerColor = if (isMultiSelectMode) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer
                 ),
+                navigationIcon = {
+                    if (isMultiSelectMode) {
+                        IconButton(onClick = { customerViewModel.exitMultiSelectMode() }) {
+                            Icon(Icons.Default.Close, "取消")
+                        }
+                    }
+                },
                 actions = {
-                    IconButton(onClick = { showSearchBar = !showSearchBar }) {
-                        Icon(Icons.Default.Search, "搜索")
-                    }
-                    IconButton(onClick = { showFilterMenu = true }) {
-                        Icon(Icons.Default.FilterList, "筛选")
-                    }
-                    DropdownMenu(
-                        expanded = showFilterMenu,
-                        onDismissRequest = { showFilterMenu = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("全部") },
-                            onClick = {
-                                customerViewModel.setStatusFilter(null)
-                                showFilterMenu = false
+                    when {
+                        isMultiSelectMode -> {
+                            // 多选模式下的操作按钮
+                            if (selectedCustomerIds.size < filteredCustomers.size) {
+                                IconButton(onClick = { customerViewModel.selectAllCustomers(filteredCustomers.map { it.id }) }) {
+                                    Icon(Icons.Default.SelectAll, "全选")
+                                }
+                            } else {
+                                IconButton(onClick = { customerViewModel.exitMultiSelectMode() }) {
+                                    Icon(Icons.Default.Deselect, "取消全选")
+                                }
                             }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("待拨打") },
-                            onClick = {
-                                customerViewModel.setStatusFilter("pending")
-                                showFilterMenu = false
+                            IconButton(
+                                onClick = { showDeleteConfirmDialog = true },
+                                enabled = selectedCustomerIds.isNotEmpty()
+                            ) {
+                                Icon(Icons.Default.Delete, "删除")
                             }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("已完成") },
-                            onClick = {
-                                customerViewModel.setStatusFilter("completed")
-                                showFilterMenu = false
+                        }
+                        else -> {
+                            // 普通模式下的操作按钮
+                            IconButton(onClick = { showSearchBar = !showSearchBar }) {
+                                Icon(Icons.Default.Search, "搜索")
                             }
-                        )
-                    }
-                    IconButton(onClick = {
-                        customerViewModel.refresh()
-                        taskListViewModel.loadMyTasks()
-                    }) {
-                        Icon(Icons.Default.Refresh, "刷新")
+                            IconButton(onClick = { showFilterMenu = true }) {
+                                Icon(Icons.Default.FilterList, "筛选")
+                            }
+                            DropdownMenu(
+                                expanded = showFilterMenu,
+                                onDismissRequest = { showFilterMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("全部") },
+                                    onClick = {
+                                        customerViewModel.setStatusFilter(null)
+                                        showFilterMenu = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("待拨打") },
+                                    onClick = {
+                                        customerViewModel.setStatusFilter("pending")
+                                        showFilterMenu = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("已完成") },
+                                    onClick = {
+                                        customerViewModel.setStatusFilter("completed")
+                                        showFilterMenu = false
+                                    }
+                                )
+                            }
+                            IconButton(onClick = {
+                                customerViewModel.refresh()
+                                taskListViewModel.loadMyTasks()
+                            }) {
+                                Icon(Icons.Default.Refresh, "刷新")
+                            }
+                        }
                     }
                 }
             )
@@ -2130,14 +2163,61 @@ private fun AgentCustomersTab(
                         contentPadding = PaddingValues(vertical = 8.dp)
                     ) {
                         items(filteredCustomers, key = { it.id }) { customer ->
+                            val isSelected = selectedCustomerIds.contains(customer.id)
                             CustomerItem(
                                 customer = customer,
+                                isSelected = isSelected,
+                                isMultiSelectMode = isMultiSelectMode,
                                 onCall = { makeCall(customer.phone ?: "") },
-                                onClick = { onNavigateToCustomerDetail(customer.id) }
+                                onClick = {
+                                    if (isMultiSelectMode) {
+                                        customerViewModel.toggleCustomerSelection(customer.id)
+                                    } else {
+                                        onNavigateToCustomerDetail(customer.id)
+                                    }
+                                },
+                                onLongClick = {
+                                    if (!isMultiSelectMode) {
+                                        customerViewModel.toggleMultiSelectMode()
+                                        customerViewModel.toggleCustomerSelection(customer.id)
+                                    }
+                                }
                             )
                         }
                     }
                 }
+            }
+
+            // 删除确认对话框
+            if (showDeleteConfirmDialog) {
+                AlertDialog(
+                    onDismissRequest = { showDeleteConfirmDialog = false },
+                    title = { Text("确认删除") },
+                    text = { Text("确定要删除选中的 ${selectedCustomerIds.size} 个客户吗？此操作不可恢复。") },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                customerViewModel.deleteSelectedCustomers(
+                                    onSuccess = {
+                                        showDeleteConfirmDialog = false
+                                        Toast.makeText(context, "删除成功", Toast.LENGTH_SHORT).show()
+                                    },
+                                    onError = { error ->
+                                        showDeleteConfirmDialog = false
+                                        Toast.makeText(context, error, Toast.LENGTH_LONG).show()
+                                    }
+                                )
+                            }
+                        ) {
+                            Text("删除", color = MaterialTheme.colorScheme.error)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showDeleteConfirmDialog = false }) {
+                            Text("取消")
+                        }
+                    }
+                )
             }
         }
     }
@@ -2428,6 +2508,7 @@ private fun ProfileTab(
     onLogout: () -> Unit,
     onSwitchAccount: () -> Unit,
     onNavigateToHelp: () -> Unit,
+    onNavigateToPermissionTest: () -> Unit,
     authViewModel: AuthViewModel,
     settingsViewModel: com.callcenter.app.ui.viewmodel.SettingsViewModel = hiltViewModel()
 ) {
@@ -2557,6 +2638,12 @@ private fun ProfileTab(
                 subtitle = "查看使用说明",
                 onClick = onNavigateToHelp
             )
+            SettingsItem(
+                icon = Icons.Default.Security,
+                title = "权限测试",
+                subtitle = "检测 Root 和通话相关权限",
+                onClick = onNavigateToPermissionTest
+            )
         }
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -2606,7 +2693,8 @@ private fun ProfileTab(
             onConfirm = { newUrl ->
                 settingsViewModel.updateServerUrl(newUrl)
                 showServerUrlDialog = false
-                Toast.makeText(context, "服务器地址已更新，请重新登录", Toast.LENGTH_LONG).show()
+                // 重启应用使新服务器地址生效
+                com.callcenter.app.util.AppRestartUtil.restartApp(context)
             }
         )
     }
@@ -2898,7 +2986,7 @@ private fun ServerUrlDialog(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "修改后需要重新登录",
+                    text = "修改后应用将自动重启",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -2920,17 +3008,30 @@ private fun ServerUrlDialog(
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CustomerItem(
     customer: Customer,
+    isSelected: Boolean = false,
+    isMultiSelectMode: Boolean = false,
     onCall: () -> Unit,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onLongClick: () -> Unit = {}
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        onClick = onClick
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            ),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+        ),
+        border = if (isSelected) {
+            androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+        } else null
     ) {
         Row(
             modifier = Modifier
@@ -2938,28 +3039,36 @@ fun CustomerItem(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 状态指示器
-            when (customer.status) {
-                "pending" -> Surface(
-                    modifier = Modifier.size(12.dp),
-                    shape = MaterialTheme.shapes.extraSmall,
-                    color = MaterialTheme.colorScheme.primary
-                ) {}
-                "completed" -> Icon(
-                    Icons.Default.CheckCircle,
-                    null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
+            // 多选模式下的复选框
+            if (isMultiSelectMode) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onClick() },
+                    modifier = Modifier.padding(end = 12.dp)
                 )
-                else -> Icon(
-                    Icons.Default.Cancel,
-                    null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(16.dp)
-                )
+            } else {
+                // 状态指示器
+                when (customer.status) {
+                    "pending" -> Surface(
+                        modifier = Modifier.size(12.dp),
+                        shape = MaterialTheme.shapes.extraSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    ) {}
+                    "completed" -> Icon(
+                        Icons.Default.CheckCircle,
+                        null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    else -> Icon(
+                        Icons.Default.Cancel,
+                        null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
             }
-
-            Spacer(modifier = Modifier.width(12.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -3001,7 +3110,8 @@ fun CustomerItem(
                 }
             }
 
-            if (customer.status == "pending") {
+            // 非多选模式下显示拨打电话按钮
+            if (!isMultiSelectMode && customer.status == "pending") {
                 IconButton(onClick = onCall) {
                     Icon(Icons.Default.Phone, "拨打电话", tint = MaterialTheme.colorScheme.primary)
                 }

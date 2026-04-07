@@ -6,11 +6,13 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -18,8 +20,11 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -29,6 +34,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.callcenter.app.data.model.Customer
 import com.callcenter.app.data.model.Task
 import com.callcenter.app.data.model.TaskCustomer
+import com.callcenter.app.service.AutoDialService
 import com.callcenter.app.ui.viewmodel.AgentTaskViewModel
 import com.callcenter.app.ui.viewmodel.AutoDialViewModel
 import com.callcenter.app.ui.viewmodel.AutoDialConfig
@@ -36,6 +42,7 @@ import com.callcenter.app.ui.viewmodel.AutoDialScopeType
 import com.callcenter.app.ui.viewmodel.CallSettingsViewModel
 import com.callcenter.app.util.CallHelper
 import com.callcenter.app.util.FloatingWindowManager
+import com.callcenter.app.util.VersionInfoUtil
 import com.callcenter.app.util.AutoFloatingWindow
 import com.google.accompanist.swiperefresh.SwipeRefresh
 import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
@@ -63,6 +70,7 @@ fun AgentTaskExecutionScreen(
 
     // 自动拨号状态
     val autoDialRunning by autoDialViewModel.isRunning.collectAsState()
+    val autoDialMode by autoDialViewModel.isAutoDialMode.collectAsState()
     val currentDialCustomer by autoDialViewModel.currentCustomer.collectAsState()
     val dialedCount by autoDialViewModel.dialedCount.collectAsState()
     val totalCount by autoDialViewModel.totalCount.collectAsState()
@@ -135,7 +143,7 @@ fun AgentTaskExecutionScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("任务执行") },
+                title = { Text(VersionInfoUtil.getTitleWithVersion(context, "任务执行")) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
@@ -158,7 +166,69 @@ fun AgentTaskExecutionScreen(
                     currentCustomer = currentDialCustomer,
                     dialedCount = dialedCount,
                     totalCount = totalCount,
-                    onStop = { autoDialViewModel.stopAutoDial() }
+                    isAutoMode = autoDialMode,
+                    onStop = { autoDialViewModel.stopAutoDial() },
+                    onCallStatusMarked = { status ->
+                        // 发送通话状态标记到AutoDialService
+                        val intent = android.content.Intent(context, com.callcenter.app.service.AutoDialService::class.java).apply {
+                            action = when (status) {
+                                "connected" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_CONNECTED
+                                "voicemail" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_VOICEMAIL
+                                "unanswered" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_UNANSWERED
+                                "rejected" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_REJECTED
+                                "busy" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_BUSY
+                                "power_off" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_POWER_OFF
+                                "no_answer" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_NO_ANSWER
+                                "ivr" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_IVR
+                                "other" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_OTHER
+                                else -> null
+                            }
+                        }
+                        if (intent.action != null) {
+                            context.startService(intent)
+                        }
+
+                        // 更新本地客户状态
+                        val dialCustomer = currentDialCustomer
+                        if (dialCustomer != null) {
+                            val callResult = when (status) {
+                                "connected" -> "已接听"
+                                "voicemail" -> "语音信箱"
+                                "unanswered" -> "响铃未接"
+                                "rejected" -> "对方拒接"
+                                "busy" -> "对方忙线"
+                                "power_off" -> "关机/停机"
+                                "no_answer" -> "无人接听"
+                                "ivr" -> "IVR语音"
+                                "other" -> "其他"
+                                else -> null
+                            }
+                            if (callResult != null) {
+                                viewModel.updateCustomerStatus(
+                                    taskId = taskId,
+                                    customerId = dialCustomer.id,
+                                    status = "called",
+                                    callResult = callResult
+                                )
+                            }
+                        }
+                    },
+                    onAutoModeChanged = { isAutoMode ->
+                        // 发送切换自动/手动模式到AutoDialService
+                        val intent = android.content.Intent(context, com.callcenter.app.service.AutoDialService::class.java).apply {
+                            action = com.callcenter.app.service.AutoDialService.ACTION_SET_AUTO_MODE
+                            putExtra(com.callcenter.app.service.AutoDialService.EXTRA_AUTO_MODE, isAutoMode)
+                        }
+                        context.startService(intent)
+                    },
+                    onDialNext = {
+                        // 发送拨打下一个命令到AutoDialService
+                        val intent = android.content.Intent(context, com.callcenter.app.service.AutoDialService::class.java).apply {
+                            action = com.callcenter.app.service.AutoDialService.ACTION_DIAL_NEXT
+                        }
+                        context.startService(intent)
+                    },
+                    callStateHistory = com.callcenter.app.service.FloatingCustomerService.callStateHistory.collectAsState().value
                 )
             }
 
@@ -228,7 +298,7 @@ fun AgentTaskExecutionScreen(
                                 if (checkAndRequestCallPermission()) {
                                     pendingCustomersForDial = pendingCustomers.map { tc ->
                                         com.callcenter.app.data.model.Customer(
-                                            id = tc.id,
+                                            id = tc.id ?: tc.taskCustomerId,  // 使用 taskCustomerId 作为备选
                                             name = tc.name,
                                             phone = tc.phone,
                                             email = tc.email,
@@ -400,7 +470,7 @@ fun AgentTaskExecutionScreen(
                                 val pendingCustomers = task?.customers?.filter { it.callStatus == "pending" } ?: emptyList()
                                 pendingCustomersForDial = pendingCustomers.map { tc ->
                                     com.callcenter.app.data.model.Customer(
-                                        id = tc.id,
+                                        id = tc.id ?: tc.taskCustomerId,  // 使用 taskCustomerId 作为备选
                                         name = tc.name,
                                         phone = tc.phone,
                                         email = tc.email,
@@ -453,19 +523,62 @@ fun AgentTaskExecutionScreen(
         }
 
         // 自动悬浮窗组件 - 在自动拨号时自动显示悬浮窗
+        val scope = rememberCoroutineScope()
         AutoFloatingWindow(
             enabled = true,
-            onCallStatusMarked = { status ->
-                // 发送通话状态标记到AutoDialService
+            onCallStatusMarked = { status, onComplete ->
+                // 同时更新到AutoDialService和本地ViewModel
+                val currentCustomer = AutoDialService.currentCustomer.value
+                
+                // 1. 发送通话状态标记到AutoDialService（用于后台记录）
                 val intent = android.content.Intent(context, com.callcenter.app.service.AutoDialService::class.java).apply {
                     action = when (status) {
                         "connected" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_CONNECTED
                         "voicemail" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_VOICEMAIL
                         "unanswered" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_UNANSWERED
-                        else -> return@AutoFloatingWindow
+                        "rejected" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_REJECTED
+                        "busy" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_BUSY
+                        "power_off" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_POWER_OFF
+                        "no_answer" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_NO_ANSWER
+                        "ivr" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_IVR
+                        "other" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_OTHER
+                        else -> {
+                            onComplete?.invoke()
+                            return@AutoFloatingWindow
+                        }
                     }
                 }
                 context.startService(intent)
+                
+                // 2. 更新本地客户状态（立即刷新UI）
+                if (currentCustomer != null) {
+                    val callResult = when (status) {
+                        "connected" -> "已接听"
+                        "voicemail" -> "语音信箱"
+                        "unanswered" -> "响铃未接"
+                        "rejected" -> "对方拒接"
+                        "busy" -> "对方忙线"
+                        "power_off" -> "关机/停机"
+                        "no_answer" -> "无人接听"
+                        "ivr" -> "IVR语音"
+                        "other" -> "其他"
+                        else -> null
+                    }
+                    if (callResult != null) {
+                        viewModel.updateCustomerStatus(
+                            taskId = taskId,
+                            customerId = currentCustomer.id,
+                            status = "called",
+                            callResult = callResult
+                        )
+                    }
+                }
+                
+                // 3. 延迟后调用完成回调（给ViewModel操作一些时间）
+                scope.launch {
+                    kotlinx.coroutines.delay(800)
+                    onComplete?.invoke()
+                }
             }
         )
     }
@@ -488,15 +601,27 @@ private fun TaskExecutionContent(
     onAutoDialClick: () -> Unit = {}
 ) {
     val customers = task.customers ?: emptyList()
-    
-    // 按通话状态分组
+
+    // 按通话状态分组（与标记通话状态的9个选项对齐）
     val pendingCustomers = customers.filter { it.callStatus == "pending" }
     val connectedCustomers = customers.filter { it.callStatus == "connected" || it.callResult == "已接听" }
     val voicemailCustomers = customers.filter { it.callStatus == "voicemail" || it.callResult == "语音信箱" }
     val unansweredCustomers = customers.filter { it.callStatus == "unanswered" || it.callResult == "响铃未接" }
-    val failedCustomers = customers.filter { it.callStatus == "failed" || it.callResult == "拨打失败" }
-    val otherCalledCustomers = customers.filter { 
-        it.callStatus == "called" || it.callStatus == "completed" 
+    val rejectedCustomers = customers.filter { it.callStatus == "rejected" || it.callResult == "对方拒接" }
+    val busyCustomers = customers.filter { it.callStatus == "busy" || it.callResult == "对方忙线" }
+    val powerOffCustomers = customers.filter { it.callStatus == "power_off" || it.callResult == "关机/停机" }
+    val noAnswerCustomers = customers.filter { it.callStatus == "no_answer" || it.callResult == "无人接听" }
+    val ivrCustomers = customers.filter { it.callStatus == "ivr" || it.callResult == "IVR语音" }
+    val otherCalledCustomers = customers.filter {
+        (it.callStatus == "called" || it.callStatus == "completed") &&
+        it.callResult != "已接听" &&
+        it.callResult != "语音信箱" &&
+        it.callResult != "响铃未接" &&
+        it.callResult != "对方拒接" &&
+        it.callResult != "对方忙线" &&
+        it.callResult != "关机/停机" &&
+        it.callResult != "无人接听" &&
+        it.callResult != "IVR语音"
     }.sortedByDescending { it.calledAt ?: it.callTime ?: "" }
 
     // 根据选中的Tab过滤客户列表
@@ -506,90 +631,107 @@ private fun TaskExecutionContent(
         2 -> connectedCustomers // 已接听
         3 -> voicemailCustomers // 语音信箱
         4 -> unansweredCustomers // 响铃未接
-        5 -> failedCustomers // 拨打失败
-        6 -> otherCalledCustomers // 其他已拨打
+        5 -> rejectedCustomers // 拒接
+        6 -> busyCustomers // 忙线
+        7 -> powerOffCustomers // 关机/停机
+        8 -> noAnswerCustomers // 无人接听
+        9 -> ivrCustomers // IVR语音
+        10 -> otherCalledCustomers // 其他
         else -> customers
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // 任务信息卡片（包含自动拨号按钮）
-        TaskInfoCard(
-            task = task,
-            isAutoDialing = isAutoDialing,
-            hasPendingCustomers = pendingCustomers.isNotEmpty(),
-            onAutoDialClick = onAutoDialClick
-        )
-
-        // Tab按钮：全部/待拨打/已接听/语音信箱/响铃未接/拨打失败/其他
-        CustomerFilterTabsWithCallStatus(
-            totalCount = customers.size,
-            pendingCount = pendingCustomers.size,
-            connectedCount = connectedCustomers.size,
-            voicemailCount = voicemailCustomers.size,
-            unansweredCount = unansweredCustomers.size,
-            failedCount = failedCustomers.size,
-            otherCount = otherCalledCustomers.size,
-            selectedTab = selectedTab,
-            onTabSelected = onTabSelected
-        )
-
-        // 客户列表（带下拉刷新）
-        SwipeRefresh(
-            state = rememberSwipeRefreshState(isRefreshing),
-            onRefresh = onRefresh,
-            modifier = Modifier.fillMaxSize()
+    // 客户列表（带下拉刷新）- 使用LazyColumn作为根布局，支持整体滑动
+    SwipeRefresh(
+        state = rememberSwipeRefreshState(isRefreshing),
+        onRefresh = onRefresh,
+        modifier = Modifier.fillMaxSize()
+    ) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // 显示当前分组标题
-                item {
-                    val title = when (selectedTab) {
-                        0 -> "全部客户"
-                        1 -> "待拨打"
-                        2 -> "已接听"
-                        3 -> "语音信箱"
-                        4 -> "响铃未接"
-                        5 -> "拨打失败"
-                        6 -> "其他已拨打"
-                        else -> "全部客户"
-                    }
-                    val count = displayedCustomers.size
-                    val color = when (selectedTab) {
-                        0 -> MaterialTheme.colorScheme.primary
-                        1 -> MaterialTheme.colorScheme.primary
-                        2 -> MaterialTheme.colorScheme.tertiary
-                        3 -> MaterialTheme.colorScheme.secondary
-                        4 -> MaterialTheme.colorScheme.error
-                        5 -> MaterialTheme.colorScheme.outline
-                        6 -> MaterialTheme.colorScheme.surfaceVariant
-                        else -> MaterialTheme.colorScheme.primary
-                    }
-                    CustomerGroupHeader(
-                        title = title,
-                        count = count,
-                        color = color
-                    )
-                }
+            // Header: 任务信息卡片（包含自动拨号按钮）
+            item {
+                TaskInfoCard(
+                    task = task,
+                    isAutoDialing = isAutoDialing,
+                    hasPendingCustomers = pendingCustomers.isNotEmpty(),
+                    onAutoDialClick = onAutoDialClick
+                )
+            }
 
-                // 显示客户列表
-                items(displayedCustomers) { customer ->
-                    TaskCustomerCard(
-                        customer = customer,
-                        onCall = { onCallCustomer(customer.phone ?: "", task.id, customer.id) },
-                        onUpdateStatus = { status, result ->
-                            onUpdateStatus(customer.id, status, result)
-                        },
-                        onEditCustomer = { name, phone, company ->
-                            onEditCustomer(customer.id, name, phone, company)
-                        },
-                        onDeleteCustomer = {
-                            onDeleteCustomer(customer.id)
-                        }
-                    )
+            // Header: Tab按钮
+            item {
+                CustomerFilterTabsWithCallStatus(
+                    totalCount = customers.size,
+                    pendingCount = pendingCustomers.size,
+                    connectedCount = connectedCustomers.size,
+                    voicemailCount = voicemailCustomers.size,
+                    unansweredCount = unansweredCustomers.size,
+                    rejectedCount = rejectedCustomers.size,
+                    busyCount = busyCustomers.size,
+                    powerOffCount = powerOffCustomers.size,
+                    noAnswerCount = noAnswerCustomers.size,
+                    ivrCount = ivrCustomers.size,
+                    otherCount = otherCalledCustomers.size,
+                    selectedTab = selectedTab,
+                    onTabSelected = onTabSelected
+                )
+            }
+
+            // 显示当前分组标题
+            item {
+                val title = when (selectedTab) {
+                    0 -> "全部客户"
+                    1 -> "待拨打"
+                    2 -> "已接听"
+                    3 -> "语音信箱"
+                    4 -> "响铃未接"
+                    5 -> "拒接"
+                    6 -> "忙线"
+                    7 -> "关机/停机"
+                    8 -> "无人接听"
+                    9 -> "IVR语音"
+                    10 -> "其他"
+                    else -> "全部客户"
                 }
+                val count = displayedCustomers.size
+                val color = when (selectedTab) {
+                    0 -> MaterialTheme.colorScheme.primary
+                    1 -> MaterialTheme.colorScheme.primary
+                    2 -> MaterialTheme.colorScheme.tertiary
+                    3 -> MaterialTheme.colorScheme.secondary
+                    4 -> MaterialTheme.colorScheme.error
+                    5 -> MaterialTheme.colorScheme.outline
+                    6 -> MaterialTheme.colorScheme.surfaceVariant
+                    else -> MaterialTheme.colorScheme.primary
+                }
+                CustomerGroupHeader(
+                    title = title,
+                    count = count,
+                    color = color
+                )
+            }
+
+            // 显示客户列表
+            items(displayedCustomers) { customer ->
+                // 使用 customer.id 或 taskCustomerId 作为客户ID
+                val customerId = customer.id ?: customer.taskCustomerId
+                TaskCustomerCard(
+                    customer = customer,
+                    selectedTab = selectedTab,
+                    onCall = { onCallCustomer(customer.phone ?: "", task.id, customerId) },
+                    onUpdateStatus = { status, result ->
+                        onUpdateStatus(customerId, status, result)
+                    },
+                    onEditCustomer = { name, phone, company ->
+                        onEditCustomer(customerId, name, phone, company)
+                    },
+                    onDeleteCustomer = {
+                        onDeleteCustomer(customerId)
+                    }
+                )
             }
         }
     }
@@ -630,7 +772,7 @@ private fun TaskInfoCard(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TaskStatusChip(status = task.status)
+                    TaskStatusChip(task = task)
                     Spacer(modifier = Modifier.width(8.dp))
                     TaskPriorityChip(priority = task.priority)
                 }
@@ -768,7 +910,7 @@ private fun CustomerFilterTabs(
 
 /**
  * 客户筛选Tab按钮（支持通话状态筛选）
- * 支持切换显示全部/待拨打/已接听/语音信箱/响铃未接/拨打失败/其他
+ * 支持切换显示全部/待拨打/已接听/语音信箱/响铃未接/拒接/忙线/关机停机/无人接听/IVR语音/其他
  */
 @Composable
 private fun CustomerFilterTabsWithCallStatus(
@@ -777,7 +919,11 @@ private fun CustomerFilterTabsWithCallStatus(
     connectedCount: Int,
     voicemailCount: Int,
     unansweredCount: Int,
-    failedCount: Int,
+    rejectedCount: Int,
+    busyCount: Int,
+    powerOffCount: Int,
+    noAnswerCount: Int,
+    ivrCount: Int,
     otherCount: Int,
     selectedTab: Int,
     onTabSelected: (Int) -> Unit
@@ -792,7 +938,7 @@ private fun CustomerFilterTabsWithCallStatus(
                 .fillMaxWidth()
                 .padding(8.dp)
         ) {
-            // 第一行Tab
+            // 第一行Tab: 全部 | 待拨打 | 已接听 | 语音信箱
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
@@ -847,7 +993,7 @@ private fun CustomerFilterTabsWithCallStatus(
                 )
             }
             
-            // 第二行Tab
+            // 第二行Tab: 响铃未接 | 拒接 | 忙线 | 关机/停机
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -860,33 +1006,90 @@ private fun CustomerFilterTabsWithCallStatus(
                     isSelected = selectedTab == 4,
                     onClick = { onTabSelected(4) }
                 )
-                
+
                 Divider(
                     modifier = Modifier
                         .width(1.dp)
                         .height(40.dp),
                     color = MaterialTheme.colorScheme.outlineVariant
                 )
-                
+
                 FilterTabItem(
-                    label = "拨打失败",
-                    count = failedCount,
+                    label = "拒接",
+                    count = rejectedCount,
                     isSelected = selectedTab == 5,
                     onClick = { onTabSelected(5) }
                 )
-                
+
                 Divider(
                     modifier = Modifier
                         .width(1.dp)
                         .height(40.dp),
                     color = MaterialTheme.colorScheme.outlineVariant
                 )
-                
+
+                FilterTabItem(
+                    label = "忙线",
+                    count = busyCount,
+                    isSelected = selectedTab == 6,
+                    onClick = { onTabSelected(6) }
+                )
+
+                Divider(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .height(40.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
+
+                FilterTabItem(
+                    label = "关机/停机",
+                    count = powerOffCount,
+                    isSelected = selectedTab == 7,
+                    onClick = { onTabSelected(7) }
+                )
+            }
+
+            // 第三行Tab: 无人接听 | IVR语音 | 其他
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                FilterTabItem(
+                    label = "无人接听",
+                    count = noAnswerCount,
+                    isSelected = selectedTab == 8,
+                    onClick = { onTabSelected(8) }
+                )
+
+                Divider(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .height(40.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
+
+                FilterTabItem(
+                    label = "IVR语音",
+                    count = ivrCount,
+                    isSelected = selectedTab == 9,
+                    onClick = { onTabSelected(9) }
+                )
+
+                Divider(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .height(40.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
+
                 FilterTabItem(
                     label = "其他",
                     count = otherCount,
-                    isSelected = selectedTab == 6,
-                    onClick = { onTabSelected(6) }
+                    isSelected = selectedTab == 10,
+                    onClick = { onTabSelected(10) }
                 )
             }
         }
@@ -951,7 +1154,7 @@ private fun CustomerGroupHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
+            .padding(vertical = 8.dp, horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // 左侧彩色指示条
@@ -989,6 +1192,7 @@ private fun CustomerGroupHeader(
 @Composable
 private fun TaskCustomerCard(
     customer: TaskCustomer,
+    selectedTab: Int,
     onCall: () -> Unit,
     onUpdateStatus: (String, String?) -> Unit,
     onEditCustomer: (String?, String?, String?) -> Unit,
@@ -1000,7 +1204,9 @@ private fun TaskCustomerCard(
     var callResult by remember { mutableStateOf(customer.callResult ?: "") }
 
     Card(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
@@ -1010,11 +1216,11 @@ private fun TaskCustomerCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = customer.name!!,
+                        text = customer.name ?: "未知客户",
                         style = MaterialTheme.typography.titleMedium
                     )
                     Text(
-                        text = customer.phone!!,
+                        text = customer.phone ?: "无号码",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1026,7 +1232,37 @@ private fun TaskCustomerCard(
                         )
                     }
                 }
-                CustomerStatusChip(status = customer.callStatus)
+                // 客户列表中显示具体的通话结果，否则显示状态标签
+                if (!customer.callResult.isNullOrBlank()) {
+                    // 显示具体的通话结果
+                    val (resultColor, resultText) = when (customer.callResult) {
+                        "已接听" -> MaterialTheme.colorScheme.primary to "已接听"
+                        "通话完成" -> MaterialTheme.colorScheme.primary to "通话完成"
+                        "语音信箱" -> MaterialTheme.colorScheme.secondary to "语音信箱"
+                        "响铃未接" -> MaterialTheme.colorScheme.error to "响铃未接"
+                        "对方拒接" -> MaterialTheme.colorScheme.error to "对方拒接"
+                        "对方忙线" -> MaterialTheme.colorScheme.tertiary to "对方忙线"
+                        "对方关机" -> MaterialTheme.colorScheme.outline to "对方关机"
+                        "关机/停机" -> MaterialTheme.colorScheme.outline to "关机/停机"
+                        "无人接听" -> MaterialTheme.colorScheme.outline to "无人接听"
+                        "IVR语音" -> MaterialTheme.colorScheme.secondary to "IVR语音"
+                        "拨打失败" -> MaterialTheme.colorScheme.error to "拨打失败"
+                        else -> MaterialTheme.colorScheme.outline to customer.callResult
+                    }
+                    Surface(
+                        color = resultColor.copy(alpha = 0.1f),
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Text(
+                            text = resultText,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = resultColor
+                        )
+                    }
+                } else {
+                    CustomerStatusChip(status = customer.callStatus)
+                }
             }
 
             if (!customer.callResult.isNullOrBlank()) {
@@ -1044,7 +1280,9 @@ private fun TaskCustomerCard(
 
             // 操作按钮
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 // 拨打电话按钮 - 待拨打和已拨打状态都启用，允许重复拨打
@@ -1074,7 +1312,9 @@ private fun TaskCustomerCard(
 
             // 编辑和删除按钮
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 // 编辑按钮
@@ -1141,8 +1381,8 @@ private fun TaskCustomerCard(
 
     // 编辑客户信息对话框
     if (showEditDialog) {
-        var editName by remember { mutableStateOf(customer.name!!) }
-        var editPhone by remember { mutableStateOf(customer.phone!!) }
+        var editName by remember { mutableStateOf(customer.name ?: "") }
+        var editPhone by remember { mutableStateOf(customer.phone ?: "") }
         var editCompany by remember { mutableStateOf(customer.company ?: "") }
 
         AlertDialog(
@@ -1200,7 +1440,7 @@ private fun TaskCustomerCard(
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
             title = { Text("确认删除") },
-            text = { Text("确定要从任务中删除客户「${customer.name}」吗？此操作不可恢复。") },
+            text = { Text("确定要从任务中删除客户「${customer.name ?: "未知客户"}」吗？此操作不可恢复。") },
             confirmButton = {
                 Button(
                     onClick = {
@@ -1246,12 +1486,15 @@ private fun CustomerStatusChip(status: String) {
 }
 
 @Composable
-private fun TaskStatusChip(status: String) {
-    val (color, text) = when (status) {
-        "completed" -> MaterialTheme.colorScheme.primary to "已完成"
-        "in_progress" -> MaterialTheme.colorScheme.tertiary to "进行中"
-        "cancelled" -> MaterialTheme.colorScheme.error to "已取消"
-        else -> MaterialTheme.colorScheme.outline to "待处理"
+private fun TaskStatusChip(task: Task) {
+    // 根据实际拨打进度计算状态
+    val (color, text) = when {
+        task.customerCount > 0 && task.calledCount >= task.customerCount ->
+            MaterialTheme.colorScheme.primary to "已完成"
+        task.calledCount > 0 ->
+            MaterialTheme.colorScheme.tertiary to "进行中"
+        else ->
+            MaterialTheme.colorScheme.outline to "待处理"
     }
 
     Surface(
@@ -1330,21 +1573,45 @@ private fun TaskAutoDialCustomerPanel(
     currentCustomer: com.callcenter.app.data.model.Customer?,
     dialedCount: Int,
     totalCount: Int,
-    onStop: () -> Unit
+    isAutoMode: Boolean,
+    onStop: () -> Unit,
+    onCallStatusMarked: ((String) -> Unit)? = null,
+    onAutoModeChanged: ((Boolean) -> Unit)? = null,
+    onDialNext: (() -> Unit)? = null,
+    callStateHistory: List<com.callcenter.app.service.CallStateHistoryItem> = emptyList()
 ) {
+    // 当前选中的通话状态
+    var selectedCallStatus by remember { mutableStateOf<String?>(null) }
+    // 正在更新中的状态（用于显示loading）
+    var updatingStatus by remember { mutableStateOf<String?>(null) }
+    // 本地维护自动模式状态，用于Switch显示
+    var localAutoMode by remember { mutableStateOf(isAutoMode) }
+    // 是否显示通话状态历史记录
+    var showHistory by remember { mutableStateOf(false) }
+    
+    // 同步外部状态到本地状态
+    LaunchedEffect(isAutoMode) {
+        localAutoMode = isAutoMode
+    }
+
+    // 监听客户变化，重置状态
+    LaunchedEffect(currentCustomer?.id) {
+        selectedCallStatus = null
+        updatingStatus = null
+    }
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
+            containerColor = if (isAutoMode) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Column(
             modifier = Modifier.padding(12.dp)
         ) {
-            // 标题栏：进度和停止按钮
+            // 标题栏：模式标识、Switch切换和停止按钮
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1354,14 +1621,30 @@ private fun TaskAutoDialCustomerPanel(
                     CircularProgressIndicator(
                         modifier = Modifier.size(16.dp),
                         strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.primary
+                        color = if (localAutoMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "自动拨号中: $dialedCount/$totalCount",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    // 标题行：模式文案 + Switch
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (localAutoMode) "自动拨号" else "手动拨号",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (localAutoMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        // 自动/手动切换开关
+                        Switch(
+                            checked = localAutoMode,
+                            onCheckedChange = { checked ->
+                                localAutoMode = checked
+                                onAutoModeChanged?.invoke(checked)
+                            },
+                            modifier = Modifier.scale(0.7f)
+                        )
+                    }
                 }
                 TextButton(
                     onClick = onStop,
@@ -1373,7 +1656,7 @@ private fun TaskAutoDialCustomerPanel(
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("停止", style = MaterialTheme.typography.labelSmall)
+                    Text("停止拨号", style = MaterialTheme.typography.labelSmall)
                 }
             }
 
@@ -1427,6 +1710,243 @@ private fun TaskAutoDialCustomerPanel(
                         }
                     }
                 }
+
+                // 拨打下一个按钮和通话状态历史记录
+                if (onDialNext != null) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // 拨打下一个按钮
+                        Button(
+                            onClick = onDialNext,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("拨打下一个")
+                        }
+
+                        // 通话状态历史记录按钮
+                        if (callStateHistory.isNotEmpty()) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            TextButton(
+                                onClick = { showHistory = !showHistory }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.History,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("记录(${callStateHistory.size})")
+                            }
+                        }
+                    }
+
+                    // 通话状态历史记录列表
+                    if (showHistory && callStateHistory.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(8.dp)
+                            ) {
+                                Text(
+                                    text = "通话状态记录",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                callStateHistory.takeLast(5).forEach { item ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = "${item.getFormattedTime()} ${item.customerName ?: ""}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = item.state,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 通话状态标记按钮（已隐藏，完全依靠程序自动识别打标）
+                // 自动识别逻辑在 AutoDialService.setupCallStateListener() 中实现
+                /*
+                if (onCallStatusMarked != null) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "标记通话结果：",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    // 第一行：已接听、语音信箱、响铃未接
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        TaskStatusButton(
+                            text = "已接听",
+                            color = Color(0xFF4CAF50),
+                            isSelected = selectedCallStatus == "connected",
+                            isLoading = updatingStatus == "connected",
+                            onClick = {
+                                selectedCallStatus = "connected"
+                                updatingStatus = "connected"
+                                onCallStatusMarked("connected")
+                                updatingStatus = null
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TaskStatusButton(
+                            text = "语音信箱",
+                            color = Color(0xFF2196F3),
+                            isSelected = selectedCallStatus == "voicemail",
+                            isLoading = updatingStatus == "voicemail",
+                            onClick = {
+                                selectedCallStatus = "voicemail"
+                                updatingStatus = "voicemail"
+                                onCallStatusMarked("voicemail")
+                                updatingStatus = null
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TaskStatusButton(
+                            text = "响铃未接",
+                            color = Color(0xFFFF9800),
+                            isSelected = selectedCallStatus == "unanswered",
+                            isLoading = updatingStatus == "unanswered",
+                            onClick = {
+                                selectedCallStatus = "unanswered"
+                                updatingStatus = "unanswered"
+                                onCallStatusMarked("unanswered")
+                                updatingStatus = null
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    // 第二行：拒接、忙线、关机/停机
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        TaskStatusButton(
+                            text = "拒接",
+                            color = Color(0xFFE91E63),
+                            isSelected = selectedCallStatus == "rejected",
+                            isLoading = updatingStatus == "rejected",
+                            onClick = {
+                                selectedCallStatus = "rejected"
+                                updatingStatus = "rejected"
+                                onCallStatusMarked("rejected")
+                                updatingStatus = null
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TaskStatusButton(
+                            text = "忙线",
+                            color = Color(0xFFFF9800),
+                            isSelected = selectedCallStatus == "busy",
+                            isLoading = updatingStatus == "busy",
+                            onClick = {
+                                selectedCallStatus = "busy"
+                                updatingStatus = "busy"
+                                onCallStatusMarked("busy")
+                                updatingStatus = null
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TaskStatusButton(
+                            text = "关机/停机",
+                            color = Color(0xFF607D8B),
+                            isSelected = selectedCallStatus == "power_off",
+                            isLoading = updatingStatus == "power_off",
+                            onClick = {
+                                selectedCallStatus = "power_off"
+                                updatingStatus = "power_off"
+                                onCallStatusMarked("power_off")
+                                updatingStatus = null
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    // 第三行：无人接听、IVR语音、其他
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        TaskStatusButton(
+                            text = "无人接听",
+                            color = Color(0xFFFF9800),
+                            isSelected = selectedCallStatus == "no_answer",
+                            isLoading = updatingStatus == "no_answer",
+                            onClick = {
+                                selectedCallStatus = "no_answer"
+                                updatingStatus = "no_answer"
+                                onCallStatusMarked("no_answer")
+                                updatingStatus = null
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TaskStatusButton(
+                            text = "IVR语音",
+                            color = Color(0xFF00BCD4),
+                            isSelected = selectedCallStatus == "ivr",
+                            isLoading = updatingStatus == "ivr",
+                            onClick = {
+                                selectedCallStatus = "ivr"
+                                updatingStatus = "ivr"
+                                onCallStatusMarked("ivr")
+                                updatingStatus = null
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TaskStatusButton(
+                            text = "其他",
+                            color = Color(0xFF9E9E9E),
+                            isSelected = selectedCallStatus == "other",
+                            isLoading = updatingStatus == "other",
+                            onClick = {
+                                selectedCallStatus = "other"
+                                updatingStatus = "other"
+                                onCallStatusMarked("other")
+                                updatingStatus = null
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+                */
             } else {
                 // 等待状态
                 Spacer(modifier = Modifier.height(8.dp))
@@ -1436,6 +1956,68 @@ private fun TaskAutoDialCustomerPanel(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+        }
+    }
+}
+
+/**
+ * 任务执行页通话状态按钮组件
+ */
+@Composable
+private fun TaskStatusButton(
+    text: String,
+    color: Color,
+    isSelected: Boolean,
+    isLoading: Boolean = false,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier.height(36.dp),
+        enabled = !isLoading,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (isSelected) color else color.copy(alpha = 0.3f),
+            contentColor = if (isSelected) Color.White else color,
+            disabledContainerColor = color.copy(alpha = 0.2f),
+            disabledContentColor = color.copy(alpha = 0.5f)
+        ),
+        shape = RoundedCornerShape(6.dp),
+        contentPadding = PaddingValues(horizontal = 6.dp),
+        border = if (isSelected) {
+            BorderStroke(
+                width = 2.dp,
+                color = Color.White
+            )
+        } else null
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            when {
+                isLoading -> {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp),
+                        strokeWidth = 2.dp,
+                        color = if (isSelected) Color.White else color
+                    )
+                }
+                isSelected -> {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(2.dp))
+                }
+            }
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                maxLines = 1
+            )
         }
     }
 }

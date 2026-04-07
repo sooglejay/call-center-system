@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Table, Button, Modal, Form, Input, Select, DatePicker, message, Tag, Tabs, Badge, Checkbox, Space, Divider, Typography, Empty, Alert, Progress, Card, Descriptions, Tooltip, Statistic, Row, Col } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, TeamOutlined, ScheduleOutlined, InfoCircleOutlined, EyeOutlined, PhoneOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined, MessageOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, TeamOutlined, ScheduleOutlined, InfoCircleOutlined, EyeOutlined, PhoneOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined, MessageOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { taskApi, userApi, customerApi } from '../../services/api';
 import type { Task, User, Customer } from '../../services/api';
 import dayjs from 'dayjs';
@@ -86,6 +86,10 @@ export default function TaskManagement() {
   
   // 任务详情中客户列表的通话状态筛选
   const [customerCallStatusFilter, setCustomerCallStatusFilter] = useState<string>('all');
+
+  // 任务详情中客户列表的分页状态
+  const [detailCustomerPage, setDetailCustomerPage] = useState(1);
+  const [detailCustomerPageSize, setDetailCustomerPageSize] = useState(10);
 
   // 任务列表分页状态
   const [currentPage, setCurrentPage] = useState(1);
@@ -284,16 +288,63 @@ export default function TaskManagement() {
   const filteredCustomers = useMemo(() => {
     if (!selectedTask?.customers) return [];
     if (customerCallStatusFilter === 'all') return selectedTask.customers;
-    
+
     return selectedTask.customers.filter(customer => {
       const status = customer.call_status || 'pending';
+      const result = customer.call_result;
+
       if (customerCallStatusFilter === 'called') {
         // "其他已拨打" 包括 called 和 completed 状态
         return status === 'called' || status === 'completed';
       }
-      return status === customerCallStatusFilter;
+
+      if (customerCallStatusFilter === 'pending') {
+        // 待拨打：call_status 为 pending
+        return status === 'pending';
+      }
+
+      if (customerCallStatusFilter === 'completed') {
+        // 已完成：call_status 为 completed
+        return status === 'completed';
+      }
+
+      if (customerCallStatusFilter === 'failed') {
+        // 拨打失败：call_status 为 failed
+        return status === 'failed';
+      }
+
+      // 其他筛选器根据 call_result 匹配
+      // 需要同时满足：已拨打（status != pending）且 call_result 匹配
+      if (status === 'pending') {
+        return false;
+      }
+
+      // 根据 call_result 匹配各种状态
+      const resultMap: Record<string, string[]> = {
+        'connected': ['已接听', 'connected'],
+        'voicemail': ['语音信箱', 'voicemail'],
+        'unanswered': ['响铃未接', 'unanswered'],
+        'rejected': ['对方拒接', 'rejected'],
+        'busy': ['对方忙线', 'busy'],
+        'power_off': ['关机/停机', 'power_off'],
+        'no_answer': ['无人接听', 'no_answer'],
+        'ivr': ['IVR语音', 'ivr'],
+        'other': ['其他', 'other']
+      };
+
+      const validResults = resultMap[customerCallStatusFilter];
+      if (validResults && result) {
+        return validResults.includes(result);
+      }
+
+      return false;
     });
   }, [selectedTask?.customers, customerCallStatusFilter]);
+
+  // 当筛选条件或任务变化时，重置分页到第一页
+  useEffect(() => {
+    setDetailCustomerPage(1);
+  }, [selectedTask?.id, customerCallStatusFilter]);
 
   // 任务状态标签
   const renderStatusTag = (status: string) => {
@@ -307,14 +358,43 @@ export default function TaskManagement() {
     return <Tag color={config.color}>{config.text}</Tag>;
   };
 
-  // 拨打状态标签
-  const renderCallStatusTag = (status: string) => {
+  // 拨打状态标签 - 与 Android 端对齐
+  const renderCallStatusTag = (status: string, callResult?: string) => {
+    // 优先根据 call_result 显示更详细的状态
+    if (callResult) {
+      const resultConfig: Record<string, { color: string; text: string; icon: React.ReactNode }> = {
+        '已接听': { color: 'success', text: '已接听', icon: <CheckCircleOutlined /> },
+        'connected': { color: 'success', text: '已接听', icon: <CheckCircleOutlined /> },
+        '语音信箱': { color: 'blue', text: '语音信箱', icon: <MessageOutlined /> },
+        'voicemail': { color: 'blue', text: '语音信箱', icon: <MessageOutlined /> },
+        '响铃未接': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
+        'unanswered': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
+        '对方拒接': { color: 'red', text: '对方拒接', icon: <CloseCircleOutlined /> },
+        'rejected': { color: 'red', text: '对方拒接', icon: <CloseCircleOutlined /> },
+        '对方忙线': { color: 'orange', text: '对方忙线', icon: <ClockCircleOutlined /> },
+        'busy': { color: 'orange', text: '对方忙线', icon: <ClockCircleOutlined /> },
+        '关机/停机': { color: 'default', text: '关机/停机', icon: <CloseCircleOutlined /> },
+        'power_off': { color: 'default', text: '关机/停机', icon: <CloseCircleOutlined /> },
+        '无人接听': { color: 'default', text: '无人接听', icon: <ClockCircleOutlined /> },
+        'no_answer': { color: 'default', text: '无人接听', icon: <ClockCircleOutlined /> },
+        'IVR语音': { color: 'cyan', text: 'IVR语音', icon: <MessageOutlined /> },
+        'ivr': { color: 'cyan', text: 'IVR语音', icon: <MessageOutlined /> },
+        '其他': { color: 'default', text: '其他', icon: <MinusCircleOutlined /> },
+        'other': { color: 'default', text: '其他', icon: <MinusCircleOutlined /> }
+      };
+      const config = resultConfig[callResult];
+      if (config) {
+        return <Tag color={config.color} icon={config.icon}>{config.text}</Tag>;
+      }
+    }
+    
+    // 根据 call_status 显示基础状态
     const statusConfig: Record<string, { color: string; text: string; icon: React.ReactNode }> = {
       pending: { color: 'default', text: '待拨打', icon: <ClockCircleOutlined /> },
       called: { color: 'processing', text: '已拨打', icon: <PhoneOutlined /> },
       connected: { color: 'success', text: '已接听', icon: <CheckCircleOutlined /> },
-      voicemail: { color: 'warning', text: '语音信箱', icon: <MessageOutlined /> },
-      unanswered: { color: 'error', text: '响铃未接', icon: <CloseCircleOutlined /> },
+      voicemail: { color: 'blue', text: '语音信箱', icon: <MessageOutlined /> },
+      unanswered: { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
       failed: { color: 'error', text: '拨打失败', icon: <CloseCircleOutlined /> },
       completed: { color: 'success', text: '已完成', icon: <CheckCircleOutlined /> }
     };
@@ -806,8 +886,15 @@ export default function TaskManagement() {
                     { value: 'connected', label: '已接听' },
                     { value: 'voicemail', label: '语音信箱' },
                     { value: 'unanswered', label: '响铃未接' },
+                    { value: 'rejected', label: '对方拒接' },
+                    { value: 'busy', label: '对方忙线' },
+                    { value: 'power_off', label: '关机/停机' },
+                    { value: 'no_answer', label: '无人接听' },
+                    { value: 'ivr', label: 'IVR语音' },
                     { value: 'failed', label: '拨打失败' },
-                    { value: 'called', label: '其他已拨打' }
+                    { value: 'completed', label: '已完成' },
+                    { value: 'called', label: '其他已拨打' },              
+                    { value: 'other', label: '其他' }
                   ]}
                 />
               }
@@ -816,7 +903,17 @@ export default function TaskManagement() {
                 dataSource={filteredCustomers}
                 rowKey="task_customer_id"
                 size="small"
-                pagination={{ pageSize: 10 }}
+                pagination={{
+                  current: detailCustomerPage,
+                  pageSize: detailCustomerPageSize,
+                  showSizeChanger: true,
+                  showQuickJumper: true,
+                  showTotal: (total) => `共 ${total} 条`,
+                  onChange: (page, size) => {
+                    setDetailCustomerPage(page);
+                    if (size) setDetailCustomerPageSize(size);
+                  }
+                }}
                 columns={[
                   { 
                     title: '客户姓名', 
@@ -839,7 +936,7 @@ export default function TaskManagement() {
                     title: '拨打状态', 
                     dataIndex: 'call_status', 
                     key: 'call_status',
-                    render: (status: string) => renderCallStatusTag(status)
+                    render: (status: string, record: any) => renderCallStatusTag(status, record.call_result)
                   },
                   { 
                     title: '通话时长', 

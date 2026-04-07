@@ -12,7 +12,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.callcenter.app.util.VersionInfoUtil
 import com.callcenter.app.ui.viewmodel.CallSettingsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -21,6 +23,7 @@ fun CallSettingsScreen(
     onNavigateBack: () -> Unit,
     viewModel: CallSettingsViewModel = hiltViewModel()
 ) {
+    val context = LocalContext.current
     val settings by viewModel.callSettings.collectAsState()
 
     // 本地状态用于编辑
@@ -44,7 +47,7 @@ fun CallSettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("通话设置") },
+                title = { Text(VersionInfoUtil.getTitleWithVersion(context, "通话设置")) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, "返回")

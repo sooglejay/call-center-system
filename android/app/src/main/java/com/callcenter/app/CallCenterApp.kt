@@ -6,16 +6,26 @@ import android.app.NotificationManager
 import android.os.Build
 import dagger.hilt.android.HiltAndroidApp
 
+import com.callcenter.app.util.AppLifecycleManager
+
 @HiltAndroidApp
 class CallCenterApp : Application() {
-    
+
     companion object {
         const val CHANNEL_ID_CALL_MONITOR = "call_monitor"
         const val CHANNEL_ID_AUTO_DIAL = "auto_dial"
+
+        var instance: CallCenterApp? = null
+            private set
     }
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
+        
+        // 初始化应用生命周期管理器
+        AppLifecycleManager.init(this)
+        
         createNotificationChannels()
     }
 

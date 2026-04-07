@@ -11,8 +11,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.callcenter.app.data.model.Customer
+import com.callcenter.app.util.VersionInfoUtil
 import com.callcenter.app.ui.viewmodel.CustomerDetailViewModel
 import java.text.SimpleDateFormat
 import java.util.*
@@ -26,6 +28,7 @@ fun CustomerDetailScreen(
     onCallCustomer: (String) -> Unit,
     viewModel: CustomerDetailViewModel = hiltViewModel()
 ) {
+    val context = LocalContext.current
     val customer by viewModel.customer.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val callRecords by viewModel.callRecords.collectAsState()
@@ -41,7 +44,7 @@ fun CustomerDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("客户详情") },
+                title = { Text(VersionInfoUtil.getTitleWithVersion(context, "客户详情")) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, "返回")
