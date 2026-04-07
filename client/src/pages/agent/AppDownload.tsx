@@ -57,7 +57,7 @@ export default function AppDownload() {
             <Button
               type="primary"
               icon={<DownloadOutlined />}
-              href={`${import.meta.env.VITE_API_BASE_URL || ''}${latestVersion.download_url}`}
+              href={latestVersion.apk_url || latestVersion.download_url}
               target="_blank"
             >
               下载APK
@@ -76,7 +76,7 @@ export default function AppDownload() {
             </Descriptions.Item>
             <Descriptions.Item label="下载地址">
               <Text copyable style={{ fontSize: 12 }}>
-                {`${window.location.origin}${import.meta.env.VITE_API_BASE_URL || ''}${latestVersion.download_url}`}
+                {latestVersion.apk_url || latestVersion.download_url}
               </Text>
             </Descriptions.Item>
             <Descriptions.Item label="更新日志" span={3}>
@@ -100,7 +100,7 @@ export default function AppDownload() {
               border: '1px solid #f0f0f0'
             }}>
               <QRCode
-                value={`${window.location.origin}${import.meta.env.VITE_API_BASE_URL || ''}${latestVersion.download_url}`}
+                value={latestVersion.apk_url || latestVersion.download_url}
                 size={200}
               />
             </div>
