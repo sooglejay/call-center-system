@@ -4,12 +4,17 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.net.Uri
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.telephony.TelephonyManager
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import com.callcenter.app.service.CallStateMonitorService
+import com.callcenter.app.util.RootUtil
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -21,6 +26,12 @@ class CallHelper @Inject constructor(
     private val context: Context
 ) {
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    private val handler = Handler(Looper.getMainLooper())
+
+    companion object {
+        private const val TAG = "CallHelper"
+        private val IMMEDIATE_SPEAKER_RETRY_DELAYS = listOf(0L, 200L, 600L, 1200L, 2200L, 3500L, 5000L, 8000L)
+    }
 
     /**
      * 检查是否有拨打电话权限
@@ -47,19 +58,34 @@ class CallHelper @Inject constructor(
     ) {
         val cleanNumber = phoneNumber.replace(Regex("[^0-9+]"), "")
 
-        // 启动通话状态监听服务（在拨号前启动，确保能捕获到通话状态）
-        if (autoSpeaker) {
-            CallStateMonitorService.startService(context, autoSpeaker = true, delayMs = speakerDelayMs)
-            android.util.Log.d("CallHelper", "已启动通话监听服务，将在接通后自动开启免提")
-        }
-
         if (directCall && hasCallPermission()) {
+            if (autoSpeaker) {
+                // 在真正发起外呼前先启动监听，并立即做一轮预热，尽量抢在系统电话 App 重置音频路由之前。
+                CallStateMonitorService.startService(
+                    context,
+                    autoSpeaker = true,
+                    delayMs = speakerDelayMs
+                )
+                startImmediateSpeakerBoost("before_action_call")
+            }
+
             // 直接拨打
             val intent = Intent(Intent.ACTION_CALL).apply {
                 data = Uri.parse("tel:$cleanNumber")
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
+
+            // 已真正发起外呼后再启动监听与强制免提逻辑
+            if (autoSpeaker) {
+                startImmediateSpeakerBoost("after_action_call")
+                CallStateMonitorService.startService(
+                    context,
+                    autoSpeaker = true,
+                    delayMs = speakerDelayMs
+                )
+                android.util.Log.d(TAG, "已发起外呼，启动自动免提监听服务")
+            }
         } else {
             // 跳转到拨号界面
             val intent = Intent(Intent.ACTION_DIAL).apply {
@@ -98,12 +124,11 @@ class CallHelper @Inject constructor(
      */
     fun enableSpeakerphone(): Boolean {
         return try {
-            audioManager.mode = AudioManager.MODE_IN_CALL
-            audioManager.isSpeakerphoneOn = true
-            android.util.Log.d("CallHelper", "扬声器已打开")
+            forceEnableSpeakerphone("manual_enable")
+            android.util.Log.d(TAG, "扬声器已打开")
             true
         } catch (e: Exception) {
-            android.util.Log.e("CallHelper", "打开扬声器失败: ${e.message}")
+            android.util.Log.e(TAG, "打开扬声器失败: ${e.message}")
             false
         }
     }
@@ -114,11 +139,87 @@ class CallHelper @Inject constructor(
     fun disableSpeakerphone(): Boolean {
         return try {
             audioManager.isSpeakerphoneOn = false
-            android.util.Log.d("CallHelper", "扬声器已关闭")
+            android.util.Log.d(TAG, "扬声器已关闭")
             true
         } catch (e: Exception) {
-            android.util.Log.e("CallHelper", "关闭扬声器失败: ${e.message}")
+            android.util.Log.e(TAG, "关闭扬声器失败: ${e.message}")
             false
+        }
+    }
+
+    private fun startImmediateSpeakerBoost(reason: String) {
+        IMMEDIATE_SPEAKER_RETRY_DELAYS.forEachIndexed { index, delayMs ->
+            handler.postDelayed(
+                {
+                    forceEnableSpeakerphone("$reason#$index")
+                },
+                delayMs
+            )
+        }
+    }
+
+    private fun forceEnableSpeakerphone(reason: String) {
+        try {
+            audioManager.mode = AudioManager.MODE_IN_CALL
+            forceSpeakerUsingHiddenAudioSystem(reason)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val speakerDevice = audioManager.availableCommunicationDevices.firstOrNull {
+                    it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                }
+                if (speakerDevice != null) {
+                    val routed = audioManager.setCommunicationDevice(speakerDevice)
+                    android.util.Log.d(TAG, "[$reason] setCommunicationDevice=$routed")
+                }
+            }
+
+            @Suppress("DEPRECATION")
+            run {
+                audioManager.isSpeakerphoneOn = true
+            }
+
+            if (RootUtil.isDeviceRooted()) {
+                RootUtil.forceEnableSpeaker()
+            }
+
+            handler.postDelayed(
+                {
+                    try {
+                        audioManager.mode = AudioManager.MODE_IN_CALL
+                        @Suppress("DEPRECATION")
+                        run {
+                            if (!audioManager.isSpeakerphoneOn) {
+                                audioManager.isSpeakerphoneOn = true
+                            }
+                        }
+                    } catch (retryError: Exception) {
+                        android.util.Log.e(TAG, "[$reason] 二次开启扬声器失败: ${retryError.message}")
+                    }
+                },
+                150L
+            )
+
+            android.util.Log.d(TAG, "[$reason] 已执行主动外呼免提增强")
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "[$reason] 强制开启扬声器失败: ${e.message}")
+        }
+    }
+
+    private fun forceSpeakerUsingHiddenAudioSystem(reason: String) {
+        try {
+            val audioSystemClass = Class.forName("android.media.AudioSystem")
+            val setForceUse = audioSystemClass.getDeclaredMethod(
+                "setForceUse",
+                Int::class.javaPrimitiveType,
+                Int::class.javaPrimitiveType
+            )
+
+            // FOR_COMMUNICATION = 0, FOR_MEDIA = 1, FORCE_SPEAKER = 1
+            setForceUse.invoke(null, 0, 1)
+            setForceUse.invoke(null, 1, 1)
+            android.util.Log.d(TAG, "[$reason] AudioSystem.setForceUse(FOR_COMMUNICATION/FOR_MEDIA, FORCE_SPEAKER) 已执行")
+        } catch (e: Throwable) {
+            android.util.Log.w(TAG, "[$reason] AudioSystem.setForceUse 调用失败: ${e.message}")
         }
     }
 

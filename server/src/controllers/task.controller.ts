@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import { query } from '../config/database';
 
+const DEFAULT_CUSTOMER_TAG = '未打标客户';
+
 // 获取任务列表（管理员视角）
 export const getTasks = async (req: Request, res: Response) => {
   try {
@@ -156,7 +158,7 @@ export const getTaskById = async (req: Request, res: Response) => {
     // 获取任务关联的客户列表
     const customersResult = await query(`
       SELECT tc.id as task_customer_id, tc.status as call_status, tc.call_result, tc.called_at,
-             c.id, c.name, c.phone, c.email, c.company, c.status as customer_status,
+             c.id, c.name, c.phone, c.email, c.company, COALESCE(NULLIF(TRIM(c.tag), ''), '${DEFAULT_CUSTOMER_TAG}') as tag, c.status as customer_status,
              ca.id as call_id, ca.call_duration, ca.is_connected, ca.created_at as call_time
       FROM task_customers tc
       LEFT JOIN customers c ON tc.customer_id = c.id
@@ -205,6 +207,7 @@ export const getTaskById = async (req: Request, res: Response) => {
         phone: c.phone,
         email: c.email,
         company: c.company,
+        tag: c.tag,
         customer_status: c.customer_status,
         call_status: c.call_status || 'pending',
         call_result: c.call_result,

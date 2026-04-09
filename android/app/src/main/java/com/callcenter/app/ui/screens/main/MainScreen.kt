@@ -11,6 +11,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -1946,6 +1947,7 @@ private fun AgentCustomersTab(
     val isLoadingAssigned by customerViewModel.isLoading.collectAsState()
     val searchQuery by customerViewModel.searchQuery.collectAsState()
     val statusFilter by customerViewModel.statusFilter.collectAsState()
+    val tagFilter by customerViewModel.tagFilter.collectAsState()
     val isMultiSelectMode by customerViewModel.isMultiSelectMode.collectAsState()
     val selectedCustomerIds by customerViewModel.selectedCustomerIds.collectAsState()
 
@@ -1979,6 +1981,7 @@ private fun AgentCustomersTab(
                         id = taskCustomer.id ?: taskCustomer.taskCustomerId,  // 使用 taskCustomerId 作为备选
                         name = taskCustomer.name,
                         phone = taskCustomer.phone,
+                        tag = taskCustomer.tag,
                         email = taskCustomer.email,
                         company = taskCustomer.company,
                         status = taskCustomer.callStatus,
@@ -2009,7 +2012,11 @@ private fun AgentCustomersTab(
     }
 
     // 根据搜索和筛选条件过滤
-    val filteredCustomers = remember(allCustomers, searchQuery, statusFilter) {
+    val availableTags = remember(allCustomers) {
+        allCustomers.map { if (it.tag.isBlank()) "未打标客户" else it.tag }.distinct().sorted()
+    }
+
+    val filteredCustomers = remember(allCustomers, searchQuery, statusFilter, tagFilter) {
         var result = allCustomers
 
         // 搜索过滤
@@ -2024,6 +2031,10 @@ private fun AgentCustomersTab(
         // 状态过滤
         if (statusFilter != null) {
             result = result.filter { it.status == statusFilter }
+        }
+
+        if (tagFilter != null) {
+            result = result.filter { (if (it.tag.isBlank()) "未打标客户" else it.tag) == tagFilter }
         }
 
         result.sortedBy { it.name }
@@ -2158,6 +2169,18 @@ private fun AgentCustomersTab(
                                         showFilterMenu = false
                                     }
                                 )
+                                if (availableTags.isNotEmpty()) {
+                                    HorizontalDivider()
+                                    availableTags.forEach { tag ->
+                                        DropdownMenuItem(
+                                            text = { Text("标签：$tag") },
+                                            onClick = {
+                                                customerViewModel.setTagFilter(tag)
+                                                showFilterMenu = false
+                                            }
+                                        )
+                                    }
+                                }
                             }
                             IconButton(onClick = {
                                 customerViewModel.refresh()
@@ -2187,8 +2210,8 @@ private fun AgentCustomersTab(
                 )
             }
 
-            // 筛选标签
-            if (statusFilter != null) {
+            // 当前筛选条件
+            if (statusFilter != null || tagFilter != null) {
                 Surface(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     color = MaterialTheme.colorScheme.secondaryContainer,
@@ -2198,21 +2221,63 @@ private fun AgentCustomersTab(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = when (statusFilter) {
-                                "pending" -> "待拨打"
-                                "completed" -> "已完成"
-                                else -> statusFilter ?: ""
-                            },
-                            style = MaterialTheme.typography.labelMedium
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        IconButton(
-                            onClick = { customerViewModel.setStatusFilter(null) },
-                            modifier = Modifier.size(20.dp)
-                        ) {
-                            Icon(Icons.Default.Close, "清除", modifier = Modifier.size(16.dp))
+                        statusFilter?.let {
+                            Text(
+                                text = when (it) {
+                                    "pending" -> "待拨打"
+                                    "completed" -> "已完成"
+                                    else -> it
+                                },
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            IconButton(
+                                onClick = { customerViewModel.setStatusFilter(null) },
+                                modifier = Modifier.size(20.dp)
+                            ) {
+                                Icon(Icons.Default.Close, "清除状态", modifier = Modifier.size(16.dp))
+                            }
                         }
+
+                        tagFilter?.let {
+                            if (statusFilter != null) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
+                            Text(
+                                text = "标签：$it",
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            IconButton(
+                                onClick = { customerViewModel.setTagFilter(null) },
+                                modifier = Modifier.size(20.dp)
+                            ) {
+                                Icon(Icons.Default.Close, "清除标签", modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (availableTags.isNotEmpty()) {
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    item {
+                        FilterChip(
+                            selected = tagFilter == null,
+                            onClick = { customerViewModel.setTagFilter(null) },
+                            label = { Text("全部标签") }
+                        )
+                    }
+                    items(availableTags) { tag ->
+                        FilterChip(
+                            selected = tagFilter == tag,
+                            onClick = { customerViewModel.setTagFilter(if (tagFilter == tag) null else tag) },
+                            label = { Text(tag) }
+                        )
                     }
                 }
             }
@@ -2558,6 +2623,20 @@ private fun CustomerQuickItem(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+                if (customer.tag.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.tertiaryContainer
+                    ) {
+                        Text(
+                            text = customer.tag,
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                    }
                 }
             }
 

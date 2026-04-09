@@ -4,6 +4,13 @@ import multer from 'multer';
 import csv from 'csv-parser';
 import { Readable } from 'stream';
 
+const DEFAULT_CUSTOMER_TAG = '未打标客户';
+
+const normalizeCustomerTag = (tag?: string | null) => {
+  const normalized = tag?.trim();
+  return normalized ? normalized : DEFAULT_CUSTOMER_TAG;
+};
+
 // 配置内存存储
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
@@ -334,7 +341,8 @@ const suggestColumnMapping = (csvColumns: string[], compositeFields: Record<stri
 // 执行导入（带列映射）
 export const importWithMapping = async (req: any, res: Response) => {
   try {
-    let { column_mapping, data_source = 'real', composite_fields, assigned_to } = req.body;
+    let { column_mapping, data_source = 'real', composite_fields, assigned_to, tag } = req.body;
+    const customerTag = normalizeCustomerTag(tag);
     
     // 如果参数是字符串（来自 FormData），尝试解析 JSON
     if (typeof column_mapping === 'string') {
@@ -465,8 +473,8 @@ export const importWithMapping = async (req: any, res: Response) => {
         
         // 插入数据（包含 assigned_to 字段）
         await query(
-          `INSERT INTO customers (name, phone, email, company, address, notes, status, priority, data_source, imported_by, assigned_to, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, datetime('now'), datetime('now'))`,
+          `INSERT INTO customers (name, phone, email, company, address, notes, status, priority, data_source, imported_by, assigned_to, tag, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, datetime('now'), datetime('now'))`,
           [
             name, 
             phone, 
@@ -478,7 +486,8 @@ export const importWithMapping = async (req: any, res: Response) => {
             customerData.priority || 1, 
             data_source, 
             adminId,
-            assignedToId  // 添加分配客服字段
+            assignedToId,
+            customerTag
           ]
         );
         imported++;
@@ -502,7 +511,8 @@ export const importWithMapping = async (req: any, res: Response) => {
         duplicates,
         errors,
         skipped: data.length - imported - duplicates - errors,
-        assigned_to: assignedToId
+        assigned_to: assignedToId,
+        tag: customerTag
       },
       error_details: errorDetails.slice(0, 10)
     });
@@ -520,7 +530,8 @@ export const importRealCustomers = async (req: any, res: Response) => {
     }
     
     const adminId = req.user.id;
-    const { data_source = 'real' } = req.body;
+    const { data_source = 'real', tag } = req.body;
+    const customerTag = normalizeCustomerTag(tag);
     
     // 验证管理员权限
     const userResult = await query('SELECT role FROM users WHERE id = $1', [adminId]);
@@ -579,9 +590,9 @@ export const importRealCustomers = async (req: any, res: Response) => {
         const notes = mapping.notes ? record[mapping.notes] || '' : '';
         
         await query(
-          `INSERT INTO customers (name, phone, email, company, address, notes, status, priority, data_source, imported_by, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, 'pending', 1, $7, $8, datetime('now'), datetime('now'))`,
-          [name, phone, email, company, address, notes, data_source, adminId]
+          `INSERT INTO customers (name, phone, email, company, address, notes, status, priority, data_source, imported_by, tag, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, 'pending', 1, $7, $8, $9, datetime('now'), datetime('now'))`,
+          [name, phone, email, company, address, notes, data_source, adminId, customerTag]
         );
         imported++;
       } catch (err) {
@@ -594,7 +605,7 @@ export const importRealCustomers = async (req: any, res: Response) => {
     
     res.json({
       message: '导入完成',
-      summary: { total: data.length, imported, duplicates, errors },
+      summary: { total: data.length, imported, duplicates, errors, tag: customerTag },
       used_mapping: mapping,
       error_details: errorDetails
     });
@@ -714,9 +725,9 @@ export const initMockData = async (req: any, res: Response) => {
     for (const record of records) {
       try {
         await query(
-          `INSERT INTO customers (name, phone, email, company, status, data_source, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, 'mock', datetime('now'), datetime('now'))`,
-          [record.name, record.phone, record.email || '', record.company || '', 'pending']
+          `INSERT INTO customers (name, phone, email, company, status, data_source, tag, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, 'mock', $6, datetime('now'), datetime('now'))`,
+          [record.name, record.phone, record.email || '', record.company || '', 'pending', DEFAULT_CUSTOMER_TAG]
         );
         imported++;
       } catch (err) {

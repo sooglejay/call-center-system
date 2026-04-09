@@ -40,6 +40,7 @@ class CustomerRepository @Inject constructor(
         pageSize: Int = 20,
         search: String? = null,
         status: String? = null,
+        tag: String? = null,
         forceRefresh: Boolean = false
     ): Result<List<Customer>> {
         _isLoading.value = true
@@ -52,7 +53,10 @@ class CustomerRepository @Inject constructor(
             } else {
                 customerDao.getAllCustomers()
             }
-            val localCustomers: List<Customer> = localEntities.map { it.toModel() }
+            var localCustomers: List<Customer> = localEntities.map { it.toModel() }
+            if (tag != null) {
+                localCustomers = localCustomers.filter { it.tag == tag }
+            }
 
             // 如果有本地数据且不需要刷新，直接返回
             if (localCustomers.isNotEmpty() && !forceRefresh) {
@@ -66,7 +70,8 @@ class CustomerRepository @Inject constructor(
                 page = page,
                 pageSize = pageSize,
                 search = search,
-                status = status
+                status = status,
+                tag = tag
             )
 
             if (response.isSuccessful && response.body() != null) {
@@ -101,6 +106,7 @@ class CustomerRepository @Inject constructor(
         pageSize: Int = 20,
         search: String? = null,
         status: String? = null,
+        tag: String? = null,
         forceRefresh: Boolean = false
     ): Result<List<Customer>> {
         _isLoading.value = true
@@ -113,7 +119,10 @@ class CustomerRepository @Inject constructor(
             } else {
                 customerDao.getAllCustomers()
             }
-            val localCustomers: List<Customer> = localEntities.map { it.toModel() }
+            var localCustomers: List<Customer> = localEntities.map { it.toModel() }
+            if (tag != null) {
+                localCustomers = localCustomers.filter { it.tag == tag }
+            }
 
             // 如果有本地数据且不需要刷新，直接返回
             if (localCustomers.isNotEmpty() && !forceRefresh) {
@@ -127,7 +136,8 @@ class CustomerRepository @Inject constructor(
                 page = page,
                 pageSize = pageSize,
                 search = search,
-                status = status
+                status = status,
+                tag = tag
             )
 
             if (response.isSuccessful && response.body() != null) {
@@ -344,6 +354,7 @@ fun CustomerEntity.toModel(): Customer {
         id = id,
         name = name,
         phone = phone,
+        tag = tag,
         email = email,
         company = company,
         address = address,
@@ -363,6 +374,7 @@ fun Customer.toEntity(): CustomerEntity {
         id = id,
         name = name ?: "",
         phone = phone ?: "",
+        tag = tag,
         email = email,
         company = company,
         address = address,

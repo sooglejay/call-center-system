@@ -12,6 +12,7 @@ data class CustomerEntity(
     val id: Int,
     val name: String,
     val phone: String,
+    val tag: String = "未打标客户",
     val email: String? = null,
     val company: String? = null,
     val address: String? = null,

@@ -30,6 +30,9 @@ class CustomerViewModel @Inject constructor(
     private val _statusFilter = MutableStateFlow<String?>(null)
     val statusFilter: StateFlow<String?> = _statusFilter.asStateFlow()
 
+    private val _tagFilter = MutableStateFlow<String?>(null)
+    val tagFilter: StateFlow<String?> = _tagFilter.asStateFlow()
+
     private val _selectedCustomer = MutableStateFlow<Customer?>(null)
     val selectedCustomer: StateFlow<Customer?> = _selectedCustomer.asStateFlow()
 
@@ -54,6 +57,7 @@ class CustomerViewModel @Inject constructor(
                 customerRepository.getAgentCustomers(
                     search = _searchQuery.value.ifBlank { null },
                     status = _statusFilter.value,
+                    tag = _tagFilter.value,
                     forceRefresh = forceRefresh
                 )
             } else {
@@ -61,6 +65,7 @@ class CustomerViewModel @Inject constructor(
                 customerRepository.getCustomers(
                     search = _searchQuery.value.ifBlank { null },
                     status = _statusFilter.value,
+                    tag = _tagFilter.value,
                     forceRefresh = forceRefresh
                 )
             }
@@ -85,7 +90,12 @@ class CustomerViewModel @Inject constructor(
 
     fun setStatusFilter(status: String?) {
         _statusFilter.value = status
-        loadCustomers()
+        loadCustomers(forceRefresh = true)
+    }
+
+    fun setTagFilter(tag: String?) {
+        _tagFilter.value = tag
+        loadCustomers(forceRefresh = true)
     }
 
     fun selectCustomer(customer: Customer) {

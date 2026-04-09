@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS customers (
   priority INTEGER DEFAULT 1,
   assigned_to INTEGER REFERENCES users(id),
   data_source TEXT DEFAULT 'mock',
+  tag TEXT DEFAULT '未打标客户',
   imported_by INTEGER REFERENCES users(id),
   source TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -268,6 +269,12 @@ const runMigrations = () => {
     console.log('  ➕ 添加 customers.data_source 列');
     db.run("ALTER TABLE customers ADD COLUMN data_source TEXT DEFAULT 'mock'");
   }
+
+  // 检查并添加 tag 列
+  if (!customersColumnNames.includes('tag')) {
+    console.log('  ➕ 添加 customers.tag 列');
+    db.run("ALTER TABLE customers ADD COLUMN tag TEXT DEFAULT '未打标客户'");
+  }
   
   // 检查并添加 imported_by 列
   if (!customersColumnNames.includes('imported_by')) {
@@ -292,6 +299,9 @@ const runMigrations = () => {
     console.log('  ➕ 添加 customers.call_result 列');
     db.run("ALTER TABLE customers ADD COLUMN call_result TEXT");
   }
+
+  // 修正历史数据中的空标签
+  db.run("UPDATE customers SET tag = '未打标客户' WHERE tag IS NULL OR TRIM(tag) = ''");
   
   // 创建 task_customers 关联表（如果不存在）
   const taskCustomersTable = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='task_customers'");

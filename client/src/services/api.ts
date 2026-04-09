@@ -85,6 +85,7 @@ export const userApi = {
 // 客户API
 export const customerApi = {
   getCustomers: (params?: any) => api.get('/customers', { params }),
+  getTags: () => api.get('/customers/tags'),
   getCustomersByNameLetter: (letters?: string, unassigned_only?: boolean) => api.get('/customers/by-name-letter', { params: { letters, unassigned_only } }),
   getNameLetterStats: (unassigned_only?: boolean) => api.get('/customers/name-letter-stats', { params: { unassigned_only } }),
   getAgentCustomers: (params?: any) => api.get('/customers/agent/list', { params }),
@@ -92,8 +93,8 @@ export const customerApi = {
   createCustomer: (data: any) => api.post('/customers', data),
   updateCustomer: (id: number, data: any) => api.put(`/customers/${id}`, data),
   deleteCustomer: (id: number) => api.delete(`/customers/${id}`),
-  importCustomers: (customers: any[], assigned_to?: number, data_source?: string) => 
-    api.post('/customers/import', { customers, assigned_to, data_source }),
+  importCustomers: (customers: any[], assigned_to?: number, data_source?: string, tag?: string) => 
+    api.post('/customers/import', { customers, assigned_to, data_source, tag }),
   batchAssign: (customer_ids: number[], assigned_to: number) => api.post('/customers/batch-assign', { customer_ids, assigned_to })
 };
 

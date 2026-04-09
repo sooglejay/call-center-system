@@ -162,18 +162,23 @@ object RootUtil {
      */
     fun forceEnableSpeaker(): Boolean {
         val commands = listOf(
-            // 设置音频模式为通话模式
+            // 尝试切到通信模式
+            "cmd audio set-mode communication",
+            "cmd audio set-mode in_communication",
+            // 某些系统可直接设置免提
+            "cmd audio set-speakerphone-on true",
+            // 兼容旧版 service call audio
+            "service call audio 2 i32 3",
             "service call audio 2 i32 2",
-            // 开启扬声器
             "service call audio 24 i32 1 i32 0",
-            // 设置音频路由到扬声器
             "service call audio 28 i32 1",
-            // 调整音量
-            "service call audio 10 i32 0 i32 15 i32 0"
+            // 系统设置兜底
+            "settings put system mode_ringer_streams_affected 0",
+            "settings put global speakerphone_on 1"
         )
 
         val result = executeMultipleWithRoot(commands)
-        Log.d(TAG, "强制开启扬声器结果: ${result.success}")
+        Log.d(TAG, "强制开启扬声器结果: ${result.success}, output=${result.output}, error=${result.error}")
         return result.success
     }
 }

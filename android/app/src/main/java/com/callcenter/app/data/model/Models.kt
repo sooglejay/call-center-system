@@ -46,6 +46,7 @@ data class Customer(
     val id: Int,
     val name: String? = null,
     val phone: String? = null,
+    val tag: String = "未打标客户",
     val email: String? = null,
     val company: String? = null,
     val address: String? = null,
@@ -83,6 +84,8 @@ data class CustomerListResponse(
     @SerializedName("total_pages")
     val totalPages: Int
 )
+
+typealias CustomerTagListResponse = List<String>
 
 /**
  * 通话记录
@@ -178,6 +181,7 @@ data class TaskCustomer(
     val id: Int? = null,  // 改为可空，因为后端可能返回 null
     val name: String? = null,
     val phone: String? = null,
+    val tag: String = "未打标客户",
     val email: String? = null,
     val company: String? = null,
     @SerializedName("customer_status")

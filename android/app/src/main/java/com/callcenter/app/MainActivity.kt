@@ -7,6 +7,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.app.role.RoleManager
+import android.telecom.TelecomManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -46,6 +48,17 @@ class MainActivity : ComponentActivity() {
         }
         // 继续检查悬浮窗权限
         checkFloatingWindowPermission()
+        checkAndRequestDefaultDialerRole()
+    }
+
+    private val defaultDialerRoleLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        if (isDefaultDialer()) {
+            Toast.makeText(this, "已启用默认拨号应用，自动外放能力已增强", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "未设为默认拨号应用，InCallService 自动外放可能无法生效", Toast.LENGTH_LONG).show()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -133,6 +146,40 @@ class MainActivity : ComponentActivity() {
         } else {
             // 所有权限都已授予，检查悬浮窗权限
             checkFloatingWindowPermission()
+            checkAndRequestDefaultDialerRole()
+        }
+    }
+
+    private fun checkAndRequestDefaultDialerRole() {
+        if (isDefaultDialer()) {
+            return
+        }
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val roleManager = getSystemService(RoleManager::class.java)
+                if (roleManager != null && roleManager.isRoleAvailable(RoleManager.ROLE_DIALER)) {
+                    val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_DIALER)
+                    defaultDialerRoleLauncher.launch(intent)
+                    return
+                }
+            }
+
+            val intent = Intent(TelecomManager.ACTION_CHANGE_DEFAULT_DIALER).apply {
+                putExtra(TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME, packageName)
+            }
+            defaultDialerRoleLauncher.launch(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "请求默认拨号应用失败: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun isDefaultDialer(): Boolean {
+        return try {
+            val telecomManager = getSystemService(TelecomManager::class.java)
+            telecomManager?.defaultDialerPackage == packageName
+        } catch (_: Exception) {
+            false
         }
     }
 

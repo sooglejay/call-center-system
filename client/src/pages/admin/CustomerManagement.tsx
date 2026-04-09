@@ -9,6 +9,7 @@ import * as XLSX from 'xlsx';
 const { TabPane } = Tabs;
 const { Search } = Input;
 const { Text } = Typography;
+const DEFAULT_CUSTOMER_TAG = '未打标客户';
 
 // 系统字段定义
 interface SystemField {
@@ -90,6 +91,7 @@ export default function CustomerManagement() {
   const [filterStatus, setFilterStatus] = useState<string>('');
   const [filterCallStatus, setFilterCallStatus] = useState<string>('');
   const [filterAssigned, setFilterAssigned] = useState<string>('');
+  const [filterTag, setFilterTag] = useState<string>('');
   const [sortBy, setSortBy] = useState<string>('created_at');
   const [activeLetters, setActiveLetters] = useState<string[]>([]);
   const [nameGroups, setNameGroups] = useState<Record<string, number>>({});
@@ -102,6 +104,8 @@ export default function CustomerManagement() {
   const [editForm] = Form.useForm();
   const [addForm] = Form.useForm();
   const [importDataSource, setImportDataSource] = useState<'mock' | 'real'>('real');
+  const [availableTags, setAvailableTags] = useState<string[]>([DEFAULT_CUSTOMER_TAG]);
+  const [selectedImportTag, setSelectedImportTag] = useState<string>(DEFAULT_CUSTOMER_TAG);
 
   // 分页状态
   const [currentPage, setCurrentPage] = useState(1);
@@ -119,7 +123,11 @@ export default function CustomerManagement() {
   useEffect(() => {
     fetchCustomers();
     fetchAgents();
-  }, [currentPage, pageSize, sortBy, searchText, filterStatus, filterCallStatus, filterAssigned, activeLetters]);
+  }, [currentPage, pageSize, sortBy, searchText, filterStatus, filterCallStatus, filterAssigned, filterTag, activeLetters]);
+
+  useEffect(() => {
+    fetchTags();
+  }, []);
 
   const fetchCustomers = async () => {
     setLoading(true);
@@ -132,6 +140,7 @@ export default function CustomerManagement() {
         status: filterStatus || undefined,
         call_status: filterCallStatus || undefined,
         assigned_to: filterAssigned ? parseInt(filterAssigned) : undefined,
+        tag: filterTag || undefined,
         name_letter: activeLetters.length > 0 ? activeLetters.join(',') : undefined
       });
       const customersData = response.data?.data || response.data || [];
@@ -151,7 +160,7 @@ export default function CustomerManagement() {
   // 当搜索或过滤条件改变时，重置到第一页
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchText, filterStatus, filterAssigned]);
+  }, [searchText, filterStatus, filterAssigned, filterCallStatus, filterTag]);
 
   const fetchAgents = async () => {
     try {
@@ -162,6 +171,26 @@ export default function CustomerManagement() {
     } catch (error) {
       console.error('获取客服列表失败');
     }
+  };
+
+  const fetchTags = async () => {
+    try {
+      const response = await customerApi.getTags();
+      const tags = Array.isArray(response.data) ? response.data : [];
+      const mergedTags = Array.from(new Set([DEFAULT_CUSTOMER_TAG, ...tags.filter(Boolean)]));
+      setAvailableTags(mergedTags);
+      if (!selectedImportTag) {
+        setSelectedImportTag(DEFAULT_CUSTOMER_TAG);
+      }
+    } catch (error) {
+      console.error('获取标签列表失败:', error);
+    }
+  };
+
+  const normalizeSingleTagValue = (values?: string[]) => {
+    if (!values || values.length === 0) return DEFAULT_CUSTOMER_TAG;
+    const value = values[values.length - 1]?.trim();
+    return value || DEFAULT_CUSTOMER_TAG;
   };
 
   // 按姓氏分组（后端已做过滤和分页，前端只做分组）
@@ -289,6 +318,7 @@ export default function CustomerManagement() {
     if (selectedAgent) {
       formData.append('assigned_to', selectedAgent.toString());
     }
+    formData.append('tag', selectedImportTag || DEFAULT_CUSTOMER_TAG);
     
     try {
       const response = await dataImportApi.importWithMapping(formData);
@@ -298,6 +328,7 @@ export default function CustomerManagement() {
       setPendingFile(null);
       setColumnMapping({});
       setSelectedAgent(undefined);
+      setSelectedImportTag(DEFAULT_CUSTOMER_TAG);
       
       // 显示导入结果
       Modal.success({
@@ -313,6 +344,7 @@ export default function CustomerManagement() {
       });
       
       fetchCustomers();
+      fetchTags();
     } catch (error: any) {
       message.error(error.response?.data?.error || '导入失败，请重试');
     } finally {
@@ -323,12 +355,14 @@ export default function CustomerManagement() {
   // 旧的导入函数（保留兼容）
   const handleImport = async () => {
     try {
-      await customerApi.importCustomers(importedData, selectedAgent, importDataSource);
+      await customerApi.importCustomers(importedData, selectedAgent, importDataSource, selectedImportTag || DEFAULT_CUSTOMER_TAG);
       message.success(`成功导入 ${importedData.length} 条${importDataSource === 'real' ? '真实' : '测试'}数据`);
       setImportModalVisible(false);
       setImportedData([]);
       setImportDataSource('real');
+      setSelectedImportTag(DEFAULT_CUSTOMER_TAG);
       fetchCustomers();
+      fetchTags();
     } catch (error: any) {
       message.error(error.response?.data?.error || '导入失败，请重试');
     }
@@ -354,6 +388,7 @@ export default function CustomerManagement() {
       const exportData = customersData.map((customer: Customer) => ({
         '客户姓名': customer.name || '',
         '电话号码': customer.phone || '',
+        '客户标签': customer.tag || DEFAULT_CUSTOMER_TAG,
         '邮箱': customer.email || '',
         '公司': customer.company || '',
         '地址': customer.address || '',
@@ -374,6 +409,7 @@ export default function CustomerManagement() {
       ws['!cols'] = [
         { wch: 12 }, // 客户姓名
         { wch: 15 }, // 电话号码
+        { wch: 16 }, // 客户标签
         { wch: 25 }, // 邮箱
         { wch: 20 }, // 公司
         { wch: 30 }, // 地址
@@ -598,6 +634,12 @@ export default function CustomerManagement() {
       dataIndex: 'phone', 
       key: 'phone' 
     },
+    {
+      title: '客户标签',
+      dataIndex: 'tag',
+      key: 'tag',
+      render: (tag: string) => <Tag color={tag === DEFAULT_CUSTOMER_TAG ? 'default' : 'geekblue'}>{tag || DEFAULT_CUSTOMER_TAG}</Tag>
+    },
     { 
       title: '通话状态', 
       dataIndex: 'call_status', 
@@ -667,6 +709,7 @@ export default function CustomerManagement() {
                 company: record.company,
                 address: record.address,
                 status: record.status,
+                tag: [record.tag || DEFAULT_CUSTOMER_TAG],
                 remark: record.remark,
               });
               setEditModalVisible(true);
@@ -818,6 +861,14 @@ export default function CustomerManagement() {
               { value: '0', label: '未分配' },
               ...agents.map(a => ({ value: a.id.toString(), label: a.real_name }))
             ]}
+          />
+          <Select
+            placeholder="标签筛选"
+            allowClear
+            style={{ width: 160 }}
+            value={filterTag || undefined}
+            onChange={(value) => setFilterTag(value || '')}
+            options={availableTags.map(tag => ({ value: tag, label: tag }))}
           />
           <Radio.Group value={sortBy} onChange={e => setSortBy(e.target.value)}>
             <Radio.Button value="created_at">按时间</Radio.Button>
@@ -1074,6 +1125,7 @@ export default function CustomerManagement() {
           setImportModalVisible(false);
           setImportedData([]);
           setImportDataSource('real');
+          setSelectedImportTag(DEFAULT_CUSTOMER_TAG);
         }}
         width={800}
       >
@@ -1104,6 +1156,16 @@ export default function CustomerManagement() {
               ))}
             </Select>
           </Form.Item>
+          <Form.Item label="客户标签">
+            <Select
+              mode="tags"
+              maxCount={1}
+              placeholder="选择或输入标签"
+              value={selectedImportTag ? [selectedImportTag] : []}
+              onChange={(values) => setSelectedImportTag(normalizeSingleTagValue(values))}
+              options={availableTags.map(tag => ({ value: tag, label: tag }))}
+            />
+          </Form.Item>
         </Form>
         <Table
           dataSource={importedData}
@@ -1125,6 +1187,7 @@ export default function CustomerManagement() {
           setPreviewModalVisible(false);
           setPendingFile(null);
           setColumnMapping({});
+          setSelectedImportTag(DEFAULT_CUSTOMER_TAG);
         }}
         footer={[
           <Button key="cancel" onClick={() => setPreviewModalVisible(false)}>
@@ -1300,6 +1363,17 @@ export default function CustomerManagement() {
                       ))}
                     </Select>
                   </Form.Item>
+                  <Form.Item label="客户标签">
+                    <Select
+                      mode="tags"
+                      maxCount={1}
+                      style={{ width: 220 }}
+                      placeholder="选择或输入标签"
+                      value={selectedImportTag ? [selectedImportTag] : []}
+                      onChange={(values) => setSelectedImportTag(normalizeSingleTagValue(values))}
+                      options={availableTags.map(tag => ({ value: tag, label: tag }))}
+                    />
+                  </Form.Item>
                 </Form>
               </div>
             </>
@@ -1436,6 +1510,10 @@ export default function CustomerManagement() {
                 <div style={{ fontSize: 16 }}>{currentCustomer.phone || '-'}</div>
               </Col>
               <Col span={12}>
+                <Text type="secondary">客户标签</Text>
+                <div><Tag color={currentCustomer.tag === DEFAULT_CUSTOMER_TAG ? 'default' : 'geekblue'}>{currentCustomer.tag || DEFAULT_CUSTOMER_TAG}</Tag></div>
+              </Col>
+              <Col span={12}>
                 <Text type="secondary">邮箱</Text>
                 <div>{currentCustomer.email || '-'}</div>
               </Col>
@@ -1485,11 +1563,16 @@ export default function CustomerManagement() {
         onOk={async () => {
           try {
             const values = await editForm.validateFields();
-            await customerApi.updateCustomer(currentCustomer!.id, values);
+            await customerApi.updateCustomer(currentCustomer!.id, {
+              ...values,
+              tag: normalizeSingleTagValue(Array.isArray(values.tag) ? values.tag : [values.tag])
+            });
             message.success('更新成功');
             setEditModalVisible(false);
             setCurrentCustomer(null);
+            editForm.resetFields();
             fetchCustomers();
+            fetchTags();
           } catch (error) {
             message.error('更新失败');
           }
@@ -1561,6 +1644,20 @@ export default function CustomerManagement() {
                 </Select>
               </Form.Item>
             </Col>
+            <Col span={12}>
+              <Form.Item
+                name="tag"
+                label="客户标签"
+                initialValue={[DEFAULT_CUSTOMER_TAG]}
+              >
+                <Select
+                  mode="tags"
+                  maxCount={1}
+                  placeholder="选择或输入标签"
+                  options={availableTags.map(tag => ({ value: tag, label: tag }))}
+                />
+              </Form.Item>
+            </Col>
           </Row>
           <Form.Item
             name="remark"
@@ -1578,11 +1675,15 @@ export default function CustomerManagement() {
         onOk={async () => {
           try {
             const values = await addForm.validateFields();
-            await customerApi.createCustomer(values);
+            await customerApi.createCustomer({
+              ...values,
+              tag: normalizeSingleTagValue(Array.isArray(values.tag) ? values.tag : [values.tag])
+            });
             message.success('客户添加成功');
             setAddModalVisible(false);
             addForm.resetFields();
             fetchCustomers();
+            fetchTags();
           } catch (error: any) {
             if (error.response?.data?.error) {
               message.error(error.response.data.error);
@@ -1666,6 +1767,22 @@ export default function CustomerManagement() {
                 </Select>
               </Form.Item>
             </Col>
+            <Col span={12}>
+              <Form.Item
+                name="tag"
+                label="客户标签"
+                initialValue={[DEFAULT_CUSTOMER_TAG]}
+              >
+                <Select
+                  mode="tags"
+                  maxCount={1}
+                  placeholder="选择或输入标签"
+                  options={availableTags.map(tag => ({ value: tag, label: tag }))}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
             <Col span={12}>
               <Form.Item
                 name="assigned_to"

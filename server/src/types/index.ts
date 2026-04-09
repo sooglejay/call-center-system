@@ -16,6 +16,7 @@ export interface Customer {
   id: number;
   phone: string;
   name?: string;
+  tag?: string;
   remark?: string;
   source?: string;
   imported_by?: number;

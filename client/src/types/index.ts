@@ -14,6 +14,7 @@ export interface Customer {
   id: number;
   phone: string;
   name?: string;
+  tag?: string;
   email?: string;
   company?: string;
   address?: string;
@@ -93,6 +94,7 @@ export interface TaskCustomer {
   id: number;
   name: string;
   phone: string;
+  tag?: string;
   email?: string;
   company?: string;
   customer_status: string;

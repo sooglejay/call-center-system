@@ -111,10 +111,14 @@ interface ApiService {
         @Query("pageSize") pageSize: Int = 20,
         @Query("search") search: String? = null,
         @Query("status") status: String? = null,
+        @Query("tag") tag: String? = null,
         @Query("assigned_to") assignedTo: Int? = null,
         @Query("sort_by") sortBy: String? = null,
         @Query("sort_order") sortOrder: String? = null
     ): Response<CustomerListResponse>
+
+    @GET("customers/tags")
+    suspend fun getCustomerTags(): Response<CustomerTagListResponse>
 
     /**
      * 获取客服专属客户列表（用于客服角色）
@@ -124,7 +128,8 @@ interface ApiService {
         @Query("page") page: Int = 1,
         @Query("pageSize") pageSize: Int = 20,
         @Query("search") search: String? = null,
-        @Query("status") status: String? = null
+        @Query("status") status: String? = null,
+        @Query("tag") tag: String? = null
     ): Response<CustomerListResponse>
 
     /**

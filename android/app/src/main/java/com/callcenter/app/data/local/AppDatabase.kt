@@ -19,7 +19,7 @@ import com.callcenter.app.data.local.entity.*
         UserEntity::class,
         ContactEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 @TypeConverters(Converters::class)

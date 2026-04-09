@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
@@ -17,6 +18,8 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.callcenter.app.R
 import com.callcenter.app.util.RootUtil
+import com.callcenter.app.util.root.RootCallStateDetector
+import com.callcenter.app.util.root.RootPhoneStateListener
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -79,12 +82,15 @@ class CallStateMonitorService : Service() {
     private lateinit var telephonyManager: TelephonyManager
     private var phoneStateListener: PhoneStateListener? = null
     private var audioManager: AudioManager? = null
+    private var rootCallStateDetector: RootCallStateDetector? = null
+    private var rootPhoneStateListener: RootPhoneStateListener? = null
 
     private var isMonitoring = false
     private var autoSpeakerEnabled = true
     private var speakerDelayMs = DEFAULT_SPEAKER_DELAY
     private var lastCallState = TelephonyManager.CALL_STATE_IDLE
     private var callConnected = false
+    private var speakerRetryJob: Job? = null
 
     private val serviceJob = Job()
     private val serviceScope = CoroutineScope(Dispatchers.Main + serviceJob)
@@ -154,6 +160,14 @@ class CallStateMonitorService : Service() {
         // 注册通话状态监听
         registerPhoneStateListener()
 
+        // root 设备额外监听更早的拨号状态
+        registerRootCallStateListener()
+
+        // 用户预期是“电话拨出就外放”，所以服务启动后立即开始多轮尝试
+        if (autoSpeakerEnabled) {
+            startSpeakerRetryLoop("service_started")
+        }
+
         Log.d(TAG, "开始监听通话状态，自动免提=$autoSpeakerEnabled，延迟=${speakerDelayMs}ms")
     }
 
@@ -165,9 +179,60 @@ class CallStateMonitorService : Service() {
 
         isMonitoring = false
         unregisterPhoneStateListener()
+        unregisterRootCallStateListener()
         handler.removeCallbacks(stopServiceRunnable)
+        speakerRetryJob?.cancel()
+        speakerRetryJob = null
 
         Log.d(TAG, "停止监听通话状态")
+    }
+
+    private fun registerRootCallStateListener() {
+        if (!RootUtil.isDeviceRooted()) {
+            return
+        }
+
+        if (rootCallStateDetector != null) {
+            return
+        }
+
+        val detector = RootCallStateDetector()
+        val listener = object : RootPhoneStateListener {
+            override fun onDialing(number: String?) {
+                Log.d(TAG, "Root 检测到拨号中: $number")
+                startSpeakerRetryLoop("root_dialing")
+            }
+
+            override fun onAlerting(number: String?) {
+                Log.d(TAG, "Root 检测到对方响铃: $number")
+                startSpeakerRetryLoop("root_alerting")
+            }
+
+            override fun onActive(number: String?, setupTime: Long) {
+                Log.d(TAG, "Root 检测到通话接通: $number, setupTime=$setupTime")
+                startSpeakerRetryLoop("root_active")
+            }
+
+            override fun onIdle(duration: Long) {
+                Log.d(TAG, "Root 检测到通话结束: duration=$duration")
+                speakerRetryJob?.cancel()
+                speakerRetryJob = null
+            }
+        }
+
+        detector.addListener(listener)
+        detector.startDetection()
+        rootCallStateDetector = detector
+        rootPhoneStateListener = listener
+    }
+
+    private fun unregisterRootCallStateListener() {
+        rootPhoneStateListener?.let { listener ->
+            rootCallStateDetector?.removeListener(listener)
+        }
+        rootCallStateDetector?.stopDetection()
+        rootCallStateDetector = null
+        rootPhoneStateListener = null
     }
 
     /**
@@ -231,6 +296,11 @@ class CallStateMonitorService : Service() {
                 Log.d(TAG, "来电响铃: $phoneNumber")
             }
             TelephonyManager.CALL_STATE_OFFHOOK -> {
+                // 拨出/接通阶段都应继续尝试免提，而不是只在接通后尝试一次
+                if (autoSpeakerEnabled) {
+                    startSpeakerRetryLoop("telephony_offhook")
+                }
+
                 // 通话中（拨出或接通）
                 if (lastCallState == TelephonyManager.CALL_STATE_IDLE) {
                     Log.d(TAG, "通话建立（拨出/接听）")
@@ -255,7 +325,27 @@ class CallStateMonitorService : Service() {
             delay(speakerDelayMs)
 
             if (isMonitoring) {
-                enableSpeakerphone()
+                enableSpeakerphone("delayed_after_offhook")
+            }
+        }
+    }
+
+    private fun startSpeakerRetryLoop(reason: String) {
+        if (!autoSpeakerEnabled || !isMonitoring) {
+            return
+        }
+
+        speakerRetryJob?.cancel()
+        speakerRetryJob = serviceScope.launch {
+            val retryDelays = listOf(0L, speakerDelayMs, 1200L, 2200L, 3500L, 5000L, 8000L)
+            retryDelays.forEachIndexed { index, waitMs ->
+                if (waitMs > 0) {
+                    delay(waitMs)
+                }
+                if (!isMonitoring) {
+                    return@launch
+                }
+                enableSpeakerphone("$reason#$index")
             }
         }
     }
@@ -263,18 +353,33 @@ class CallStateMonitorService : Service() {
     /**
      * 开启免提
      */
-    private fun enableSpeakerphone() {
-        Log.d(TAG, "尝试开启免提...")
+    private fun enableSpeakerphone(reason: String) {
+        Log.d(TAG, "尝试开启免提, reason=$reason")
 
         try {
-            // 方法1: 使用 AudioManager（标准方式）
+            // 方法1: Android 标准 API，优先显式选择扬声器设备
             audioManager?.let { audio ->
                 audio.mode = AudioManager.MODE_IN_CALL
-                audio.isSpeakerphoneOn = true
-                Log.d(TAG, "AudioManager 免提状态: ${audio.isSpeakerphoneOn}")
+                forceSpeakerUsingHiddenAudioSystem(reason)
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    val speakerDevice = audio.availableCommunicationDevices.firstOrNull {
+                        it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                    }
+                    if (speakerDevice != null) {
+                        val routed = audio.setCommunicationDevice(speakerDevice)
+                        Log.d(TAG, "setCommunicationDevice routed=$routed")
+                    }
+                }
+
+                @Suppress("DEPRECATION")
+                run {
+                    audio.isSpeakerphoneOn = true
+                    Log.d(TAG, "AudioManager 免提状态: ${audio.isSpeakerphoneOn}")
+                }
             }
 
-            // 方法2: 使用 Root 权限（更可靠，适用于 root 设备）
+            // 方法2: Root 方式兜底，适合客服 root 手机
             if (RootUtil.isDeviceRooted()) {
                 val rootSuccess = RootUtil.forceEnableSpeaker()
                 Log.d(TAG, "Root 方式开启免提: $rootSuccess")
@@ -283,8 +388,18 @@ class CallStateMonitorService : Service() {
             // 方法3: 再次确认 AudioManager 设置
             handler.postDelayed({
                 audioManager?.let { audio ->
+                    @Suppress("DEPRECATION")
                     if (!audio.isSpeakerphoneOn) {
                         Log.d(TAG, "免提未开启，重试...")
+                        audio.mode = AudioManager.MODE_IN_CALL
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            val speakerDevice = audio.availableCommunicationDevices.firstOrNull {
+                                it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                            }
+                            if (speakerDevice != null) {
+                                audio.setCommunicationDevice(speakerDevice)
+                            }
+                        }
                         audio.isSpeakerphoneOn = true
                     }
                 }
@@ -292,6 +407,24 @@ class CallStateMonitorService : Service() {
 
         } catch (e: Exception) {
             Log.e(TAG, "开启免提失败: ${e.message}")
+        }
+    }
+
+    private fun forceSpeakerUsingHiddenAudioSystem(reason: String) {
+        try {
+            val audioSystemClass = Class.forName("android.media.AudioSystem")
+            val setForceUse = audioSystemClass.getDeclaredMethod(
+                "setForceUse",
+                Int::class.javaPrimitiveType,
+                Int::class.javaPrimitiveType
+            )
+
+            // FOR_COMMUNICATION = 0, FOR_MEDIA = 1, FORCE_SPEAKER = 1
+            setForceUse.invoke(null, 0, 1)
+            setForceUse.invoke(null, 1, 1)
+            Log.d(TAG, "[$reason] AudioSystem.setForceUse(FOR_COMMUNICATION/FOR_MEDIA, FORCE_SPEAKER) 已执行")
+        } catch (e: Throwable) {
+            Log.w(TAG, "[$reason] AudioSystem.setForceUse 调用失败: ${e.message}")
         }
     }
 

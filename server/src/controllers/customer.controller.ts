@@ -1,6 +1,13 @@
 import { Request, Response } from 'express';
 import { query } from '../config/database';
 
+const DEFAULT_CUSTOMER_TAG = '未打标客户';
+
+const normalizeCustomerTag = (tag?: string | null) => {
+  const normalized = tag?.trim();
+  return normalized ? normalized : DEFAULT_CUSTOMER_TAG;
+};
+
 // 获取姓氏首字母
 export const getFirstLetter = (name: string): string => {
   if (!name) return '#';
@@ -41,7 +48,7 @@ export const getFirstLetter = (name: string): string => {
 
 export const getCustomers = async (req: any, res: Response) => {
   try {
-    const { search, status, call_status, assigned_to, sort_by = 'created_at', page = 1, pageSize = 20, name_letter } = req.query;
+    const { search, status, call_status, assigned_to, tag, sort_by = 'created_at', page = 1, pageSize = 20, name_letter } = req.query;
     const pageNum = parseInt(page as string);
     const sizeNum = parseInt(pageSize as string);
     const offset = (pageNum - 1) * sizeNum;
@@ -78,6 +85,12 @@ export const getCustomers = async (req: any, res: Response) => {
     if (call_status) {
       whereConditions.push(`call_status = $${params.length + 1}`);
       params.push(call_status);
+    }
+
+    // 标签过滤
+    if (tag) {
+      whereConditions.push(`COALESCE(NULLIF(TRIM(tag), ''), '${DEFAULT_CUSTOMER_TAG}') = $${params.length + 1}`);
+      params.push(tag);
     }
     
     // 客服过滤
@@ -190,6 +203,7 @@ export const getCustomers = async (req: any, res: Response) => {
     // 添加导入人和分配客服名称
     data = data.map((c: any) => ({
       ...c,
+      tag: normalizeCustomerTag(c.tag),
       imported_by_name: userMap.get(c.imported_by) || '',
       assigned_to_name: userMap.get(c.assigned_to) || '未分配',
       is_duplicate: false
@@ -294,6 +308,7 @@ export const getCustomerById = async (req: Request, res: Response) => {
     
     res.json({
       ...customer,
+      tag: normalizeCustomerTag(customer.tag),
       imported_by_name: userMap.get(customer.imported_by)?.real_name || '',
       assigned_to_name: assignedAgent?.real_name || '未分配',
       assigned_agent: assignedAgent,
@@ -311,8 +326,9 @@ export const getCustomerById = async (req: Request, res: Response) => {
 // 手动创建客户
 export const createCustomer = async (req: any, res: Response) => {
   try {
-    const { name, phone, email, company, address, notes, status, assigned_to } = req.body;
+    const { name, phone, email, company, address, notes, status, assigned_to, tag } = req.body;
     const createdBy = req.user.id;
+    const customerTag = normalizeCustomerTag(tag);
     
     // 验证必填字段
     if (!name || !name.trim()) {
@@ -334,8 +350,8 @@ export const createCustomer = async (req: any, res: Response) => {
     
     // 插入客户数据
     const result = await query(
-      `INSERT INTO customers (name, phone, email, company, address, notes, status, assigned_to, imported_by, data_source, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, datetime('now'), datetime('now'))
+      `INSERT INTO customers (name, phone, email, company, address, notes, status, assigned_to, imported_by, data_source, tag, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, datetime('now'), datetime('now'))
        RETURNING *`,
       [
         name.trim(),
@@ -347,7 +363,8 @@ export const createCustomer = async (req: any, res: Response) => {
         status || 'pending',
         assigned_to || null,
         createdBy,
-        dataAccessType
+        dataAccessType,
+        customerTag
       ]
     );
     
@@ -357,6 +374,7 @@ export const createCustomer = async (req: any, res: Response) => {
     
     const newCustomer = {
       ...result.rows[0],
+      tag: customerTag,
       imported_by_name: userMap.get(createdBy) || '',
       assigned_to_name: assigned_to ? userMap.get(assigned_to) || '未分配' : '未分配'
     };
@@ -382,7 +400,7 @@ export const updateCustomer = async (req: Request, res: Response) => {
     }
     
     // 构建更新字段
-    const allowedFields = ['name', 'phone', 'email', 'company', 'address', 'notes', 'status', 'call_status', 'call_result', 'priority', 'assigned_to', 'remark'];
+    const allowedFields = ['name', 'phone', 'email', 'company', 'address', 'notes', 'status', 'call_status', 'call_result', 'priority', 'assigned_to', 'remark', 'tag'];
     const updateFields: string[] = [];
     const updateValues: any[] = [];
     let paramIndex = 1;
@@ -390,7 +408,7 @@ export const updateCustomer = async (req: Request, res: Response) => {
     for (const [key, value] of Object.entries(updates)) {
       if (allowedFields.includes(key)) {
         updateFields.push(`${key} = $${paramIndex}`);
-        updateValues.push(value);
+        updateValues.push(key === 'tag' ? normalizeCustomerTag(value as string | null) : value);
         paramIndex++;
       }
     }
@@ -420,6 +438,7 @@ export const updateCustomer = async (req: Request, res: Response) => {
     
     const customer = {
       ...updatedCustomer.rows[0],
+      tag: normalizeCustomerTag(updatedCustomer.rows[0].tag),
       imported_by_name: userMap.get(updatedCustomer.rows[0].imported_by) || '',
       assigned_to_name: updatedCustomer.rows[0].assigned_to ? userMap.get(updatedCustomer.rows[0].assigned_to) || '未分配' : '未分配'
     };
@@ -452,8 +471,9 @@ export const deleteCustomer = async (req: Request, res: Response) => {
 
 export const batchImportCustomers = async (req: any, res: Response) => {
   try {
-    const { customers, data_source = 'mock', assigned_to } = req.body;
+    const { customers, data_source = 'mock', assigned_to, tag } = req.body;
     const importedBy = req.user.id;
+    const customerTag = normalizeCustomerTag(tag);
     
     // 获取管理员的数据权限类型（只有管理员可以导入数据）
     const userResult = await query('SELECT role, data_access_type FROM users WHERE id = $1', [importedBy]);
@@ -489,12 +509,12 @@ export const batchImportCustomers = async (req: any, res: Response) => {
     for (const customer of customers || []) {
       try {
         const result = await query(
-          `INSERT INTO customers (name, phone, email, company, status, imported_by, data_source, assigned_to, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, datetime('now'), datetime('now'))
+          `INSERT INTO customers (name, phone, email, company, status, imported_by, data_source, assigned_to, tag, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, datetime('now'), datetime('now'))
            RETURNING *`,
-          [customer.name, customer.phone, customer.email || '', customer.company || '', 'pending', importedBy, finalDataSource, assignedToId]
+          [customer.name, customer.phone, customer.email || '', customer.company || '', 'pending', importedBy, finalDataSource, assignedToId, customerTag]
         );
-        importedCustomers.push(result.rows[0]);
+        importedCustomers.push({ ...result.rows[0], tag: customerTag });
       } catch (err) {
         console.error('导入客户失败:', customer, err);
       }
@@ -599,7 +619,7 @@ export const batchAssignAgents = async (req: any, res: Response) => {
 
 export const getAgentCustomers = async (req: any, res: Response) => {
   try {
-    const { status, search, page = 1, pageSize = 20, include_task_customers = true } = req.query;
+    const { status, search, tag, page = 1, pageSize = 20, include_task_customers = true } = req.query;
     const agentId = req.user.id;
     const pageNum = parseInt(page as string);
     const sizeNum = parseInt(pageSize as string);
@@ -652,6 +672,11 @@ export const getAgentCustomers = async (req: any, res: Response) => {
       params.push(`%${search.toString().toLowerCase()}%`);
       querySql += ` AND (LOWER(c.name) LIKE $${params.length} OR c.phone LIKE $${params.length})`;
     }
+
+    if (tag) {
+      params.push(tag);
+      querySql += ` AND COALESCE(NULLIF(TRIM(c.tag), ''), '${DEFAULT_CUSTOMER_TAG}') = $${params.length}`;
+    }
     
     // 获取总数
     const countResult = await query(`SELECT COUNT(*) as total FROM (${querySql}) as subquery`, params);
@@ -683,6 +708,7 @@ export const getAgentCustomers = async (req: any, res: Response) => {
       
       return {
         ...c,
+        tag: normalizeCustomerTag(c.tag),
         call_status: lastCall?.status || null,
         is_connected: lastCall?.is_connected || false,
         call_duration: lastCall?.call_duration || 0,
@@ -704,6 +730,52 @@ export const getAgentCustomers = async (req: any, res: Response) => {
     });
   } catch (error) {
     console.error('获取客服客户列表错误:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+};
+
+export const getCustomerTags = async (req: any, res: Response) => {
+  try {
+    const currentUser = req.user;
+    const userResult = await query('SELECT role, data_access_type FROM users WHERE id = $1', [currentUser.id]);
+    const userRole = userResult.rows[0]?.role;
+    const dataAccessType = userResult.rows[0]?.data_access_type || 'mock';
+
+    let tagsResult;
+
+    if (userRole === 'admin') {
+      tagsResult = await query(`
+        SELECT DISTINCT COALESCE(NULLIF(TRIM(tag), ''), '${DEFAULT_CUSTOMER_TAG}') as tag
+        FROM customers
+        ORDER BY tag ASC
+      `);
+    } else {
+      tagsResult = await query(`
+        SELECT DISTINCT tag FROM (
+          SELECT COALESCE(NULLIF(TRIM(c.tag), ''), '${DEFAULT_CUSTOMER_TAG}') as tag
+          FROM customers c
+          WHERE (c.assigned_to = $1 AND (c.data_source = $2 OR c.data_source IS NULL))
+          UNION
+          SELECT COALESCE(NULLIF(TRIM(c.tag), ''), '${DEFAULT_CUSTOMER_TAG}') as tag
+          FROM customers c
+          INNER JOIN task_customers tc ON c.id = tc.customer_id AND tc.status = 'pending'
+          INNER JOIN tasks t ON tc.task_id = t.id
+          WHERE t.assigned_to = $1
+        ) ORDER BY tag ASC
+      `, [currentUser.id, dataAccessType]);
+    }
+
+    const tags = tagsResult.rows
+      .map((row: any) => normalizeCustomerTag(row.tag))
+      .filter((value: string, index: number, arr: string[]) => arr.indexOf(value) === index);
+
+    if (!tags.includes(DEFAULT_CUSTOMER_TAG)) {
+      tags.unshift(DEFAULT_CUSTOMER_TAG);
+    }
+
+    res.json(tags);
+  } catch (error) {
+    console.error('获取客户标签列表错误:', error);
     res.status(500).json({ error: '服务器错误' });
   }
 };
@@ -739,6 +811,7 @@ export const getCustomersByNameLetter = async (req: Request, res: Response) => {
     // 添加导入人和分配客服名称
     data = data.map((c: any) => ({
       ...c,
+      tag: normalizeCustomerTag(c.tag),
       imported_by_name: userMap.get(c.imported_by) || '',
       assigned_to_name: userMap.get(c.assigned_to) || '未分配'
     }));

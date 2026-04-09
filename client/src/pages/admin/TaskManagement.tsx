@@ -54,6 +54,7 @@ interface TaskDetail extends Task {
     id: number;
     name: string;
     phone: string;
+    tag?: string;
     email?: string;
     company?: string;
     customer_status: string;
@@ -924,7 +925,13 @@ export default function TaskManagement() {
                   { 
                     title: '电话', 
                     dataIndex: 'phone', 
-                    key: 'phone' 
+                    key: 'phone',
+                    render: (phone: string, record: any) => (
+                      <Space direction="vertical" size={0}>
+                        <span>{phone}</span>
+                        <Tag color={record.tag === '未打标客户' ? 'default' : 'geekblue'}>{record.tag || '未打标客户'}</Tag>
+                      </Space>
+                    )
                   },
                   { 
                     title: '公司', 

@@ -378,6 +378,20 @@ private fun TaskCustomerItem(customer: TaskCustomer) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    if (customer.tag.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Surface(
+                            shape = MaterialTheme.shapes.small,
+                            color = MaterialTheme.colorScheme.tertiaryContainer
+                        ) {
+                            Text(
+                                text = customer.tag,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        }
+                    }
                     customer.company?.let { company ->
                         Text(
                             text = company,
