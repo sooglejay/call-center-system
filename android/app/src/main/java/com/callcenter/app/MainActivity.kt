@@ -28,6 +28,7 @@ import com.callcenter.app.ui.navigation.AppNavigation
 import com.callcenter.app.ui.theme.CallCenterTheme
 import com.callcenter.app.ui.viewmodel.UpdateViewModel
 import com.callcenter.app.util.FloatingWindowManager
+import com.callcenter.app.util.RootUtil
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
@@ -156,6 +157,14 @@ class MainActivity : ComponentActivity() {
         }
 
         try {
+            if (RootUtil.isDeviceRooted()) {
+                val rootSuccess = RootUtil.setDefaultDialerPackage(packageName)
+                if (rootSuccess && isDefaultDialer()) {
+                    Toast.makeText(this, "已通过 Root 自动设置默认拨号应用", Toast.LENGTH_SHORT).show()
+                    return
+                }
+            }
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val roleManager = getSystemService(RoleManager::class.java)
                 if (roleManager != null && roleManager.isRoleAvailable(RoleManager.ROLE_DIALER)) {
