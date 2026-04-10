@@ -1,6 +1,7 @@
 package com.callcenter.app.ui.navigation
 
 import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
@@ -67,7 +68,15 @@ sealed class Screen(val route: String) {
     object PermissionTest : Screen("permission_test")
 
     // 拨号
-    object Dialer : Screen("dialer")
+    object Dialer : Screen("dialer?phoneNumber={phoneNumber}") {
+        fun createRoute(phoneNumber: String? = null): String {
+            return if (phoneNumber.isNullOrBlank()) {
+                "dialer"
+            } else {
+                "dialer?phoneNumber=${Uri.encode(phoneNumber)}"
+            }
+        }
+    }
 
     // 通讯录
     object ContactList : Screen("contacts")
@@ -103,7 +112,10 @@ sealed class Screen(val route: String) {
 @Composable
 fun AppNavigation(
     navController: NavHostController = rememberNavController(),
-    authViewModel: AuthViewModel = hiltViewModel()
+    authViewModel: AuthViewModel = hiltViewModel(),
+    pendingOpenDialer: Boolean = false,
+    pendingDialNumber: String? = null,
+    onDialIntentConsumed: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val isLoggedIn by authViewModel.isLoggedIn.collectAsState()
@@ -115,6 +127,13 @@ fun AppNavigation(
         authError?.let { error ->
             android.widget.Toast.makeText(context, error, android.widget.Toast.LENGTH_LONG).show()
             authViewModel.clearError()
+        }
+    }
+
+    LaunchedEffect(isLoggedIn, pendingOpenDialer, pendingDialNumber) {
+        if (isLoggedIn && (pendingOpenDialer || !pendingDialNumber.isNullOrBlank())) {
+            navController.navigate(Screen.Dialer.createRoute(pendingDialNumber))
+            onDialIntentConsumed()
         }
     }
 
@@ -145,14 +164,30 @@ fun AppNavigation(
 
     NavHost(
         navController = navController,
-        startDestination = if (isLoggedIn) Screen.Main.route else Screen.Login.route
+        startDestination = if (isLoggedIn && (pendingOpenDialer || !pendingDialNumber.isNullOrBlank())) {
+            Screen.Dialer.createRoute(pendingDialNumber)
+        } else if (isLoggedIn) {
+            Screen.Main.route
+        } else {
+            Screen.Login.route
+        }
     ) {
         // ==================== 认证 ====================
         composable(Screen.Login.route) {
             LoginScreen(
                 onLoginSuccess = {
-                    navController.navigate(Screen.Main.route) {
+                    val targetRoute = if (pendingOpenDialer || !pendingDialNumber.isNullOrBlank()) {
+                        Screen.Dialer.createRoute(pendingDialNumber)
+                    } else {
+                        Screen.Main.route
+                    }
+
+                    navController.navigate(targetRoute) {
                         popUpTo(Screen.Login.route) { inclusive = true }
+                    }
+
+                    if (pendingOpenDialer || !pendingDialNumber.isNullOrBlank()) {
+                        onDialIntentConsumed()
                     }
                 }
             )
@@ -287,8 +322,18 @@ fun AppNavigation(
         }
 
         // 手动拨号页面
-        composable(Screen.Dialer.route) {
+        composable(
+            route = Screen.Dialer.route,
+            arguments = listOf(
+                navArgument("phoneNumber") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            )
+        ) { backStackEntry ->
             DialerScreen(
+                initialPhoneNumber = backStackEntry.arguments?.getString("phoneNumber") ?: "",
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToContacts = {
                     navController.navigate(Screen.ContactList.route)
