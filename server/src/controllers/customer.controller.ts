@@ -473,7 +473,7 @@ export const batchImportCustomers = async (req: any, res: Response) => {
   try {
     const { customers, data_source = 'mock', assigned_to, tag } = req.body;
     const importedBy = req.user.id;
-    const customerTag = normalizeCustomerTag(tag);
+    const manualImportTag = typeof tag === 'string' ? tag.trim() : '';
     
     // 获取管理员的数据权限类型（只有管理员可以导入数据）
     const userResult = await query('SELECT role, data_access_type FROM users WHERE id = $1', [importedBy]);
@@ -508,13 +508,14 @@ export const batchImportCustomers = async (req: any, res: Response) => {
     const importedCustomers = [];
     for (const customer of customers || []) {
       try {
+        const resolvedTag = manualImportTag || normalizeCustomerTag(customer.tag);
         const result = await query(
           `INSERT INTO customers (name, phone, email, company, status, imported_by, data_source, assigned_to, tag, created_at, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, datetime('now'), datetime('now'))
            RETURNING *`,
-          [customer.name, customer.phone, customer.email || '', customer.company || '', 'pending', importedBy, finalDataSource, assignedToId, customerTag]
+          [customer.name, customer.phone, customer.email || '', customer.company || '', 'pending', importedBy, finalDataSource, assignedToId, resolvedTag]
         );
-        importedCustomers.push({ ...result.rows[0], tag: customerTag });
+        importedCustomers.push({ ...result.rows[0], tag: resolvedTag });
       } catch (err) {
         console.error('导入客户失败:', customer, err);
       }

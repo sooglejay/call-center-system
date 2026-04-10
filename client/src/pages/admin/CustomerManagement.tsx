@@ -105,7 +105,7 @@ export default function CustomerManagement() {
   const [addForm] = Form.useForm();
   const [importDataSource, setImportDataSource] = useState<'mock' | 'real'>('real');
   const [availableTags, setAvailableTags] = useState<string[]>([DEFAULT_CUSTOMER_TAG]);
-  const [selectedImportTag, setSelectedImportTag] = useState<string>(DEFAULT_CUSTOMER_TAG);
+  const [selectedImportTag, setSelectedImportTag] = useState<string>('');
 
   // 分页状态
   const [currentPage, setCurrentPage] = useState(1);
@@ -179,17 +179,19 @@ export default function CustomerManagement() {
       const tags = Array.isArray(response.data) ? response.data : [];
       const mergedTags = Array.from(new Set([DEFAULT_CUSTOMER_TAG, ...tags.filter(Boolean)]));
       setAvailableTags(mergedTags);
-      if (!selectedImportTag) {
-        setSelectedImportTag(DEFAULT_CUSTOMER_TAG);
-      }
     } catch (error) {
       console.error('获取标签列表失败:', error);
     }
   };
 
-  const normalizeSingleTagValue = (values?: string[]) => {
-    if (!values || values.length === 0) return DEFAULT_CUSTOMER_TAG;
+  const normalizeTagValue = (values?: string[]) => {
+    if (!values || values.length === 0) return '';
     const value = values[values.length - 1]?.trim();
+    return value || '';
+  };
+
+  const normalizeEditableTagValue = (values?: string[]) => {
+    const value = normalizeTagValue(values);
     return value || DEFAULT_CUSTOMER_TAG;
   };
 
@@ -234,10 +236,10 @@ export default function CustomerManagement() {
   // 下载导入模板
   const downloadTemplate = () => {
     const template = [
-      ['姓名', '电话', '邮箱', '公司', '地址', '备注'],
-      ['张三', '13800138001', 'zhangsan@example.com', '张三科技', '北京市朝阳区', 'VIP客户'],
-      ['李四', '13900139001', 'lisi@example.com', '李四集团', '上海市浦东新区', ''],
-      ['王五', '13700137001', '', '', '', '潜在客户'],
+      ['姓名', '电话', '标签', '邮箱', '公司', '地址', '备注'],
+      ['张三', '13800138001', '抖音渠道', 'zhangsan@example.com', '张三科技', '北京市朝阳区', 'VIP客户'],
+      ['李四', '13900139001', '百度投放', 'lisi@example.com', '李四集团', '上海市浦东新区', ''],
+      ['王五', '13700137001', '', '', '', '', '潜在客户'],
     ];
     
     const ws = XLSX.utils.aoa_to_sheet(template);
@@ -248,6 +250,7 @@ export default function CustomerManagement() {
     ws['!cols'] = [
       { wch: 12 }, // 姓名
       { wch: 15 }, // 电话
+      { wch: 16 }, // 标签
       { wch: 25 }, // 邮箱
       { wch: 20 }, // 公司
       { wch: 30 }, // 地址
@@ -318,7 +321,9 @@ export default function CustomerManagement() {
     if (selectedAgent) {
       formData.append('assigned_to', selectedAgent.toString());
     }
-    formData.append('tag', selectedImportTag || DEFAULT_CUSTOMER_TAG);
+    if (selectedImportTag.trim()) {
+      formData.append('tag', selectedImportTag.trim());
+    }
     
     try {
       const response = await dataImportApi.importWithMapping(formData);
@@ -328,7 +333,7 @@ export default function CustomerManagement() {
       setPendingFile(null);
       setColumnMapping({});
       setSelectedAgent(undefined);
-      setSelectedImportTag(DEFAULT_CUSTOMER_TAG);
+      setSelectedImportTag('');
       
       // 显示导入结果
       Modal.success({
@@ -355,12 +360,12 @@ export default function CustomerManagement() {
   // 旧的导入函数（保留兼容）
   const handleImport = async () => {
     try {
-      await customerApi.importCustomers(importedData, selectedAgent, importDataSource, selectedImportTag || DEFAULT_CUSTOMER_TAG);
+      await customerApi.importCustomers(importedData, selectedAgent, importDataSource, selectedImportTag.trim() || undefined);
       message.success(`成功导入 ${importedData.length} 条${importDataSource === 'real' ? '真实' : '测试'}数据`);
       setImportModalVisible(false);
       setImportedData([]);
       setImportDataSource('real');
-      setSelectedImportTag(DEFAULT_CUSTOMER_TAG);
+      setSelectedImportTag('');
       fetchCustomers();
       fetchTags();
     } catch (error: any) {
@@ -1090,6 +1095,10 @@ export default function CustomerManagement() {
               <div style={{ color: '#666', fontSize: 12 }}>客户所在公司名称</div>
             </Col>
             <Col span={12}>
+              <Text strong>标签 (tag)</Text>
+              <div style={{ color: '#666', fontSize: 12 }}>客户来源渠道标签，如：抖音渠道/百度投放</div>
+            </Col>
+            <Col span={12}>
               <Text strong>地址 (address)</Text>
               <div style={{ color: '#666', fontSize: 12 }}>客户联系地址</div>
             </Col>
@@ -1105,6 +1114,8 @@ export default function CustomerManagement() {
           description={
             <ul style={{ margin: 0, paddingLeft: 16 }}>
               <li>建议先下载模板文件，按模板格式填写数据</li>
+              <li>若文件中包含“标签”列，且本页标签输入框留空，则会按文件中的标签值导入</li>
+              <li>若本页标签输入框填写了非空内容，则本次导入客户统一使用该标签</li>
               <li>Excel 文件建议只保留一个工作表</li>
               <li>第一行应为表头（姓名、电话等），数据从第二行开始</li>
               <li>单次导入建议不超过 1000 条记录</li>
@@ -1125,7 +1136,7 @@ export default function CustomerManagement() {
           setImportModalVisible(false);
           setImportedData([]);
           setImportDataSource('real');
-          setSelectedImportTag(DEFAULT_CUSTOMER_TAG);
+          setSelectedImportTag('');
         }}
         width={800}
       >
@@ -1162,7 +1173,7 @@ export default function CustomerManagement() {
               maxCount={1}
               placeholder="选择或输入标签"
               value={selectedImportTag ? [selectedImportTag] : []}
-              onChange={(values) => setSelectedImportTag(normalizeSingleTagValue(values))}
+              onChange={(values) => setSelectedImportTag(normalizeTagValue(values))}
               options={availableTags.map(tag => ({ value: tag, label: tag }))}
             />
           </Form.Item>
@@ -1187,7 +1198,7 @@ export default function CustomerManagement() {
           setPreviewModalVisible(false);
           setPendingFile(null);
           setColumnMapping({});
-          setSelectedImportTag(DEFAULT_CUSTOMER_TAG);
+          setSelectedImportTag('');
         }}
         footer={[
           <Button key="cancel" onClick={() => setPreviewModalVisible(false)}>
@@ -1370,7 +1381,7 @@ export default function CustomerManagement() {
                       style={{ width: 220 }}
                       placeholder="选择或输入标签"
                       value={selectedImportTag ? [selectedImportTag] : []}
-                      onChange={(values) => setSelectedImportTag(normalizeSingleTagValue(values))}
+                      onChange={(values) => setSelectedImportTag(normalizeTagValue(values))}
                       options={availableTags.map(tag => ({ value: tag, label: tag }))}
                     />
                   </Form.Item>
@@ -1565,7 +1576,7 @@ export default function CustomerManagement() {
             const values = await editForm.validateFields();
             await customerApi.updateCustomer(currentCustomer!.id, {
               ...values,
-              tag: normalizeSingleTagValue(Array.isArray(values.tag) ? values.tag : [values.tag])
+              tag: normalizeEditableTagValue(Array.isArray(values.tag) ? values.tag : [values.tag])
             });
             message.success('更新成功');
             setEditModalVisible(false);
@@ -1677,7 +1688,7 @@ export default function CustomerManagement() {
             const values = await addForm.validateFields();
             await customerApi.createCustomer({
               ...values,
-              tag: normalizeSingleTagValue(Array.isArray(values.tag) ? values.tag : [values.tag])
+              tag: normalizeEditableTagValue(Array.isArray(values.tag) ? values.tag : [values.tag])
             });
             message.success('客户添加成功');
             setAddModalVisible(false);

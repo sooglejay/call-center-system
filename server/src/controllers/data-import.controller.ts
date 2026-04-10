@@ -22,6 +22,7 @@ export const uploadMiddleware: RequestHandler = upload.single('file');
 export const SYSTEM_FIELDS = [
   { key: 'name', label: '姓名', required: true },
   { key: 'phone', label: '电话', required: true },
+  { key: 'tag', label: '标签', required: false },
   { key: 'email', label: '邮箱', required: false },
   { key: 'company', label: '公司', required: false },
   { key: 'address', label: '地址', required: false },
@@ -274,6 +275,15 @@ const suggestColumnMapping = (csvColumns: string[], compositeFields: Record<stri
       /机构/i,
       /商城/i
     ],
+    tag: [
+      /^tag$/i,
+      /标签/i,
+      /渠道/i,
+      /来源/i,
+      /source/i,
+      /来源渠道/i,
+      /客户标签/i
+    ],
     address: [
       /address/i, 
       /地址/i, 
@@ -342,7 +352,7 @@ const suggestColumnMapping = (csvColumns: string[], compositeFields: Record<stri
 export const importWithMapping = async (req: any, res: Response) => {
   try {
     let { column_mapping, data_source = 'real', composite_fields, assigned_to, tag } = req.body;
-    const customerTag = normalizeCustomerTag(tag);
+    const manualImportTag = typeof tag === 'string' ? tag.trim() : '';
     
     // 如果参数是字符串（来自 FormData），尝试解析 JSON
     if (typeof column_mapping === 'string') {
@@ -472,6 +482,8 @@ export const importWithMapping = async (req: any, res: Response) => {
         }
         
         // 插入数据（包含 assigned_to 字段）
+        const resolvedTag = manualImportTag || normalizeCustomerTag(customerData.tag);
+
         await query(
           `INSERT INTO customers (name, phone, email, company, address, notes, status, priority, data_source, imported_by, assigned_to, tag, created_at, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, datetime('now'), datetime('now'))`,
@@ -487,7 +499,7 @@ export const importWithMapping = async (req: any, res: Response) => {
             data_source, 
             adminId,
             assignedToId,
-            customerTag
+            resolvedTag
           ]
         );
         imported++;
@@ -512,7 +524,7 @@ export const importWithMapping = async (req: any, res: Response) => {
         errors,
         skipped: data.length - imported - duplicates - errors,
         assigned_to: assignedToId,
-        tag: customerTag
+        tag: manualImportTag || null
       },
       error_details: errorDetails.slice(0, 10)
     });
@@ -531,7 +543,7 @@ export const importRealCustomers = async (req: any, res: Response) => {
     
     const adminId = req.user.id;
     const { data_source = 'real', tag } = req.body;
-    const customerTag = normalizeCustomerTag(tag);
+    const manualImportTag = typeof tag === 'string' ? tag.trim() : '';
     
     // 验证管理员权限
     const userResult = await query('SELECT role FROM users WHERE id = $1', [adminId]);
@@ -588,11 +600,13 @@ export const importRealCustomers = async (req: any, res: Response) => {
         const company = mapping.company ? record[mapping.company] || '' : '';
         const address = mapping.address ? record[mapping.address] || '' : '';
         const notes = mapping.notes ? record[mapping.notes] || '' : '';
+        const recordTag = mapping.tag ? record[mapping.tag] || '' : '';
+        const resolvedTag = manualImportTag || normalizeCustomerTag(recordTag);
         
         await query(
           `INSERT INTO customers (name, phone, email, company, address, notes, status, priority, data_source, imported_by, tag, created_at, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, 'pending', 1, $7, $8, $9, datetime('now'), datetime('now'))`,
-          [name, phone, email, company, address, notes, data_source, adminId, customerTag]
+          [name, phone, email, company, address, notes, data_source, adminId, resolvedTag]
         );
         imported++;
       } catch (err) {
@@ -605,7 +619,7 @@ export const importRealCustomers = async (req: any, res: Response) => {
     
     res.json({
       message: '导入完成',
-      summary: { total: data.length, imported, duplicates, errors, tag: customerTag },
+      summary: { total: data.length, imported, duplicates, errors, tag: manualImportTag || null },
       used_mapping: mapping,
       error_details: errorDetails
     });
