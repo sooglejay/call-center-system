@@ -1,12 +1,21 @@
 package com.callcenter.app.data.repository
 
+import android.content.Context
 import com.callcenter.app.data.api.ApiService
 import com.callcenter.app.data.local.dao.CallRecordDao
 import com.callcenter.app.data.local.entity.CallRecordEntity
 import com.callcenter.app.data.model.AddCallNoteRequest
 import com.callcenter.app.data.model.CallRecord
+import com.callcenter.app.data.model.CallRecordingUploadResponse
+import com.callcenter.app.service.CallRecordingManager
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -16,7 +25,8 @@ import javax.inject.Singleton
 @Singleton
 class CallRecordRepository @Inject constructor(
     private val apiService: ApiService,
-    private val callRecordDao: CallRecordDao
+    private val callRecordDao: CallRecordDao,
+    @ApplicationContext private val context: Context
 ) {
     /**
      * 获取通话记录列表
@@ -98,6 +108,56 @@ class CallRecordRepository @Inject constructor(
             }
         } catch (e: Exception) {
             Result.success(entity.copy(id = id.toInt()).toModel())
+        }
+    }
+
+    suspend fun uploadCallRecording(
+        callId: Int,
+        file: File,
+        durationSeconds: Int? = null
+    ): Result<CallRecordingUploadResponse> {
+        return try {
+            val requestFile = file.asRequestBody("audio/mp4".toMediaTypeOrNull())
+            val part = MultipartBody.Part.createFormData("file", file.name, requestFile)
+            val durationBody = durationSeconds?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
+            val response = apiService.uploadCallRecording(callId, part, durationBody)
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!)
+            } else {
+                Result.failure(Exception(response.errorBody()?.string() ?: "上传录音失败"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun uploadPendingRecordings(): Result<Pair<Int, Int>> {
+        return try {
+            val pendingUploads = CallRecordingManager.listPendingUploads(context)
+            var successCount = 0
+            var failedCount = 0
+
+            pendingUploads.forEach { pending ->
+                val result = uploadCallRecording(
+                    callId = pending.callId,
+                    file = pending.audioFile,
+                    durationSeconds = pending.durationSeconds ?: CallRecordingManager.getRecordingDurationSeconds(pending.audioFile)
+                )
+
+                result.fold(
+                    onSuccess = {
+                        CallRecordingManager.clearPendingUpload(pending.audioFile)
+                        successCount++
+                    },
+                    onFailure = {
+                        failedCount++
+                    }
+                )
+            }
+
+            Result.success(successCount to failedCount)
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 

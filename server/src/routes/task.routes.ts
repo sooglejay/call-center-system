@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { 
   getTasks, 
   createTask, 
+  createTaskForSelf,
   updateTask, 
   deleteTask, 
   getMyTasks,
@@ -28,6 +29,7 @@ router.delete('/:id/customers/:customerId', adminMiddleware, removeCustomerFromT
 
 // 客服路由
 router.get('/my/list', getMyTasks);
+router.post('/my/create', createTaskForSelf);
 
 // 通用路由（需要登录）
 router.get('/:id', authMiddleware, getTaskById);

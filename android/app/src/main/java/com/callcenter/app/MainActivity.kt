@@ -16,6 +16,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -31,12 +32,18 @@ import com.callcenter.app.ui.components.UpdateDialog
 import com.callcenter.app.ui.navigation.AppNavigation
 import com.callcenter.app.ui.theme.CallCenterTheme
 import com.callcenter.app.ui.viewmodel.UpdateViewModel
+import com.callcenter.app.data.repository.CallRecordRepository
 import com.callcenter.app.util.FloatingWindowManager
 import com.callcenter.app.util.RootUtil
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject
+    lateinit var callRecordRepository: CallRecordRepository
 
     private var pendingDialNumber by mutableStateOf<String?>(null)
     private var pendingOpenDialer by mutableStateOf(false)
@@ -84,6 +91,10 @@ class MainActivity : ComponentActivity() {
 
         // 检查并申请通话/拨号相关权限
         checkAndRequestCallPermissions()
+
+        lifecycleScope.launch {
+            tryUploadPendingRecordings()
+        }
 
         setContent {
             CallCenterTheme {
@@ -175,6 +186,12 @@ class MainActivity : ComponentActivity() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALL_LOG)
             != PackageManager.PERMISSION_GRANTED) {
             permissionsToRequest.add(Manifest.permission.READ_CALL_LOG)
+        }
+
+        // 通话录音权限
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED) {
+            permissionsToRequest.add(Manifest.permission.RECORD_AUDIO)
         }
 
         // 写入通话记录权限
@@ -272,6 +289,24 @@ class MainActivity : ComponentActivity() {
             intent.action == Intent.ACTION_DIAL ||
             intent.action == Intent.ACTION_VIEW ||
             intent.action == Intent.ACTION_CALL_BUTTON
+    }
+
+    private suspend fun tryUploadPendingRecordings() {
+        if (!RootUtil.isDeviceRooted()) {
+            return
+        }
+
+        val result = callRecordRepository.uploadPendingRecordings()
+        result.onSuccess { (successCount, failedCount) ->
+            if (successCount > 0) {
+                Toast.makeText(this, "已自动补传 $successCount 条通话录音", Toast.LENGTH_SHORT).show()
+            }
+            if (failedCount > 0) {
+                android.util.Log.w("MainActivity", "仍有 $failedCount 条录音待补传")
+            }
+        }.onFailure {
+            android.util.Log.e("MainActivity", "补传通话录音失败: ${it.message}")
+        }
     }
 
     /**

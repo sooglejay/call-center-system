@@ -31,6 +31,7 @@ fun CallSettingsScreen(
     var callTimeout by remember { mutableStateOf(settings.callTimeout) }
     var retryCount by remember { mutableStateOf(settings.retryCount) }
     var autoSpeaker by remember { mutableStateOf(settings.autoSpeaker) }
+    var autoRecordCall by remember { mutableStateOf(settings.autoRecordCall) }
     var autoAddNote by remember { mutableStateOf(settings.autoAddNote) }
     var defaultNoteTemplate by remember { mutableStateOf(settings.defaultNoteTemplate) }
 
@@ -40,6 +41,7 @@ fun CallSettingsScreen(
         callTimeout = settings.callTimeout
         retryCount = settings.retryCount
         autoSpeaker = settings.autoSpeaker
+        autoRecordCall = settings.autoRecordCall
         autoAddNote = settings.autoAddNote
         defaultNoteTemplate = settings.defaultNoteTemplate
     }
@@ -62,6 +64,7 @@ fun CallSettingsScreen(
                                     callTimeout = callTimeout,
                                     retryCount = retryCount,
                                     autoSpeaker = autoSpeaker,
+                                    autoRecordCall = autoRecordCall,
                                     autoAddNote = autoAddNote,
                                     defaultNoteTemplate = defaultNoteTemplate
                                 )
@@ -184,6 +187,20 @@ fun CallSettingsScreen(
 
                 // 自动添加备注
                 SettingItem(
+                    icon = Icons.Default.FiberManualRecord,
+                    title = "拨号录音",
+                    subtitle = "通话建立后自动开始录音，结束后自动保存到应用目录"
+                ) {
+                    Switch(
+                        checked = autoRecordCall,
+                        onCheckedChange = { autoRecordCall = it }
+                    )
+                }
+
+                Divider(modifier = Modifier.padding(vertical = 8.dp))
+
+                // 自动添加备注
+                SettingItem(
                     icon = Icons.Default.NoteAdd,
                     title = "自动添加备注",
                     subtitle = "通话结束后自动添加备注"
@@ -238,6 +255,7 @@ fun CallSettingsScreen(
                         Text(
                             text = "• 拨号间隔建议设置为 5-15 秒，给系统足够的响应时间\n" +
                                    "• 通话超时建议设置为 30-60 秒，太短可能导致漏接\n" +
+                                   "• 拨号录音依赖设备 ROM、录音权限和音频源支持，部分机型可能只能录到单边或无法录制\n" +
                                    "• 重试次数过多可能会影响拨打效率",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSecondaryContainer

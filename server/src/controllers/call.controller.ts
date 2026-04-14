@@ -1,5 +1,29 @@
 import { Request, Response } from 'express';
 import { query } from '../config/database';
+import fs from 'fs';
+import path from 'path';
+
+const buildUploadUrl = (req: Request, relativePath: string) => {
+  const normalizedPath = relativePath.startsWith('/') ? relativePath : `/${relativePath}`;
+  return `${req.protocol}://${req.get('host')}${normalizedPath}`;
+};
+
+const formatCallRecord = (c: any) => ({
+  id: c.id,
+  customer_id: c.customer_id,
+  agent_id: c.agent_id,
+  phone: c.customer_phone || '',
+  direction: 'outbound',
+  status: c.status,
+  duration: c.call_duration || 0,
+  notes: c.call_notes || '',
+  recording: c.recording_url || '',
+  call_sid: c.twilio_call_sid || '',
+  dialed_at: c.started_at || null,
+  connected_at: c.connected_at || null,
+  ended_at: c.ended_at || null,
+  created_at: c.created_at
+});
 
 export const getCallRecords = async (req: any, res: Response) => {
   try {
@@ -105,11 +129,20 @@ export const getCallRecords = async (req: any, res: Response) => {
 
 export const createCallRecord = async (req: any, res: Response) => {
   try {
-    const { customer_id, phone, task_id } = req.body;
+    const { customer_id, phone, task_id, status, dialed_at } = req.body;
+
+    const customerResult = customer_id
+      ? await query('SELECT name, phone FROM customers WHERE id = $1', [customer_id])
+      : { rows: [] };
+    const customer = customerResult.rows[0] || null;
+    const customerPhone = phone || customer?.phone || '';
+    const customerName = customer?.name || null;
     
     const result = await query(
-      'INSERT INTO calls (customer_id, agent_id, customer_phone, status, is_connected) VALUES ($1, $2, $3, $4, $5)',
-      [customer_id, req.user.id, phone, 'calling', false]
+      `INSERT INTO calls (
+        customer_id, agent_id, customer_phone, customer_name, status, is_connected, started_at, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, datetime('now'), datetime('now'))`,
+      [customer_id, req.user.id, customerPhone, customerName, status || 'calling', false, dialed_at || new Date().toISOString()]
     );
     
     // 获取插入的记录
@@ -117,7 +150,7 @@ export const createCallRecord = async (req: any, res: Response) => {
       'SELECT * FROM calls WHERE id = (SELECT MAX(id) FROM calls)'
     );
     
-    res.status(201).json(newCall.rows[0]);
+    res.status(201).json(formatCallRecord(newCall.rows[0]));
   } catch (error) {
     console.error('创建通话记录错误:', error);
     res.status(500).json({ error: '服务器错误' });
@@ -134,19 +167,33 @@ export const updateCallRecord = async (req: Request, res: Response) => {
       return res.status(404).json({ error: '通话记录不存在' });
     }
     
-    const updated = { 
-      ...result.rows[0], 
-      status: status || result.rows[0].status,
-      is_connected: is_connected !== undefined ? is_connected : result.rows[0].is_connected,
-      call_duration: call_duration !== undefined ? call_duration : result.rows[0].call_duration,
-      recording_url: recording_url !== undefined ? recording_url : result.rows[0].recording_url,
-      recording_duration: recording_duration !== undefined ? recording_duration : result.rows[0].recording_duration,
-      call_notes: call_notes !== undefined ? call_notes : result.rows[0].call_notes,
-      call_result: call_result !== undefined ? call_result : result.rows[0].call_result,
-      updated_at: new Date().toISOString() 
-    };
-    
-    res.json(updated);
+    await query(
+      `UPDATE calls
+       SET status = $1,
+           is_connected = $2,
+           call_duration = $3,
+           recording_url = $4,
+           recording_duration = $5,
+           call_notes = $6,
+           call_result = $7,
+           connected_at = CASE WHEN $2 = 1 AND connected_at IS NULL THEN datetime('now') ELSE connected_at END,
+           ended_at = CASE WHEN $3 IS NOT NULL OR $7 IS NOT NULL THEN datetime('now') ELSE ended_at END,
+           updated_at = datetime('now')
+       WHERE id = $8`,
+      [
+        status ?? result.rows[0].status,
+        is_connected !== undefined ? (is_connected ? 1 : 0) : result.rows[0].is_connected,
+        call_duration !== undefined ? call_duration : result.rows[0].call_duration,
+        recording_url !== undefined ? recording_url : result.rows[0].recording_url,
+        recording_duration !== undefined ? recording_duration : result.rows[0].recording_duration,
+        call_notes !== undefined ? call_notes : result.rows[0].call_notes,
+        call_result !== undefined ? call_result : result.rows[0].call_result,
+        id
+      ]
+    );
+
+    const updatedResult = await query('SELECT * FROM calls WHERE id = $1', [id]);
+    res.json(formatCallRecord(updatedResult.rows[0]));
   } catch (error) {
     console.error('更新通话记录错误:', error);
     res.status(500).json({ error: '服务器错误' });
@@ -163,16 +210,59 @@ export const updateCallNotes = async (req: any, res: Response) => {
       return res.status(404).json({ error: '通话记录不存在或无权限' });
     }
     
-    const updated = { 
-      ...result.rows[0], 
-      call_notes: call_notes || result.rows[0].call_notes,
-      call_result: call_result || result.rows[0].call_result,
-      updated_at: new Date().toISOString()
-    };
-    
-    res.json(updated);
+    await query(
+      `UPDATE calls
+       SET call_notes = $1,
+           call_result = $2,
+           updated_at = datetime('now')
+       WHERE id = $3`,
+      [call_notes || result.rows[0].call_notes, call_result || result.rows[0].call_result, id]
+    );
+
+    const updatedResult = await query('SELECT * FROM calls WHERE id = $1', [id]);
+    res.json(formatCallRecord(updatedResult.rows[0]));
   } catch (error) {
     console.error('更新通话备注错误:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+};
+
+export const uploadCallRecording = async (req: any, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (!req.file) {
+      return res.status(400).json({ error: '未上传录音文件' });
+    }
+
+    const callResult = await query('SELECT * FROM calls WHERE id = $1', [id]);
+    if (callResult.rows.length === 0) {
+      if (req.file?.path && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+      return res.status(404).json({ error: '通话记录不存在' });
+    }
+
+    const relativePath = `/uploads/recordings/${path.basename(req.file.path)}`;
+    const recordingUrl = buildUploadUrl(req, relativePath);
+    const recordingDuration = req.body.recording_duration ? Number(req.body.recording_duration) : null;
+
+    await query(
+      `UPDATE calls
+       SET recording_url = $1,
+           recording_duration = COALESCE($2, recording_duration),
+           updated_at = datetime('now')
+       WHERE id = $3`,
+      [recordingUrl, recordingDuration, id]
+    );
+
+    const updatedResult = await query('SELECT * FROM calls WHERE id = $1', [id]);
+    res.json({
+      message: '录音上传成功',
+      recording_url: recordingUrl,
+      call: formatCallRecord(updatedResult.rows[0])
+    });
+  } catch (error) {
+    console.error('上传通话录音错误:', error);
     res.status(500).json({ error: '服务器错误' });
   }
 };
@@ -223,7 +313,7 @@ export const getCallStatus = async (req: Request, res: Response) => {
       return res.status(404).json({ error: '通话记录不存在' });
     }
     
-    res.json(result.rows[0]);
+    res.json(formatCallRecord(result.rows[0]));
   } catch (error) {
     console.error('获取通话状态错误:', error);
     res.status(500).json({ error: '服务器错误' });
@@ -251,7 +341,7 @@ export const createRecord = async (req: any, res: Response) => {
       'SELECT * FROM calls WHERE id = (SELECT MAX(id) FROM calls)'
     );
     
-    res.status(201).json(newCall.rows[0]);
+    res.status(201).json(formatCallRecord(newCall.rows[0]));
   } catch (error) {
     console.error('创建记录错误:', error);
     res.status(500).json({ error: '服务器错误' });

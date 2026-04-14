@@ -27,6 +27,11 @@ data class CallSettings(
     val autoSpeaker: Boolean = false,
 
     /**
+     * 拨号后自动录音
+     */
+    val autoRecordCall: Boolean = false,
+
+    /**
      * 通话结束后自动添加备注
      */
     val autoAddNote: Boolean = false,

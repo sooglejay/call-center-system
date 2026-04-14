@@ -116,6 +116,13 @@ data class CallRecord(
     val createdAt: String? = null
 )
 
+data class CallRecordingUploadResponse(
+    val message: String,
+    @SerializedName("recording_url")
+    val recordingUrl: String,
+    val call: CallRecord? = null
+)
+
 /**
  * 通话记录列表响应
  */
@@ -199,7 +206,9 @@ data class TaskCustomer(
     @SerializedName("is_connected")
     val isConnected: Boolean = false,
     @SerializedName("call_time")
-    val callTime: String? = null
+    val callTime: String? = null,
+    @SerializedName("recording_url")
+    val recordingUrl: String? = null
 )
 
 /**

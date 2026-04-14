@@ -64,6 +64,15 @@ class CallSettingsViewModel @Inject constructor(
     }
 
     /**
+     * 保存自动录音设置
+     */
+    fun saveAutoRecordCall(enabled: Boolean) {
+        viewModelScope.launch {
+            callSettingsRepository.saveAutoRecordCall(enabled)
+        }
+    }
+
+    /**
      * 保存自动添加备注设置
      */
     fun saveAutoAddNote(enabled: Boolean) {

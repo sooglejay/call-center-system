@@ -89,16 +89,18 @@ object NetworkModule {
     fun provideAuthInterceptor(tokenManager: TokenManager): Interceptor {
         return Interceptor { chain ->
             val token = runBlocking { tokenManager.getToken() }
-            val request = if (token != null) {
-                chain.request().newBuilder()
-                    .addHeader("Authorization", "Bearer $token")
-                    .addHeader("Content-Type", "application/json")
-                    .build()
-            } else {
-                chain.request().newBuilder()
-                    .addHeader("Content-Type", "application/json")
-                    .build()
+            val builder = chain.request().newBuilder()
+            if (token != null) {
+                builder.addHeader("Authorization", "Bearer $token")
             }
+
+            val hasContentType = chain.request().header("Content-Type") != null
+            val bodyContentType = chain.request().body?.contentType()?.toString()
+            if (!hasContentType && (bodyContentType == null || bodyContentType.contains("json", ignoreCase = true))) {
+                builder.addHeader("Content-Type", "application/json")
+            }
+
+            val request = builder.build()
             chain.proceed(request)
         }
     }

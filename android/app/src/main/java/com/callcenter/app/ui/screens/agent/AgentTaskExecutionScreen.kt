@@ -2,10 +2,13 @@ package com.callcenter.app.ui.screens.agent
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.media.MediaPlayer
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -35,17 +38,21 @@ import com.callcenter.app.data.model.Customer
 import com.callcenter.app.data.model.Task
 import com.callcenter.app.data.model.TaskCustomer
 import com.callcenter.app.service.AutoDialService
+import com.callcenter.app.service.CallRecordingManager
 import com.callcenter.app.ui.viewmodel.AgentTaskViewModel
 import com.callcenter.app.ui.viewmodel.AutoDialViewModel
 import com.callcenter.app.ui.viewmodel.AutoDialConfig
 import com.callcenter.app.ui.viewmodel.AutoDialScopeType
 import com.callcenter.app.ui.viewmodel.CallSettingsViewModel
+import com.callcenter.app.ui.viewmodel.CreateTaskViewModel
 import com.callcenter.app.util.CallHelper
 import com.callcenter.app.util.FloatingWindowManager
 import com.callcenter.app.util.VersionInfoUtil
 import com.callcenter.app.util.AutoFloatingWindow
-import com.google.accompanist.swiperefresh.SwipeRefresh
-import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * 客服任务执行页面
@@ -56,6 +63,7 @@ import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
 fun AgentTaskExecutionScreen(
     taskId: Int,
     onNavigateBack: () -> Unit,
+    onNavigateToCreateRetryTask: (String) -> Unit,
     viewModel: AgentTaskViewModel = hiltViewModel(),
     autoDialViewModel: AutoDialViewModel = hiltViewModel(),
     callSettingsViewModel: CallSettingsViewModel = hiltViewModel()
@@ -98,9 +106,15 @@ fun AgentTaskExecutionScreen(
     
     // 客户列表Tab选中状态，提升到父组件以保持状态
     var selectedTab by rememberSaveable { mutableStateOf(0) }
+    var showMoreMenu by remember { mutableStateOf(false) }
 
     // 检查是否正在拨打当前任务
     val isAutoDialingThisTask = autoDialRunning && (currentConfig?.taskId == taskId || currentConfig?.taskId == null)
+
+    val currentStatusKey = remember(selectedTab) { getStatusKeyByTab(selectedTab) }
+    val currentStatusCustomers = remember(task, currentStatusKey) {
+        filterTaskCustomersByStatus(task?.customers ?: emptyList(), currentStatusKey)
+    }
 
     // 当自动拨号状态变化时，刷新任务详情
     LaunchedEffect(autoDialRunning, dialedCount) {
@@ -147,6 +161,34 @@ fun AgentTaskExecutionScreen(
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
+                    }
+                },
+                actions = {
+                    Box {
+                        IconButton(onClick = { showMoreMenu = true }) {
+                            Icon(Icons.Default.MoreVert, "更多")
+                        }
+                        DropdownMenu(
+                            expanded = showMoreMenu,
+                            onDismissRequest = { showMoreMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("创建任务") },
+                                onClick = {
+                                    showMoreMenu = false
+                                    if (currentStatusKey == "all") {
+                                        Toast.makeText(context, "请先切换到具体通话状态后再创建任务", Toast.LENGTH_SHORT).show()
+                                    } else if (currentStatusCustomers.isEmpty()) {
+                                        Toast.makeText(context, "当前状态下没有可创建任务的客户", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        onNavigateToCreateRetryTask(currentStatusKey)
+                                    }
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.AddTask, contentDescription = null)
+                                }
+                            )
+                        }
                     }
                 }
             )
@@ -251,21 +293,35 @@ fun AgentTaskExecutionScreen(
                     isRefreshing = isLoading,
                     onTabSelected = { selectedTab = it },
                     onRefresh = { viewModel.loadTaskDetail(taskId) },
-                    onCallCustomer = { phone, taskId, customerId ->
-                        // 检查并请求权限，然后拨打电话
-                        try {
-                            if (checkAndRequestCallPermission()) {
-                                callHelper.makeCall(phone, directCall = true)
-                            } else {
-                                callHelper.makeCall(phone, directCall = false)
-                            }
-                            // 拨打电话不自动标记完成，只记录为已拨打
-                            viewModel.updateCustomerStatus(taskId, customerId, "called", null)
-                        } catch (e: Exception) {
-                            // 拨号失败（如无SIM卡），标记为拨打失败
-                            Toast.makeText(context, "拨号失败: ${e.message}", Toast.LENGTH_LONG).show()
-                            viewModel.updateCustomerStatus(taskId, customerId, "failed", "拨打失败: ${e.message}")
+                    onCallCustomer = { taskCustomer ->
+                        val customerId = taskCustomer.id
+                        val phone = taskCustomer.phone
+                        if (customerId == null || phone.isNullOrBlank()) {
+                            Toast.makeText(context, "客户信息不完整，无法拨打", Toast.LENGTH_SHORT).show()
+                            return@TaskExecutionContent
                         }
+
+                        if (!checkAndRequestCallPermission()) {
+                            Toast.makeText(context, "请先授予拨号权限后再发起通话，这样才能准确追踪状态并上传录音", Toast.LENGTH_LONG).show()
+                            callHelper.makeCall(phone, directCall = false)
+                            return@TaskExecutionContent
+                        }
+
+                        viewModel.createTaskCallRecord(
+                            customer = taskCustomer,
+                            onSuccess = { callRecord ->
+                                try {
+                                    callHelper.makeCall(phone, directCall = true)
+                                    viewModel.updateCustomerStatus(taskId, customerId, "called", null, callRecord?.id)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "拨号失败: ${e.message}", Toast.LENGTH_LONG).show()
+                                    viewModel.updateCustomerStatus(taskId, customerId, "failed", "拨打失败: ${e.message}", callRecord?.id)
+                                }
+                            },
+                            onFailure = { message ->
+                                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                            }
+                        )
                     },
                     onUpdateStatus = { customerId, status, result ->
                         viewModel.updateCustomerStatus(taskId, customerId, status, result)
@@ -594,7 +650,7 @@ private fun TaskExecutionContent(
     isRefreshing: Boolean,
     onTabSelected: (Int) -> Unit,
     onRefresh: () -> Unit,
-    onCallCustomer: (String, Int, Int) -> Unit,
+    onCallCustomer: (TaskCustomer) -> Unit,
     onUpdateStatus: (Int, String, String?) -> Unit,
     onEditCustomer: (Int, String?, String?, String?) -> Unit,
     onDeleteCustomer: (Int) -> Unit,
@@ -641,11 +697,7 @@ private fun TaskExecutionContent(
     }
 
     // 客户列表（带下拉刷新）- 使用LazyColumn作为根布局，支持整体滑动
-    SwipeRefresh(
-        state = rememberSwipeRefreshState(isRefreshing),
-        onRefresh = onRefresh,
-        modifier = Modifier.fillMaxSize()
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(vertical = 8.dp),
@@ -721,7 +773,7 @@ private fun TaskExecutionContent(
                 TaskCustomerCard(
                     customer = customer,
                     selectedTab = selectedTab,
-                    onCall = { onCallCustomer(customer.phone ?: "", task.id, customerId) },
+                    onCall = { onCallCustomer(customer) },
                     onUpdateStatus = { status, result ->
                         onUpdateStatus(customerId, status, result)
                     },
@@ -734,6 +786,7 @@ private fun TaskExecutionContent(
                 )
             }
         }
+
     }
 }
 
@@ -1188,6 +1241,298 @@ private fun CustomerGroupHeader(
     }
 }
 
+private data class RetryTaskStatusMeta(
+    val key: String,
+    val label: String
+)
+
+@Composable
+private fun RetryTaskPriorityChip(
+    label: String,
+    selected: Boolean,
+    color: Color,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = if (selected) color.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
+        border = if (selected) BorderStroke(1.dp, color) else null,
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (selected) {
+                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp), tint = color)
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+            Text(label, color = if (selected) color else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+private fun getStatusMetaByTab(tab: Int): RetryTaskStatusMeta {
+    return when (tab) {
+        1 -> RetryTaskStatusMeta("pending", "待拨打")
+        2 -> RetryTaskStatusMeta("connected", "已接听")
+        3 -> RetryTaskStatusMeta("voicemail", "语音信箱")
+        4 -> RetryTaskStatusMeta("unanswered", "响铃未接")
+        5 -> RetryTaskStatusMeta("rejected", "拒接")
+        6 -> RetryTaskStatusMeta("busy", "忙线")
+        7 -> RetryTaskStatusMeta("power_off", "关机/停机")
+        8 -> RetryTaskStatusMeta("no_answer", "无人接听")
+        9 -> RetryTaskStatusMeta("ivr", "IVR语音")
+        10 -> RetryTaskStatusMeta("other", "其他")
+        else -> RetryTaskStatusMeta("all", "全部客户")
+    }
+}
+
+private fun getStatusKeyByTab(tab: Int): String = getStatusMetaByTab(tab).key
+
+private fun filterTaskCustomersByStatus(customers: List<TaskCustomer>, statusKey: String): List<TaskCustomer> {
+    return when (statusKey) {
+        "pending" -> customers.filter { it.callStatus == "pending" }
+        "connected" -> customers.filter { it.callStatus == "connected" || it.callResult == "已接听" }
+        "voicemail" -> customers.filter { it.callStatus == "voicemail" || it.callResult == "语音信箱" }
+        "unanswered" -> customers.filter { it.callStatus == "unanswered" || it.callResult == "响铃未接" }
+        "rejected" -> customers.filter { it.callStatus == "rejected" || it.callResult == "对方拒接" }
+        "busy" -> customers.filter { it.callStatus == "busy" || it.callResult == "对方忙线" }
+        "power_off" -> customers.filter { it.callStatus == "power_off" || it.callResult == "关机/停机" || it.callResult == "对方关机" }
+        "no_answer" -> customers.filter { it.callStatus == "no_answer" || it.callResult == "无人接听" }
+        "ivr" -> customers.filter { it.callStatus == "ivr" || it.callResult == "IVR语音" }
+        "other" -> customers.filter {
+            (it.callStatus == "called" || it.callStatus == "completed") &&
+                it.callResult != "已接听" &&
+                it.callResult != "语音信箱" &&
+                it.callResult != "响铃未接" &&
+                it.callResult != "对方拒接" &&
+                it.callResult != "对方忙线" &&
+                it.callResult != "关机/停机" &&
+                it.callResult != "对方关机" &&
+                it.callResult != "无人接听" &&
+                it.callResult != "IVR语音"
+        }
+        else -> customers
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AgentCreateRetryTaskScreen(
+    taskId: Int,
+    statusKey: String,
+    onNavigateBack: () -> Unit,
+    onTaskCreated: () -> Unit,
+    taskViewModel: AgentTaskViewModel = hiltViewModel(),
+    createTaskViewModel: CreateTaskViewModel = hiltViewModel()
+) {
+    val context = LocalContext.current
+    val task by taskViewModel.task.collectAsState()
+    val isLoading by taskViewModel.isLoading.collectAsState()
+    val error by taskViewModel.error.collectAsState()
+    val isCreating by createTaskViewModel.isCreating.collectAsState()
+    val createError by createTaskViewModel.error.collectAsState()
+    val statusMeta = remember(statusKey) { getStatusMetaByTab((1..10).firstOrNull { getStatusKeyByTab(it) == statusKey } ?: 0) }
+
+    var title by rememberSaveable { mutableStateOf("${statusMeta.label}重拨任务") }
+    var description by rememberSaveable { mutableStateOf("从「${statusMeta.label}」客户列表快速创建") }
+    var priority by rememberSaveable { mutableStateOf("normal") }
+
+    val candidates = remember(task, statusKey) {
+        filterTaskCustomersByStatus(task?.customers ?: emptyList(), statusKey)
+    }
+    var selectedCustomerIds by remember(candidates) {
+        mutableStateOf(candidates.mapNotNull { it.id }.toSet())
+    }
+
+    LaunchedEffect(taskId) {
+        taskViewModel.loadTaskDetail(taskId)
+    }
+
+    LaunchedEffect(createError) {
+        createError?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("创建任务") },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                }
+            )
+        },
+        bottomBar = {
+            Surface(shadowElevation = 8.dp) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onNavigateBack,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("取消")
+                    }
+                    Button(
+                        onClick = {
+                            if (title.isBlank()) {
+                                Toast.makeText(context, "请输入任务标题", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+                            if (selectedCustomerIds.isEmpty()) {
+                                Toast.makeText(context, "请至少保留一个客户", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+                            createTaskViewModel.createTaskForSelf(
+                                com.callcenter.app.data.model.CreateTaskRequest(
+                                    title = title.trim(),
+                                    description = description.trim().ifBlank { null },
+                                    priority = priority,
+                                    customerIds = selectedCustomerIds.toList()
+                                )
+                            ) {
+                                Toast.makeText(context, "任务创建成功", Toast.LENGTH_SHORT).show()
+                                onTaskCreated()
+                            }
+                        },
+                        enabled = !isCreating,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        if (isCreating) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text("创建任务")
+                        }
+                    }
+                }
+            }
+        }
+    ) { paddingValues ->
+        when {
+            isLoading -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+            error != null -> ErrorCard(error = error!!, onRetry = { taskViewModel.loadTaskDetail(taskId) })
+            else -> LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("基于当前任务的「${statusMeta.label}」客户创建新任务", style = MaterialTheme.typography.titleMedium)
+                            OutlinedTextField(
+                                value = title,
+                                onValueChange = { title = it },
+                                label = { Text("任务标题") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                value = description,
+                                onValueChange = { description = it },
+                                label = { Text("任务描述") },
+                                modifier = Modifier.fillMaxWidth(),
+                                minLines = 2
+                            )
+                            Text("优先级", style = MaterialTheme.typography.bodyMedium)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                RetryTaskPriorityChip(label = "普通", selected = priority == "normal", color = Color(0xFF2196F3)) { priority = "normal" }
+                                RetryTaskPriorityChip(label = "高", selected = priority == "high", color = Color(0xFFFF9800)) { priority = "high" }
+                                RetryTaskPriorityChip(label = "紧急", selected = priority == "urgent", color = Color(0xFFE91E63)) { priority = "urgent" }
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("客户列表（已选 ${selectedCustomerIds.size}/${candidates.size}）", style = MaterialTheme.typography.titleMedium)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    TextButton(onClick = {
+                                        selectedCustomerIds = candidates.mapNotNull { it.id }.toSet()
+                                    }) { Text("全选") }
+                                    TextButton(onClick = { selectedCustomerIds = emptySet() }) { Text("清空") }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (candidates.isEmpty()) {
+                    item {
+                        Card(modifier = Modifier.fillMaxWidth()) {
+                            Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                                Text("当前状态下没有客户可创建任务")
+                            }
+                        }
+                    }
+                } else {
+                    items(candidates, key = { it.taskCustomerId }) { customer ->
+                        val customerId = customer.id ?: return@items
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (selectedCustomerIds.contains(customerId)) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surface
+                                }
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = selectedCustomerIds.contains(customerId),
+                                    onCheckedChange = {
+                                        selectedCustomerIds = if (selectedCustomerIds.contains(customerId)) {
+                                            selectedCustomerIds - customerId
+                                        } else {
+                                            selectedCustomerIds + customerId
+                                        }
+                                    }
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(customer.name ?: "未知客户", style = MaterialTheme.typography.titleSmall)
+                                    Text(customer.phone ?: "", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    if (!customer.tag.isBlank()) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = MaterialTheme.shapes.small) {
+                                            Text(customer.tag, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TaskCustomerCard(
@@ -1198,10 +1543,25 @@ private fun TaskCustomerCard(
     onEditCustomer: (String?, String?, String?) -> Unit,
     onDeleteCustomer: () -> Unit
 ) {
+    val context = LocalContext.current
     var showResultDialog by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showRecordingDialog by remember { mutableStateOf(false) }
     var callResult by remember { mutableStateOf(customer.callResult ?: "") }
+    var recordings by remember(customer.phone, customer.calledAt, customer.callTime, customer.callResult) {
+        mutableStateOf(CallRecordingManager.listRecordingsForPhone(context, customer.phone))
+    }
+    var currentPlayingPath by remember { mutableStateOf<String?>(null) }
+    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            runCatching { mediaPlayer?.stop() }
+            runCatching { mediaPlayer?.release() }
+            mediaPlayer = null
+        }
+    }
 
     Card(
         modifier = Modifier
@@ -1288,6 +1648,20 @@ private fun TaskCustomerCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+            }
+
+            if (recordings.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                FilledTonalButton(
+                    onClick = {
+                        recordings = CallRecordingManager.listRecordingsForPhone(context, customer.phone)
+                        showRecordingDialog = true
+                    }
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("录音(${recordings.size})")
+                }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -1474,6 +1848,145 @@ private fun TaskCustomerCard(
                 }
             }
         )
+    }
+
+    if (showRecordingDialog) {
+        ModalBottomSheet(
+            onDismissRequest = {
+                showRecordingDialog = false
+                runCatching { mediaPlayer?.stop() }
+                runCatching { mediaPlayer?.release() }
+                mediaPlayer = null
+                currentPlayingPath = null
+            }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = "通话录音",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "共 ${recordings.size} 条录音，可用于复盘本次客户沟通细节",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (recordings.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("暂无录音文件")
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 420.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        recordings.forEachIndexed { index, file ->
+                            OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    IconButton(
+                                        onClick = {
+                                            if (currentPlayingPath == file.absolutePath && mediaPlayer?.isPlaying == true) {
+                                                runCatching { mediaPlayer?.pause() }
+                                                currentPlayingPath = null
+                                            } else {
+                                                runCatching { mediaPlayer?.stop() }
+                                                runCatching { mediaPlayer?.release() }
+                                                mediaPlayer = null
+                                                try {
+                                                    val player = MediaPlayer().apply {
+                                                        setDataSource(context, Uri.fromFile(file))
+                                                        prepare()
+                                                        setOnCompletionListener {
+                                                            currentPlayingPath = null
+                                                            runCatching { it.release() }
+                                                            mediaPlayer = null
+                                                        }
+                                                        start()
+                                                    }
+                                                    mediaPlayer = player
+                                                    currentPlayingPath = file.absolutePath
+                                                } catch (e: Exception) {
+                                                    Toast.makeText(context, "播放录音失败: ${e.message}", Toast.LENGTH_LONG).show()
+                                                }
+                                            }
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = if (currentPlayingPath == file.absolutePath && mediaPlayer?.isPlaying == true) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                            contentDescription = "播放录音"
+                                        )
+                                    }
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = if (index == 0) "最新录音 · ${formatRecordingDisplayName(file)}" else formatRecordingDisplayName(file),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Text(
+                                            text = "${formatFileSize(file.length())} · ${file.name}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                TextButton(
+                    onClick = {
+                        showRecordingDialog = false
+                        runCatching { mediaPlayer?.stop() }
+                        runCatching { mediaPlayer?.release() }
+                        mediaPlayer = null
+                        currentPlayingPath = null
+                    },
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text("关闭")
+                }
+            }
+        }
+    }
+}
+
+private fun formatRecordingDisplayName(file: File): String {
+    val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+    return formatter.format(Date(file.lastModified()))
+}
+
+private fun formatFileSize(size: Long): String {
+    val kb = size / 1024.0
+    return if (kb < 1024) {
+        String.format(Locale.getDefault(), "%.0f KB", kb)
+    } else {
+        String.format(Locale.getDefault(), "%.2f MB", kb / 1024.0)
     }
 }
 

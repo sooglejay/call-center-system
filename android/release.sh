@@ -86,6 +86,35 @@ parse_version_from_local_properties() {
     fi
 }
 
+# 版本号自增
+increment_version() {
+    local local_props_file="local.properties"
+    
+    # 自增 VERSION_CODE
+    NEW_VERSION_CODE=$((VERSION_CODE + 1))
+    
+    # 自增 VERSION_NAME (递增最后一位数字)
+    # 例如: 1.9.11 -> 1.9.12
+    local major=$(echo "$VERSION_NAME" | cut -d'.' -f1)
+    local minor=$(echo "$VERSION_NAME" | cut -d'.' -f2)
+    local patch=$(echo "$VERSION_NAME" | cut -d'.' -f3)
+    local new_patch=$((patch + 1))
+    
+    NEW_VERSION_NAME="${major}.${minor}.${new_patch}"
+    
+    # 更新 local.properties
+    if [ -f "$local_props_file" ]; then
+        # 使用 sed 更新版本号
+        sed -i '' "s/VERSION_CODE=.*/VERSION_CODE=$NEW_VERSION_CODE/" "$local_props_file"
+        sed -i '' "s/VERSION_NAME=.*/VERSION_NAME=$NEW_VERSION_NAME/" "$local_props_file"
+        
+        VERSION_CODE=$NEW_VERSION_CODE
+        VERSION_NAME=$NEW_VERSION_NAME
+        
+        echo -e "${YELLOW}版本号已自增: v$VERSION_NAME (code: $VERSION_CODE)${NC}"
+    fi
+}
+
 # 显示帮助
 if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
     show_help
@@ -105,6 +134,9 @@ fi
 
 # 从 local.properties 读取版本号
 parse_version_from_local_properties
+
+# 版本号自增
+increment_version
 
 # 确定服务器地址（优先级：环境变量 > 命令行参数 > local.properties）
 if [ -n "$SERVER_URL" ]; then
@@ -313,8 +345,43 @@ fi
 echo -e "${GREEN}✓ 版本创建成功${NC}"
 echo ""
 
-# 步骤 6: 完成
-echo -e "${BLUE}[6/6] 发布完成!${NC}"
+# 步骤 6: 更新 RELEASE_NOTES.md
+echo -e "${BLUE}[6/8] 更新版本记录...${NC}"
+
+# 获取最新的 commit 信息
+COMMIT_ID=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+COMMIT_MESSAGE=$(git log -1 --pretty=format:"%s" 2>/dev/null || echo "版本更新")
+COMMIT_DATE=$(date +%Y-%m-%d)
+
+RELEASE_NOTES_FILE="app/src/main/assets/RELEASE_NOTES.md"
+
+if [ -f "$RELEASE_NOTES_FILE" ]; then
+    # 创建新的版本记录
+    NEW_VERSION_ENTRY="## v$VERSION_NAME ($COMMIT_DATE) - $COMMIT_MESSAGE
+
+### 构建信息
+- **Commit ID**: \`$COMMIT_ID\`
+- **Commit Message**: $COMMIT_MESSAGE
+
+---
+
+"
+    
+    # 检查是否已存在该版本的记录
+    if grep -q "^## v$VERSION_NAME " "$RELEASE_NOTES_FILE"; then
+        echo -e "${YELLOW}版本 v$VERSION_NAME 的记录已存在，跳过更新${NC}"
+    else
+        # 在文件开头插入新版本记录
+        echo "$NEW_VERSION_ENTRY$(cat "$RELEASE_NOTES_FILE")" > "$RELEASE_NOTES_FILE"
+        echo -e "${GREEN}✓ 已更新 RELEASE_NOTES.md${NC}"
+    fi
+else
+    echo -e "${YELLOW}RELEASE_NOTES.md 文件不存在，跳过更新${NC}"
+fi
+echo ""
+
+# 步骤 7: 完成
+echo -e "${BLUE}[7/8] 发布完成!${NC}"
 echo ""
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}    发布成功!${NC}"
@@ -323,9 +390,62 @@ echo ""
 echo "版本信息:"
 echo "  版本号: $VERSION_CODE"
 echo "  版本名称: $VERSION_NAME"
+echo "  Commit ID: $COMMIT_ID"
 echo "  APK大小: $APK_SIZE"
 echo ""
 echo "客户端将在下次启动时自动检测更新。"
+echo ""
+
+# 步骤 8: Git 提交并推送
+echo -e "${BLUE}[8/9] Git 提交并推送...${NC}"
+
+# 检查是否有变更
+if [ -n "$(git status --porcelain)" ]; then
+    git add -A
+    git commit -m "release: v$VERSION_NAME"
+    
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✓ Git 提交成功${NC}"
+        
+        # 推送到远程
+        git push
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}✓ Git 推送成功${NC}"
+        else
+            echo -e "${YELLOW}警告: Git 推送失败，请手动推送${NC}"
+        fi
+    else
+        echo -e "${YELLOW}警告: Git 提交失败${NC}"
+    fi
+else
+    echo -e "${YELLOW}没有变更需要提交${NC}"
+fi
+echo ""
+
+# 步骤 9: 打 tag
+echo -e "${BLUE}[9/9] 创建 Git Tag...${NC}"
+
+TAG_NAME="v$VERSION_NAME"
+
+# 检查 tag 是否已存在
+if git tag -l | grep -q "^$TAG_NAME$"; then
+    echo -e "${YELLOW}Tag $TAG_NAME 已存在，跳过创建${NC}"
+else
+    git tag -a "$TAG_NAME" -m "Release $TAG_NAME"
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✓ Tag $TAG_NAME 创建成功${NC}"
+        
+        # 推送 tag 到远程
+        git push origin "$TAG_NAME"
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}✓ Tag $TAG_NAME 推送成功${NC}"
+        else
+            echo -e "${YELLOW}警告: Tag 推送失败，请手动推送${NC}"
+        fi
+    else
+        echo -e "${YELLOW}警告: Tag 创建失败${NC}"
+    fi
+fi
 echo ""
 
 exit 0
