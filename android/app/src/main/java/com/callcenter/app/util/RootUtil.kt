@@ -25,6 +25,7 @@ object RootUtil {
             process.waitFor() == 0
         } catch (e: Exception) {
             Log.e(TAG, "检查 root 权限失败: ${e.message}")
+            UserNotifier.showError("Root 权限检查失败: ${e.message}")
             false
         }
     }
@@ -73,6 +74,7 @@ object RootUtil {
             )
         } catch (e: Exception) {
             Log.e(TAG, "执行 root 命令失败: ${e.message}")
+            UserNotifier.showError("执行 Root 命令失败: ${e.message}")
             CommandResult(
                 success = false,
                 output = "",
@@ -126,6 +128,7 @@ object RootUtil {
             )
         } catch (e: Exception) {
             Log.e(TAG, "执行多条 root 命令失败: ${e.message}")
+            UserNotifier.showError("执行多条 Root 命令失败: ${e.message}")
             CommandResult(
                 success = false,
                 output = "",

@@ -2,8 +2,12 @@ package com.callcenter.app.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.callcenter.app.data.local.preferences.TokenManager
+import com.callcenter.app.data.model.CallRecord
+import com.callcenter.app.data.model.TaskCustomer
 import com.callcenter.app.data.model.Task
 import com.callcenter.app.data.model.UpdateTaskCustomerStatusRequest
+import com.callcenter.app.data.repository.CallRecordRepository
 import com.callcenter.app.data.repository.TaskRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,7 +22,9 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class AgentTaskViewModel @Inject constructor(
-    private val taskRepository: TaskRepository
+    private val taskRepository: TaskRepository,
+    private val callRecordRepository: CallRecordRepository,
+    private val tokenManager: TokenManager
 ) : ViewModel() {
 
     private val _tasks = MutableStateFlow<List<Task>>(emptyList())
@@ -90,14 +96,16 @@ class AgentTaskViewModel @Inject constructor(
         taskId: Int,
         customerId: Int,
         status: String,
-        callResult: String? = null
+        callResult: String? = null,
+        callId: Int? = null
     ) {
         viewModelScope.launch {
             _isLoading.value = true
 
             val request = UpdateTaskCustomerStatusRequest(
                 status = status,
-                callResult = callResult
+                callResult = callResult,
+                callId = callId
             )
 
             val result = taskRepository.updateTaskCustomerStatus(taskId, customerId, request)
@@ -122,6 +130,39 @@ class AgentTaskViewModel @Inject constructor(
                     _error.value = exception.message ?: "更新状态失败"
                     _isLoading.value = false
                 }
+            )
+        }
+    }
+
+    fun createTaskCallRecord(
+        customer: TaskCustomer,
+        onSuccess: (CallRecord?) -> Unit,
+        onFailure: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            val customerId = customer.id
+            if (customerId == null || customer.phone.isNullOrBlank()) {
+                onFailure("客户信息不完整，无法创建通话记录")
+                return@launch
+            }
+
+            val agentId = tokenManager.getUserId()
+            if (agentId == null) {
+                onFailure("当前登录信息失效，请重新登录")
+                return@launch
+            }
+
+            val result = callRecordRepository.createCallRecord(
+                customerId = customerId,
+                customerName = customer.name ?: "",
+                phone = customer.phone,
+                agentId = agentId,
+                status = "calling"
+            )
+
+            result.fold(
+                onSuccess = { onSuccess(it) },
+                onFailure = { onFailure(it.message ?: "创建通话记录失败") }
             )
         }
     }

@@ -105,6 +105,7 @@ export interface TaskCustomer {
   call_duration?: number;
   is_connected?: boolean;
   call_time?: string;
+  recording_url?: string;
 }
 
 export interface AgentConfig {

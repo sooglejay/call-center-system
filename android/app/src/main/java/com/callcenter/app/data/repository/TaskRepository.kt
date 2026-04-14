@@ -172,6 +172,22 @@ class TaskRepository @Inject constructor(
         }
     }
 
+    suspend fun createTaskForSelf(request: CreateTaskRequest): Result<Task> {
+        return try {
+            val response = apiService.createTaskForSelf(request)
+            if (response.isSuccessful && response.body() != null) {
+                val task = response.body()!!
+                taskDao.insertTask(task.toEntity())
+                Result.success(task)
+            } else {
+                val errorMsg = response.errorBody()?.string() ?: "创建任务失败"
+                Result.failure(Exception(errorMsg))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     /**
      * 更新任务
      */

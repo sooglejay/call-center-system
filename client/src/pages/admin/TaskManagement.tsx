@@ -966,6 +966,14 @@ export default function TaskManagement() {
                     dataIndex: 'call_result', 
                     key: 'call_result',
                     render: (result: string) => result || '-'
+                  },
+                  {
+                    title: '录音',
+                    dataIndex: 'recording_url',
+                    key: 'recording_url',
+                    render: (recordingUrl: string) => recordingUrl ? (
+                      <audio controls preload="none" src={recordingUrl} style={{ width: 220 }} />
+                    ) : '-'
                   }
                 ]}
                 locale={{

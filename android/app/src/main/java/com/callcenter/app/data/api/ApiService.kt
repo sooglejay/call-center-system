@@ -1,6 +1,8 @@
 package com.callcenter.app.data.api
 
 import com.callcenter.app.data.model.*
+import okhttp3.MultipartBody
+import okhttp3.RequestBody
 import retrofit2.Response
 import retrofit2.http.*
 
@@ -238,6 +240,14 @@ interface ApiService {
         @Body record: CallRecord
     ): Response<CallRecord>
 
+    @Multipart
+    @POST("calls/{id}/recording")
+    suspend fun uploadCallRecording(
+        @Path("id") id: Int,
+        @Part file: MultipartBody.Part,
+        @Part("recording_duration") recordingDuration: RequestBody? = null
+    ): Response<CallRecordingUploadResponse>
+
     /**
      * 添加通话备注
      */
@@ -283,6 +293,9 @@ interface ApiService {
      */
     @POST("tasks")
     suspend fun createTask(@Body task: CreateTaskRequest): Response<Task>
+
+    @POST("tasks/my/create")
+    suspend fun createTaskForSelf(@Body task: CreateTaskRequest): Response<Task>
 
     /**
      * 更新任务

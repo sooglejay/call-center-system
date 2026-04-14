@@ -36,6 +36,7 @@ import com.callcenter.app.ui.screens.main.MainScreen
 import com.callcenter.app.ui.screens.settings.CallSettingsScreen
 import com.callcenter.app.ui.screens.settings.SettingsScreen
 import com.callcenter.app.ui.screens.agent.AgentTaskExecutionScreen
+import com.callcenter.app.ui.screens.agent.AgentCreateRetryTaskScreen
 import com.callcenter.app.ui.screens.agent.AgentTaskListScreen
 import com.callcenter.app.ui.screens.stats.MyStatsScreen
 import com.callcenter.app.ui.screens.help.HelpScreen
@@ -91,6 +92,9 @@ sealed class Screen(val route: String) {
     object AgentTaskList : Screen("agent/tasks")
     object AgentTaskExecution : Screen("agent/tasks/{taskId}") {
         fun createRoute(taskId: Int) = "agent/tasks/$taskId"
+    }
+    object AgentCreateRetryTask : Screen("agent/tasks/{taskId}/retry-create/{statusKey}") {
+        fun createRoute(taskId: Int, statusKey: String) = "agent/tasks/$taskId/retry-create/$statusKey"
     }
     
     // 管理员功能
@@ -407,7 +411,30 @@ fun AppNavigation(
             val taskId = backStackEntry.arguments?.getInt("taskId") ?: 0
             AgentTaskExecutionScreen(
                 taskId = taskId,
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToCreateRetryTask = { statusKey ->
+                    navController.navigate(Screen.AgentCreateRetryTask.createRoute(taskId, statusKey))
+                }
+            )
+        }
+
+        composable(
+            route = Screen.AgentCreateRetryTask.route,
+            arguments = listOf(
+                navArgument("taskId") { type = NavType.IntType },
+                navArgument("statusKey") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val taskId = backStackEntry.arguments?.getInt("taskId") ?: 0
+            val statusKey = backStackEntry.arguments?.getString("statusKey") ?: "pending"
+            AgentCreateRetryTaskScreen(
+                taskId = taskId,
+                statusKey = statusKey,
+                onNavigateBack = { navController.popBackStack() },
+                onTaskCreated = {
+                    navController.popBackStack()
+                    navController.navigate(Screen.AgentTaskList.route)
+                }
             )
         }
 

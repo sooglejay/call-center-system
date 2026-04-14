@@ -1,6 +1,10 @@
 package com.callcenter.app.ui.screens.admin
 
+import android.media.MediaPlayer
+import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -15,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -347,6 +352,19 @@ private fun StatCard(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TaskCustomerItem(customer: TaskCustomer) {
+    val context = LocalContext.current
+    var showRecordingSheet by remember { mutableStateOf(false) }
+    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+    var isPlaying by remember { mutableStateOf(false) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            runCatching { mediaPlayer?.stop() }
+            runCatching { mediaPlayer?.release() }
+            mediaPlayer = null
+        }
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -455,6 +473,154 @@ private fun TaskCustomerItem(customer: TaskCustomer) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                }
+
+                if (!customer.recordingUrl.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    FilledTonalButton(
+                        onClick = {
+                            showRecordingSheet = true
+                        }
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("播放录音")
+                    }
+                }
+            }
+        }
+    }
+
+    if (showRecordingSheet && !customer.recordingUrl.isNullOrBlank()) {
+        ModalBottomSheet(
+            onDismissRequest = {
+                showRecordingSheet = false
+                runCatching { mediaPlayer?.stop() }
+                runCatching { mediaPlayer?.release() }
+                mediaPlayer = null
+                isPlaying = false
+            }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = "通话录音",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "${customer.name ?: "未知客户"} · ${customer.phone ?: ""}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "录音文件",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            IconButton(
+                                onClick = {
+                                    try {
+                                        if (isPlaying) {
+                                            runCatching { mediaPlayer?.pause() }
+                                            isPlaying = false
+                                        } else {
+                                            if (mediaPlayer == null) {
+                                                val player = MediaPlayer().apply {
+                                                    setDataSource(context, Uri.parse(customer.recordingUrl))
+                                                    prepare()
+                                                    setOnCompletionListener {
+                                                        isPlaying = false
+                                                        runCatching { it.release() }
+                                                        mediaPlayer = null
+                                                    }
+                                                }
+                                                mediaPlayer = player
+                                            }
+                                            mediaPlayer?.start()
+                                            isPlaying = true
+                                        }
+                                    } catch (e: Exception) {
+                                        isPlaying = false
+                                        runCatching { mediaPlayer?.release() }
+                                        mediaPlayer = null
+                                        android.widget.Toast.makeText(context, "播放失败: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = "播放"
+                                )
+                            }
+                        }
+
+                        val metaLines = buildList {
+                            customer.calledAt?.let { add("拨打时间: ${it.replace('T', ' ').take(16)}") }
+                            customer.callDuration?.let { add("通话时长: ${it}秒") }
+                            customer.callResult?.takeIf { it.isNotBlank() }?.let { add("通话结果: $it") }
+                            customer.tag.takeIf { it.isNotBlank() }?.let { add("客户标签: $it") }
+                        }
+
+                        if (metaLines.isNotEmpty()) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                metaLines.forEach { line ->
+                                    Text(
+                                        text = line,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+
+                        Text(
+                            text = customer.recordingUrl,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                TextButton(
+                    onClick = {
+                        showRecordingSheet = false
+                        runCatching { mediaPlayer?.stop() }
+                        runCatching { mediaPlayer?.release() }
+                        mediaPlayer = null
+                        isPlaying = false
+                    },
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text("关闭")
                 }
             }
         }

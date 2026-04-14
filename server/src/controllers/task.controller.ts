@@ -138,6 +138,72 @@ export const createTask = async (req: any, res: Response) => {
   }
 };
 
+// 客服基于客户列表自建任务（自动分配给自己）
+export const createTaskForSelf = async (req: any, res: Response) => {
+  try {
+    const { title, description, customer_ids, priority, due_date } = req.body;
+    const assignedTo = req.user.id;
+
+    if (!title?.trim()) {
+      return res.status(400).json({ error: '任务名称不能为空' });
+    }
+
+    if (!customer_ids || !Array.isArray(customer_ids) || customer_ids.length === 0) {
+      return res.status(400).json({ error: '请至少选择一个客户' });
+    }
+
+    const uniqueCustomerIds = Array.from(
+      new Set(
+        customer_ids
+          .map((id: any) => Number(id))
+          .filter((id: number) => Number.isInteger(id) && id > 0)
+      )
+    );
+
+    if (uniqueCustomerIds.length === 0) {
+      return res.status(400).json({ error: '客户列表无效' });
+    }
+
+    const placeholders = uniqueCustomerIds.map((_, index) => `$${index + 1}`).join(', ');
+    const customerExistsResult = await query(
+      `SELECT id FROM customers WHERE id IN (${placeholders})`,
+      uniqueCustomerIds
+    );
+
+    if (customerExistsResult.rows.length !== uniqueCustomerIds.length) {
+      return res.status(400).json({ error: '部分客户不存在，无法创建任务' });
+    }
+
+    await query(
+      `INSERT INTO tasks (title, description, assigned_to, priority, status, due_date, created_by, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, datetime('now'), datetime('now'))`,
+      [title.trim(), description?.trim() || '', assignedTo, priority || 'normal', 'pending', due_date || null, req.user.id]
+    );
+
+    const newTaskResult = await query('SELECT last_insert_rowid() as id');
+    const taskId = newTaskResult.rows[0].id;
+
+    for (const customerId of uniqueCustomerIds) {
+      await query(
+        `INSERT INTO task_customers (task_id, customer_id, status, created_at)
+         VALUES ($1, $2, $3, datetime('now'))`,
+        [taskId, customerId, 'pending']
+      );
+    }
+
+    const taskResult = await query('SELECT * FROM tasks WHERE id = $1', [taskId]);
+    const task = taskResult.rows[0];
+
+    res.status(201).json({
+      ...task,
+      customer_count: uniqueCustomerIds.length
+    });
+  } catch (error) {
+    console.error('客服自建任务错误:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+};
+
 // 获取任务详情（包含客户列表和拨号情况）
 export const getTaskById = async (req: Request, res: Response) => {
   try {
@@ -159,7 +225,7 @@ export const getTaskById = async (req: Request, res: Response) => {
     const customersResult = await query(`
       SELECT tc.id as task_customer_id, tc.status as call_status, tc.call_result, tc.called_at,
              c.id, c.name, c.phone, c.email, c.company, COALESCE(NULLIF(TRIM(c.tag), ''), '${DEFAULT_CUSTOMER_TAG}') as tag, c.status as customer_status,
-             ca.id as call_id, ca.call_duration, ca.is_connected, ca.created_at as call_time
+             ca.id as call_id, ca.call_duration, ca.is_connected, ca.created_at as call_time, ca.recording_url
       FROM task_customers tc
       LEFT JOIN customers c ON tc.customer_id = c.id
       LEFT JOIN calls ca ON tc.call_id = ca.id
@@ -215,7 +281,8 @@ export const getTaskById = async (req: Request, res: Response) => {
         call_id: c.call_id,
         call_duration: c.call_duration,
         is_connected: c.is_connected === 1,
-        call_time: c.call_time
+        call_time: c.call_time,
+        recording_url: c.recording_url
       }))
     });
   } catch (error) {

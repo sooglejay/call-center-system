@@ -24,6 +24,7 @@ class CallSettingsManager(private val context: Context) {
         private val CALL_TIMEOUT = intPreferencesKey("call_timeout")
         private val RETRY_COUNT = intPreferencesKey("retry_count")
         private val AUTO_SPEAKER = booleanPreferencesKey("auto_speaker")
+        private val AUTO_RECORD_CALL = booleanPreferencesKey("auto_record_call")
         private val AUTO_ADD_NOTE = booleanPreferencesKey("auto_add_note")
         private val DEFAULT_NOTE_TEMPLATE = stringPreferencesKey("default_note_template")
     }
@@ -37,6 +38,7 @@ class CallSettingsManager(private val context: Context) {
             callTimeout = prefs[CALL_TIMEOUT] ?: 30,
             retryCount = prefs[RETRY_COUNT] ?: 0,
             autoSpeaker = prefs[AUTO_SPEAKER] ?: false,
+            autoRecordCall = prefs[AUTO_RECORD_CALL] ?: false,
             autoAddNote = prefs[AUTO_ADD_NOTE] ?: false,
             defaultNoteTemplate = prefs[DEFAULT_NOTE_TEMPLATE] ?: ""
         )
@@ -79,6 +81,15 @@ class CallSettingsManager(private val context: Context) {
     }
 
     /**
+     * 保存自动录音设置
+     */
+    suspend fun saveAutoRecordCall(enabled: Boolean) {
+        context.callSettingsDataStore.edit { prefs ->
+            prefs[AUTO_RECORD_CALL] = enabled
+        }
+    }
+
+    /**
      * 保存自动添加备注设置
      */
     suspend fun saveAutoAddNote(enabled: Boolean) {
@@ -105,6 +116,7 @@ class CallSettingsManager(private val context: Context) {
             prefs[CALL_TIMEOUT] = settings.callTimeout
             prefs[RETRY_COUNT] = settings.retryCount
             prefs[AUTO_SPEAKER] = settings.autoSpeaker
+            prefs[AUTO_RECORD_CALL] = settings.autoRecordCall
             prefs[AUTO_ADD_NOTE] = settings.autoAddNote
             prefs[DEFAULT_NOTE_TEMPLATE] = settings.defaultNoteTemplate
         }

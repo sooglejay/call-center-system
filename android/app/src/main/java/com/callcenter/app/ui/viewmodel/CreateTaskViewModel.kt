@@ -163,6 +163,29 @@ class CreateTaskViewModel @Inject constructor(
         }
     }
 
+    fun createTaskForSelf(
+        request: CreateTaskRequest,
+        onSuccess: () -> Unit
+    ) {
+        viewModelScope.launch {
+            _isCreating.value = true
+            _error.value = null
+
+            val result = taskRepository.createTaskForSelf(request)
+
+            result.fold(
+                onSuccess = {
+                    _isCreating.value = false
+                    onSuccess()
+                },
+                onFailure = { exception ->
+                    _isCreating.value = false
+                    _error.value = exception.message ?: "创建任务失败"
+                }
+            )
+        }
+    }
+
     /**
      * 设置错误信息（供UI调用）
      */
