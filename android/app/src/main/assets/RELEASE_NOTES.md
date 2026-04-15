@@ -1,3 +1,16 @@
+## v1.9.17 (2026-04-15) - 2026-04-15 release.sh 更新日志来源优化
+
+- 本次完成：优化 `release.sh` 的版本更新日志生成逻辑。
+- 新规则：发布时不再从 `RELEASE_NOTES.md` 回读更新日志，而是直接读取 `ai_coding.txt` 的首段文本，并以空白行作为段落分隔。
+- 生成方式：首段第一行作为版本记录标题，其余内容作为更新日志正文，同时写入版本创建接口和 `RELEASE_NOTES.md`。
+- 验证结果：已执行 `bash -n /Users/bytedance/del/call-center-system/android/release.sh`，并验证首段提取逻辑输出正确。
+
+### 构建信息
+- **Commit ID**: `ee43a850`
+- **Commit Message**: release: v1.9.16
+
+---
+
 ## v1.9.16 (2026-04-15) - feat(android): 在'我的'页面添加日志收集高级配置入口
 
 ### 构建信息

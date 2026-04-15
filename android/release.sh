@@ -115,6 +115,60 @@ increment_version() {
     fi
 }
 
+# 从 ai_coding.txt 读取首段文本（空白行分隔）
+read_first_ai_coding_paragraph() {
+    local ai_coding_file="ai_coding.txt"
+
+    if [ ! -f "$ai_coding_file" ]; then
+        return 1
+    fi
+
+    AI_CODING_FIRST_PARAGRAPH=$(awk '
+        BEGIN { paragraph = ""; printed = 0 }
+        {
+            if ($0 ~ /^[[:space:]]*$/) {
+                if (paragraph != "") {
+                    printed = 1
+                    print paragraph
+                    exit
+                }
+            } else {
+                if (paragraph == "") {
+                    paragraph = $0
+                } else {
+                    paragraph = paragraph "\n" $0
+                }
+            }
+        }
+        END {
+            if (!printed && paragraph != "") {
+                print paragraph
+            }
+        }
+    ' "$ai_coding_file")
+
+    [ -n "$AI_CODING_FIRST_PARAGRAPH" ]
+}
+
+# 从首段中拆出标题和正文
+parse_ai_coding_release_note() {
+    AI_CODING_NOTE_TITLE=""
+    AI_CODING_NOTE_BODY=""
+
+    if [ -z "$AI_CODING_FIRST_PARAGRAPH" ]; then
+        return 1
+    fi
+
+    AI_CODING_NOTE_TITLE=$(printf '%s\n' "$AI_CODING_FIRST_PARAGRAPH" | head -n 1 | sed 's/^#\{1,6\}[[:space:]]*//')
+    AI_CODING_NOTE_BODY=$(printf '%s\n' "$AI_CODING_FIRST_PARAGRAPH" | tail -n +2)
+
+    if [ -z "$AI_CODING_NOTE_BODY" ]; then
+        AI_CODING_NOTE_BODY="$AI_CODING_NOTE_TITLE"
+    fi
+
+    [ -n "$AI_CODING_NOTE_BODY" ]
+}
+
 # 显示帮助
 if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
     show_help
@@ -300,20 +354,12 @@ echo ""
 # 步骤 5: 创建版本
 echo -e "${BLUE}[5/6] 创建版本...${NC}"
 
-# 从 RELEASE_NOTES.md 读取当前版本的更新日志
+# 从 ai_coding.txt 读取首段作为更新日志
 UPDATE_LOG=""
 RELEASE_NOTES_FILE="app/src/main/assets/RELEASE_NOTES.md"
 
-if [ -f "$RELEASE_NOTES_FILE" ]; then
-    # 提取当前版本的更新日志（从版本标题到下一个 --- 或文件结束）
-    UPDATE_LOG=$(awk -v ver="v$VERSION_NAME" '
-        BEGIN { found=0; content="" }
-        $0 ~ "^## " ver { found=1; next }
-        found && /^---$/ { found=0 }
-        found && /^## v[0-9]/ { found=0 }
-        found { content = content $0 "\n" }
-        END { print content }
-    ' "$RELEASE_NOTES_FILE" | sed '/^$/N;/^\n$/D')
+if read_first_ai_coding_paragraph && parse_ai_coding_release_note; then
+    UPDATE_LOG="$AI_CODING_NOTE_BODY"
 fi
 
 # 如果没有找到更新日志，使用默认内容
@@ -356,8 +402,17 @@ COMMIT_DATE=$(date +%Y-%m-%d)
 RELEASE_NOTES_FILE="app/src/main/assets/RELEASE_NOTES.md"
 
 if [ -f "$RELEASE_NOTES_FILE" ]; then
+    RELEASE_TITLE="$COMMIT_MESSAGE"
+    RELEASE_BODY="$UPDATE_LOG"
+
+    if [ -n "$AI_CODING_NOTE_TITLE" ]; then
+        RELEASE_TITLE="$AI_CODING_NOTE_TITLE"
+    fi
+
     # 创建新的版本记录
-    NEW_VERSION_ENTRY="## v$VERSION_NAME ($COMMIT_DATE) - $COMMIT_MESSAGE
+    NEW_VERSION_ENTRY="## v$VERSION_NAME ($COMMIT_DATE) - $RELEASE_TITLE
+
+$RELEASE_BODY
 
 ### 构建信息
 - **Commit ID**: \`$COMMIT_ID\`

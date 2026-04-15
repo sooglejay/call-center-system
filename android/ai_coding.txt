@@ -1,3 +1,16 @@
+## 2026-04-15 release.sh 更新日志来源优化
+- 本次完成：优化 `release.sh` 的版本更新日志生成逻辑。
+- 新规则：发布时不再从 `RELEASE_NOTES.md` 回读更新日志，而是直接读取 `ai_coding.txt` 的首段文本，并以空白行作为段落分隔。
+- 生成方式：首段第一行作为版本记录标题，其余内容作为更新日志正文，同时写入版本创建接口和 `RELEASE_NOTES.md`。
+- 验证结果：已执行 `bash -n /Users/bytedance/del/call-center-system/android/release.sh`，并验证首段提取逻辑输出正确。
+
+## 2026-04-15 Web 导入映射增强
+- 本次完成：增强 Web 后台客户导入的列识别、字段映射和映射后预览能力。
+- 服务端：`data-import.controller.ts` 新增列画像扫描、异常列头兜底命名、目标字段多源拼接、分隔符/括号包裹/自定义模板格式化，并兼容旧版单列映射参数。
+- 前端：`CustomerManagement.tsx` 新增“源列字段名”编辑区，可对每个源列自定义显示名；数据映射支持一个目标字段选择多个源列，并配置分隔符、拼接方式和自定义模板。
+- 预览增强：在“数据预览（前5行）”下新增“映射后的数据预览”，按当前映射配置实时展示最终结果。
+- 验证结果：已执行 `pnpm -C /Users/bytedance/del/call-center-system/server build` 和 `pnpm -C /Users/bytedance/del/call-center-system/client build`，均通过。
+
 ## 2026-04-15 悬浮窗客户信息格式优化
 - 本次完成：优化 Android 悬浮弹窗中当前通话客户信息的展示格式。
 - 展示规则：第一行显示中文名 + 英文名（从 `customer.name` 中按中英文字符自动拆分组合）；第二行显示电话号码；第三行显示邮箱地址。

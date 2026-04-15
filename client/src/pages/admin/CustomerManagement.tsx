@@ -37,12 +37,21 @@ interface CompositeField {
 interface CsvPreviewData {
   columns: string[];
   preview: Record<string, string>[];
+  column_profiles?: { key: string; display_name: string; detected_type: string; samples: string[] }[];
   total_rows: number;
   system_fields: SystemField[];
   suggestions: Record<string, string>;
   has_required_fields: boolean;
   composite_fields?: Record<string, CompositeField>; // 复合字段信息
+  mapped_preview?: Record<string, string>[];
 }
+
+type FieldMappingConfig = {
+  sourceColumns: string[];
+  separator?: string;
+  format?: 'join' | 'wrap_rest_parentheses' | 'custom_template';
+  template?: string;
+};
 
 // 获取姓氏首字母
 const getFirstLetter = (name: string): string => {
@@ -74,6 +83,67 @@ const getFirstLetter = (name: string): string => {
     return pinyinMap[firstChar] || '#';
   }
   return firstChar.toUpperCase();
+};
+
+const DEFAULT_MAPPING_CONFIG: FieldMappingConfig = {
+  sourceColumns: [],
+  separator: '',
+  format: 'join',
+  template: ''
+};
+
+const normalizeFieldMapping = (value?: Partial<FieldMappingConfig> | string): FieldMappingConfig => {
+  if (!value) {
+    return { ...DEFAULT_MAPPING_CONFIG };
+  }
+
+  if (typeof value === 'string') {
+    return {
+      sourceColumns: value ? [value] : [],
+      separator: '',
+      format: 'join',
+      template: ''
+    };
+  }
+
+  return {
+    sourceColumns: Array.isArray(value.sourceColumns) ? value.sourceColumns : [],
+    separator: value.separator ?? '',
+    format: value.format ?? 'join',
+    template: value.template ?? ''
+  };
+};
+
+const resolvePreviewSourceValue = (
+  row: Record<string, string>,
+  sourceColumn: string,
+  compositeFields?: Record<string, CompositeField>
+) => {
+  const match = sourceColumn.match(/^(.+)_part_(\d+)$/);
+  if (match && compositeFields?.[match[1]]) {
+    const [, parentColumn, partIndexText] = match;
+    const separator = compositeFields[parentColumn].separator || ',';
+    const partIndex = parseInt(partIndexText, 10) - 1;
+    return (row[parentColumn] || '').split(separator).map(part => part.trim())[partIndex] || '';
+  }
+
+  return row[sourceColumn] || '';
+};
+
+const formatMappedValue = (values: string[], config: FieldMappingConfig) => {
+  const normalizedValues = values.map(value => value?.trim()).filter(Boolean) as string[];
+  if (normalizedValues.length === 0) return '';
+
+  if (config.format === 'custom_template' && config.template) {
+    return config.template.replace(/\{(\d+)\}/g, (_, indexText) => normalizedValues[Number(indexText)] || '').trim();
+  }
+
+  if (config.format === 'wrap_rest_parentheses' && normalizedValues.length > 1) {
+    const [first, ...rest] = normalizedValues;
+    return `${first}(${rest.join(config.separator ?? ',')})`;
+  }
+
+  return normalizedValues.join(config.separator ?? '');
 };
 
 export default function CustomerManagement() {
@@ -117,8 +187,44 @@ export default function CustomerManagement() {
   const [previewData, setPreviewData] = useState<CsvPreviewData | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [importLoading, setImportLoading] = useState(false);
-  const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
+  const [columnMapping, setColumnMapping] = useState<Record<string, FieldMappingConfig>>({});
+  const [columnAliases, setColumnAliases] = useState<Record<string, string>>({});
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+
+  const previewColumnProfiles = useMemo(() => {
+    if (!previewData) return [] as { key: string; display_name: string; detected_type: string; samples: string[] }[];
+
+    return previewData.columns.map((column, index) => {
+      const matchedProfile = previewData.column_profiles?.find(profile => profile.key === column);
+      return matchedProfile || {
+        key: column,
+        display_name: column || `列${index + 1}`,
+        detected_type: 'field',
+        samples: previewData.preview.slice(0, 5).map(row => row[column]).filter(Boolean)
+      };
+    });
+  }, [previewData]);
+
+  const mappedPreviewRows = useMemo(() => {
+    if (!previewData) return [] as Record<string, string>[];
+
+    return previewData.preview.slice(0, 5).map(row => {
+      const mappedRow: Record<string, string> = {};
+      previewData.system_fields.forEach(field => {
+        const config = normalizeFieldMapping(columnMapping[field.key]);
+        const values = config.sourceColumns.map(sourceColumn =>
+          resolvePreviewSourceValue(row, sourceColumn, previewData.composite_fields)
+        );
+        mappedRow[field.key] = formatMappedValue(values, config);
+      });
+      return mappedRow;
+    });
+  }, [previewData, columnMapping]);
+
+  const mappedPreviewColumns = useMemo(() => {
+    if (!previewData) return [] as SystemField[];
+    return previewData.system_fields.filter(field => normalizeFieldMapping(columnMapping[field.key]).sourceColumns.length > 0);
+  }, [previewData, columnMapping]);
 
   useEffect(() => {
     fetchCustomers();
@@ -273,12 +379,23 @@ export default function CustomerManagement() {
       const response = await dataImportApi.previewCsv(formData);
       const data = response.data as CsvPreviewData;
       setPreviewData(data);
+
+      const initialAliases: Record<string, string> = {};
+      (data.column_profiles || []).forEach(profile => {
+        initialAliases[profile.key] = profile.display_name;
+      });
+      data.columns.forEach(column => {
+        if (!initialAliases[column]) {
+          initialAliases[column] = column;
+        }
+      });
+      setColumnAliases(initialAliases);
       
       // 初始化列映射（使用建议值）
-      const initialMapping: Record<string, string> = {};
+      const initialMapping: Record<string, FieldMappingConfig> = {};
       data.system_fields.forEach(field => {
         if (data.suggestions[field.key]) {
-          initialMapping[field.key] = data.suggestions[field.key];
+          initialMapping[field.key] = normalizeFieldMapping(data.suggestions[field.key]);
         }
       });
       setColumnMapping(initialMapping);
@@ -301,7 +418,7 @@ export default function CustomerManagement() {
     }
     
     // 验证必填字段
-    if (!columnMapping.name || !columnMapping.phone) {
+    if (normalizeFieldMapping(columnMapping.name).sourceColumns.length === 0 || normalizeFieldMapping(columnMapping.phone).sourceColumns.length === 0) {
       message.error('姓名和电话是必填字段，请确保已映射');
       return;
     }
@@ -332,6 +449,7 @@ export default function CustomerManagement() {
       setPreviewModalVisible(false);
       setPendingFile(null);
       setColumnMapping({});
+      setColumnAliases({});
       setSelectedAgent(undefined);
       setSelectedImportTag('');
       
@@ -1198,6 +1316,7 @@ export default function CustomerManagement() {
           setPreviewModalVisible(false);
           setPendingFile(null);
           setColumnMapping({});
+          setColumnAliases({});
           setSelectedImportTag('');
         }}
         footer={[
@@ -1209,7 +1328,7 @@ export default function CustomerManagement() {
             type="primary" 
             loading={importLoading}
             onClick={handleConfirmImport}
-            disabled={!columnMapping.name || !columnMapping.phone}
+            disabled={normalizeFieldMapping(columnMapping.name).sourceColumns.length === 0 || normalizeFieldMapping(columnMapping.phone).sourceColumns.length === 0}
           >
             开始导入
           </Button>,
@@ -1221,11 +1340,50 @@ export default function CustomerManagement() {
             <>
               <Alert
                 message={`检测到 ${previewData.total_rows} 条数据，共 ${previewData.columns.length} 列`}
+                description="支持自定义源列名称、一个目标字段映射多个源列，并实时预览映射后的最终结果。"
                 type="info"
                 showIcon
                 style={{ marginBottom: 16 }}
               />
               
+              <Card title="源列字段名" size="small" style={{ marginBottom: 16 }}>
+                <Alert
+                  message="可按列内容为源列自定义字段名"
+                  description="当文件列头识别异常（例如显示 ??）时，可在这里修改列名；后续“选择对应的列”会使用这里的名称展示。"
+                  type="info"
+                  showIcon
+                  style={{ marginBottom: 12 }}
+                />
+                <Row gutter={[16, 12]}>
+                  {previewColumnProfiles.map(profile => (
+                    <Col span={8} key={profile.key}>
+                      <div style={{ marginBottom: 4 }}>
+                        <Text strong>{profile.key || '未识别列名'}</Text>
+                        {profile.detected_type !== 'field' && (
+                          <Tag color="processing" style={{ marginLeft: 6 }}>{profile.detected_type}</Tag>
+                        )}
+                      </div>
+                      <Input
+                        value={columnAliases[profile.key] || ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setColumnAliases(prev => ({
+                            ...prev,
+                            [profile.key]: value
+                          }));
+                        }}
+                        placeholder="输入自定义列字段名"
+                      />
+                      {profile.samples.length > 0 && (
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          样例：{profile.samples.slice(0, 2).join(' / ')}
+                        </Text>
+                      )}
+                    </Col>
+                  ))}
+                </Row>
+              </Card>
+
               <Card title="列映射配置" size="small" style={{ marginBottom: 16 }}>
                 {/* 复合字段提示 */}
                 {previewData.composite_fields && Object.keys(previewData.composite_fields).length > 0 && (
@@ -1254,15 +1412,19 @@ export default function CustomerManagement() {
                 
                 <Row gutter={[16, 12]}>
                   {previewData.system_fields.map(field => {
-                    const matched = previewData.columns.find(col => 
-                      col.toLowerCase() === field.key.toLowerCase() ||
-                      col.includes(field.label) ||
-                      col.toLowerCase().includes(field.key.toLowerCase())
+                    const matched = previewColumnProfiles.find(profile => 
+                      profile.display_name.toLowerCase() === field.key.toLowerCase() ||
+                      profile.display_name.includes(field.label) ||
+                      profile.display_name.toLowerCase().includes(field.key.toLowerCase())
                     );
+                    const mappingConfig = normalizeFieldMapping(columnMapping[field.key]);
                     
                     // 构建可选项：普通列 + 复合字段的子字段
                     const options: { value: string; label: string; isComposite?: boolean }[] = [
-                      ...previewData.columns.map(col => ({ value: col, label: col })),
+                      ...previewColumnProfiles.map(profile => ({
+                        value: profile.key,
+                        label: `${columnAliases[profile.key] || profile.display_name}${profile.key !== (columnAliases[profile.key] || profile.display_name) ? `（原列：${profile.key}）` : ''}`
+                      })),
                     ];
                     
                     // 添加复合字段的子字段
@@ -1286,12 +1448,16 @@ export default function CustomerManagement() {
                         </div>
                         <Select
                           style={{ width: '100%' }}
-                          placeholder={`选择对应的列`}
-                          value={columnMapping[field.key] || undefined}
+                          mode="multiple"
+                          placeholder={`选择对应的列，可多选`}
+                          value={mappingConfig.sourceColumns.length > 0 ? mappingConfig.sourceColumns : undefined}
                           onChange={(value) => {
                             setColumnMapping(prev => ({
                               ...prev,
-                              [field.key]: value
+                              [field.key]: {
+                                ...normalizeFieldMapping(prev[field.key]),
+                                sourceColumns: value
+                              }
                             }));
                           }}
                           allowClear
@@ -1313,10 +1479,67 @@ export default function CustomerManagement() {
                             </Select.Option>
                           ))}
                         </Select>
-                        {matched && !columnMapping[field.key] && (
+                        {matched && mappingConfig.sourceColumns.length === 0 && (
                           <Text type="secondary" style={{ fontSize: 12 }}>
-                            建议: {matched}
+                            建议: {columnAliases[matched.key] || matched.display_name}
                           </Text>
+                        )}
+                        {mappingConfig.sourceColumns.length > 1 && (
+                          <Space direction="vertical" style={{ width: '100%', marginTop: 8 }} size={6}>
+                            <Select
+                              style={{ width: '100%' }}
+                              value={mappingConfig.separator ?? ''}
+                              onChange={(value) => {
+                                setColumnMapping(prev => ({
+                                  ...prev,
+                                  [field.key]: {
+                                    ...normalizeFieldMapping(prev[field.key]),
+                                    separator: value
+                                  }
+                                }));
+                              }}
+                              options={[
+                                { value: '', label: '无分隔符' },
+                                { value: ' ', label: '空格' },
+                                { value: '-', label: '-' },
+                                { value: ',', label: ',' },
+                              ]}
+                            />
+                            <Select
+                              style={{ width: '100%' }}
+                              value={mappingConfig.format ?? 'join'}
+                              onChange={(value) => {
+                                setColumnMapping(prev => ({
+                                  ...prev,
+                                  [field.key]: {
+                                    ...normalizeFieldMapping(prev[field.key]),
+                                    format: value
+                                  }
+                                }));
+                              }}
+                              options={[
+                                { value: 'join', label: '直接拼接' },
+                                { value: 'wrap_rest_parentheses', label: '首字段 + 括号包裹其余字段' },
+                                { value: 'custom_template', label: '自定义模板' },
+                              ]}
+                            />
+                            {mappingConfig.format === 'custom_template' && (
+                              <Input
+                                value={mappingConfig.template}
+                                placeholder="例如：{0}({1},{2})"
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  setColumnMapping(prev => ({
+                                    ...prev,
+                                    [field.key]: {
+                                      ...normalizeFieldMapping(prev[field.key]),
+                                      template: value
+                                    }
+                                  }));
+                                }}
+                              />
+                            )}
+                          </Space>
                         )}
                       </Col>
                     );
@@ -1330,15 +1553,32 @@ export default function CustomerManagement() {
                   columns={previewData.columns.map(col => ({
                     title: (
                       <span>
-                        {col}
-                        {columnMapping.name === col && <Tag color="blue" style={{ marginLeft: 4 }}>姓名</Tag>}
-                        {columnMapping.phone === col && <Tag color="green" style={{ marginLeft: 4 }}>电话</Tag>}
+                        {columnAliases[col] || col}
+                        {normalizeFieldMapping(columnMapping.name).sourceColumns.includes(col) && <Tag color="blue" style={{ marginLeft: 4 }}>姓名</Tag>}
+                        {normalizeFieldMapping(columnMapping.phone).sourceColumns.includes(col) && <Tag color="green" style={{ marginLeft: 4 }}>电话</Tag>}
                       </span>
                     ),
                     dataIndex: col,
                     key: col,
                     ellipsis: true,
                     width: 150,
+                  }))}
+                  pagination={false}
+                  scroll={{ x: true }}
+                  size="small"
+                  rowKey={(_, index) => index?.toString() || ''}
+                />
+              </Card>
+
+              <Card title="映射后的数据预览" size="small" style={{ marginTop: 16 }}>
+                <Table
+                  dataSource={mappedPreviewRows}
+                  columns={(mappedPreviewColumns.length > 0 ? mappedPreviewColumns : previewData.system_fields).map(field => ({
+                    title: field.label,
+                    dataIndex: field.key,
+                    key: field.key,
+                    ellipsis: true,
+                    width: 160,
                   }))}
                   pagination={false}
                   scroll={{ x: true }}

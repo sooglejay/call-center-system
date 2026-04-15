@@ -31,6 +31,20 @@ export const SYSTEM_FIELDS = [
   { key: 'priority', label: '优先级', required: false },
 ] as const;
 
+type ColumnProfile = {
+  key: string;
+  display_name: string;
+  detected_type: string;
+  samples: string[];
+};
+
+type FieldMappingConfig = {
+  sourceColumns: string[];
+  separator?: string;
+  format?: 'join' | 'wrap_rest_parentheses' | 'custom_template';
+  template?: string;
+};
+
 // CSV 解析函数 - 返回列名和数据
 const parseCSVWithColumns = (buffer: Buffer): Promise<{ columns: string[], data: any[] }> => {
   return new Promise((resolve, reject) => {
@@ -131,6 +145,149 @@ const identifySubFieldType = (samples: string[]): string => {
   return 'field';
 };
 
+const isInvalidColumnHeader = (header: string) => {
+  const normalized = header.trim();
+  return (
+    !normalized ||
+    /^\?+$/.test(normalized) ||
+    /^unknown$/i.test(normalized) ||
+    /^unnamed[:_\s-]*\d*$/i.test(normalized) ||
+    /^column[_\s-]*\d*$/i.test(normalized) ||
+    /^列[_\s-]*\d*$/i.test(normalized)
+  );
+};
+
+const getDetectedLabel = (fieldType: string, index?: number): string => {
+  const labels: Record<string, string> = {
+    name: '姓名列',
+    phone: '电话列',
+    email: '邮箱列',
+    company: '公司列',
+    address: '地址列',
+    notes: '备注列',
+    tag: '标签列',
+    status: '状态列',
+    priority: '优先级列',
+    name_en: '英文名列',
+    field: '自定义列'
+  };
+
+  if (fieldType === 'field' && typeof index === 'number') {
+    return `自定义列${index + 1}`;
+  }
+
+  return labels[fieldType] || '自定义列';
+};
+
+const buildColumnProfiles = (columns: string[], data: any[]): ColumnProfile[] => {
+  return columns.map((column, index) => {
+    const samples = data
+      .slice(0, 5)
+      .map(row => String(row[column] || '').trim())
+      .filter(Boolean);
+
+    const detectedType = identifySubFieldType(samples);
+    const displayName = isInvalidColumnHeader(column)
+      ? getDetectedLabel(detectedType, index)
+      : column;
+
+    return {
+      key: column,
+      display_name: displayName,
+      detected_type: detectedType,
+      samples
+    };
+  });
+};
+
+const normalizeFieldMapping = (mappingValue: unknown): FieldMappingConfig => {
+  if (typeof mappingValue === 'string') {
+    return { sourceColumns: [mappingValue], separator: '', format: 'join' };
+  }
+
+  if (Array.isArray(mappingValue)) {
+    return {
+      sourceColumns: mappingValue.map(item => String(item)).filter(Boolean),
+      separator: '',
+      format: 'join'
+    };
+  }
+
+  if (mappingValue && typeof mappingValue === 'object') {
+    const config = mappingValue as Record<string, unknown>;
+    const sourceColumns = Array.isArray(config.sourceColumns)
+      ? config.sourceColumns.map(item => String(item)).filter(Boolean)
+      : typeof config.sourceColumn === 'string'
+        ? [config.sourceColumn]
+        : [];
+
+    return {
+      sourceColumns,
+      separator: typeof config.separator === 'string' ? config.separator : '',
+      format: config.format === 'wrap_rest_parentheses' || config.format === 'custom_template' ? config.format : 'join',
+      template: typeof config.template === 'string' ? config.template : ''
+    };
+  }
+
+  return { sourceColumns: [], separator: '', format: 'join' };
+};
+
+const resolveSourceValue = (
+  record: Record<string, any>,
+  sourceColumn: string,
+  compositeFields: Record<string, any> = {}
+) => {
+  const compositeMatch = sourceColumn.match(/^(.+)_part_(\d+)$/);
+  if (compositeMatch && compositeFields[compositeMatch[1]]) {
+    const [, parentCol, partIndexText] = compositeMatch;
+    const parentValue = String(record[parentCol] || '');
+    const separator = compositeFields[parentCol].separator || ',';
+    const partIndex = parseInt(partIndexText, 10) - 1;
+    return parentValue.split(separator).map((part: string) => part.trim())[partIndex] || '';
+  }
+
+  return String(record[sourceColumn] || '').trim();
+};
+
+const formatMappedValue = (values: string[], config: FieldMappingConfig) => {
+  const normalizedValues = values.filter(value => value && value.trim());
+  if (normalizedValues.length === 0) {
+    return '';
+  }
+
+  if (config.format === 'custom_template' && config.template) {
+    return config.template.replace(/\{(\d+)\}/g, (_, indexText) => {
+      const index = parseInt(indexText, 10);
+      return normalizedValues[index] || '';
+    }).trim();
+  }
+
+  if (config.format === 'wrap_rest_parentheses' && normalizedValues.length > 1) {
+    const [first, ...rest] = normalizedValues;
+    return `${first}(${rest.join(config.separator ?? ',')})`;
+  }
+
+  return normalizedValues.join(config.separator ?? '');
+};
+
+const buildMappedRecord = (
+  record: Record<string, any>,
+  mapping: Record<string, unknown>,
+  compositeFields: Record<string, any> = {}
+) => {
+  const mappedRecord: Record<string, string> = {};
+
+  for (const field of SYSTEM_FIELDS) {
+    const config = normalizeFieldMapping(mapping[field.key]);
+    const sourceValues = config.sourceColumns.map(sourceColumn =>
+      resolveSourceValue(record, sourceColumn, compositeFields)
+    );
+    mappedRecord[field.key] = formatMappedValue(sourceValues, config);
+  }
+
+  return mappedRecord;
+};
+
 // 预览 CSV 文件 - 返回列名和前几行数据
 export const previewCSV = async (req: any, res: Response) => {
   try {
@@ -151,6 +308,8 @@ export const previewCSV = async (req: any, res: Response) => {
     
     console.log(`[CSV预览] 解析到 ${columns.length} 列, ${data.length} 行`);
     
+    const columnProfiles = buildColumnProfiles(columns, data);
+
     // 检测复合字段
     const compositeFields: Record<string, any> = {};
     
@@ -184,15 +343,18 @@ export const previewCSV = async (req: any, res: Response) => {
     console.log(`[CSV预览] 检测到 ${Object.keys(compositeFields).length} 个复合字段`);
     
     // 智能匹配建议（包含复合字段的子字段）
-    const suggestions = suggestColumnMapping(columns, compositeFields);
+    const suggestions = suggestColumnMapping(columns, compositeFields, columnProfiles);
+    const mappedPreview = data.slice(0, 5).map(row => buildMappedRecord(row, suggestions, compositeFields));
     
     res.json({
       columns,                          // CSV 文件的列名
       preview: data.slice(0, 10),       // 前10行预览数据
+      column_profiles: columnProfiles,
       total_rows: data.length,          // 总行数
       system_fields: SYSTEM_FIELDS,     // 系统支持的字段
       suggestions,                      // 智能匹配建议
       composite_fields: compositeFields, // 复合字段信息
+      mapped_preview: mappedPreview,
       has_required_fields: columns.some(c => 
         suggestions.name || 
         c.toLowerCase().includes('name') || 
@@ -227,8 +389,13 @@ const getSubFieldLabel = (fieldType: string, index: number): string => {
 };
 
 // 智能列匹配建议（支持复合字段）
-const suggestColumnMapping = (csvColumns: string[], compositeFields: Record<string, any> = {}): Record<string, string> => {
+const suggestColumnMapping = (
+  csvColumns: string[],
+  compositeFields: Record<string, any> = {},
+  columnProfiles: ColumnProfile[] = []
+): Record<string, string> => {
   const mapping: Record<string, string> = {};
+  const columnProfileMap = new Map(columnProfiles.map(profile => [profile.key, profile]));
   
   const patterns: Record<string, RegExp[]> = {
     name: [
@@ -311,9 +478,19 @@ const suggestColumnMapping = (csvColumns: string[], compositeFields: Record<stri
   for (const csvCol of csvColumns) {
     // 跳过复合字段
     if (compositeFields[csvCol]) continue;
+
+    const profile = columnProfileMap.get(csvCol);
+    if (profile) {
+      if (profile.detected_type === 'name' && !mapping.name) mapping.name = csvCol;
+      if (profile.detected_type === 'phone' && !mapping.phone) mapping.phone = csvCol;
+      if (profile.detected_type === 'email' && !mapping.email) mapping.email = csvCol;
+      if (profile.detected_type === 'company' && !mapping.company) mapping.company = csvCol;
+      if (profile.detected_type === 'address' && !mapping.address) mapping.address = csvCol;
+    }
     
     for (const [systemField, regexList] of Object.entries(patterns)) {
-      if (regexList.some(regex => regex.test(csvCol))) {
+      const compareText = `${csvCol} ${profile?.display_name || ''}`;
+      if (regexList.some(regex => regex.test(compareText))) {
         if (!mapping[systemField]) {
           mapping[systemField] = csvCol;
         }
@@ -395,8 +572,11 @@ export const importWithMapping = async (req: any, res: Response) => {
       return res.status(400).json({ error: '请提供列映射关系' });
     }
     
+    const normalizedNameMapping = normalizeFieldMapping(column_mapping.name);
+    const normalizedPhoneMapping = normalizeFieldMapping(column_mapping.phone);
+
     // 检查必填字段
-    if (!column_mapping.name || !column_mapping.phone) {
+    if (normalizedNameMapping.sourceColumns.length === 0 || normalizedPhoneMapping.sourceColumns.length === 0) {
       return res.status(400).json({ error: '姓名和电话是必填字段，请确保已映射' });
     }
     
@@ -429,31 +609,7 @@ export const importWithMapping = async (req: any, res: Response) => {
       const record = data[i];
       try {
         // 根据映射提取数据
-        const customerData: any = {};
-        
-        for (const [systemField, sourceField] of Object.entries(column_mapping)) {
-          if (!sourceField) continue;
-          
-          // 检查是否是复合字段的子字段
-          if (typeof sourceField === 'string' && sourceField.includes('_part_')) {
-            const match = sourceField.match(/^(.+)_part_(\d+)$/);
-            if (match && composite_fields[match[1]]) {
-              const parentCol = match[1];
-              const partIndex = parseInt(match[2]) - 1;
-              const separator = composite_fields[parentCol].separator || ',';
-              
-              const parentValue = record[parentCol] || '';
-              const parts = parentValue.split(separator).map((p: string) => p.trim());
-              
-              if (parts[partIndex]) {
-                customerData[systemField] = parts[partIndex];
-              }
-            }
-          } else {
-            // 普通字段
-            customerData[systemField] = record[sourceField as string] || '';
-          }
-        }
+        const customerData: any = buildMappedRecord(record, column_mapping, composite_fields);
         
         const name = customerData.name || '';
         const phone = customerData.phone || '';
