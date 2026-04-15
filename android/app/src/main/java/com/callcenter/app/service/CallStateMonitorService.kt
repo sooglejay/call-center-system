@@ -43,10 +43,13 @@ class CallStateMonitorService : Service() {
         const val EXTRA_DELAY_MS = "extra_delay_ms"
 
         // 默认延迟时间（毫秒）- 通话接通后等待一段时间再开启免提
-        const val DEFAULT_SPEAKER_DELAY = 800L
+        const val DEFAULT_SPEAKER_DELAY = 600L
 
         // 最大监听时长（毫秒）- 防止服务一直运行
-        const val MAX_MONITOR_DURATION = 60000L
+        const val MAX_MONITOR_DURATION = 120000L
+
+        // 持续监控检查间隔（毫秒）- 持续检查扬声器状态
+        const val CONTINUOUS_CHECK_INTERVAL = 300L
 
         /**
          * 启动通话监听服务
@@ -91,6 +94,11 @@ class CallStateMonitorService : Service() {
     private var lastCallState = TelephonyManager.CALL_STATE_IDLE
     private var callConnected = false
     private var speakerRetryJob: Job? = null
+
+    // 持续监控任务 - 定期检查扬声器状态
+    private var continuousMonitorJob: Job? = null
+    // 上次确认扬声器开启的时间
+    private var lastSpeakerEnabledTime = 0L
 
     private val serviceJob = Job()
     private val serviceScope = CoroutineScope(Dispatchers.Main + serviceJob)
@@ -183,6 +191,8 @@ class CallStateMonitorService : Service() {
         handler.removeCallbacks(stopServiceRunnable)
         speakerRetryJob?.cancel()
         speakerRetryJob = null
+        continuousMonitorJob?.cancel()
+        continuousMonitorJob = null
 
         Log.d(TAG, "停止监听通话状态")
     }
@@ -287,6 +297,9 @@ class CallStateMonitorService : Service() {
                 if (lastCallState != TelephonyManager.CALL_STATE_IDLE) {
                     Log.d(TAG, "通话结束")
                     callConnected = false
+                    // 停止持续监控
+                    continuousMonitorJob?.cancel()
+                    continuousMonitorJob = null
                     // 延迟停止服务
                     handler.postDelayed({ stopSelf() }, 1000)
                 }
@@ -309,6 +322,11 @@ class CallStateMonitorService : Service() {
                         callConnected = true
                         enableSpeakerWithDelay()
                     }
+                }
+
+                // 启动持续监控，防止系统重置扬声器状态
+                if (autoSpeakerEnabled && continuousMonitorJob?.isActive != true) {
+                    startContinuousMonitoring()
                 }
             }
         }
@@ -425,6 +443,50 @@ class CallStateMonitorService : Service() {
             Log.d(TAG, "[$reason] AudioSystem.setForceUse(FOR_COMMUNICATION/FOR_MEDIA, FORCE_SPEAKER) 已执行")
         } catch (e: Throwable) {
             Log.w(TAG, "[$reason] AudioSystem.setForceUse 调用失败: ${e.message}")
+        }
+    }
+
+    /**
+     * 启动持续监控
+     * 在通话期间定期检查扬声器状态，防止系统重置
+     */
+    private fun startContinuousMonitoring() {
+        continuousMonitorJob?.cancel()
+        continuousMonitorJob = serviceScope.launch {
+            var checkCount = 0
+            while (isMonitoring && lastCallState == TelephonyManager.CALL_STATE_OFFHOOK) {
+                try {
+                    checkCount++
+
+                    // 检查扬声器状态
+                    audioManager?.let { audio ->
+                        @Suppress("DEPRECATION")
+                        val isSpeakerOn = audio.isSpeakerphoneOn
+
+                        // 如果扬声器未开启，立即重新开启
+                        if (!isSpeakerOn) {
+                            Log.w(TAG, "[ContinuousMonitor#$checkCount] 检测到扬声器被关闭，重新开启")
+                            enableSpeakerphone("continuous_monitor_recover")
+                        } else {
+                            // 扬声器已开启，记录时间
+                            lastSpeakerEnabledTime = System.currentTimeMillis()
+                        }
+                    }
+
+                    // 每隔一定时间强制确认一次（即使状态显示开启）
+                    if (checkCount % 5 == 0) {
+                        Log.d(TAG, "[ContinuousMonitor#$checkCount] 强制确认扬声器状态")
+                        enableSpeakerphone("continuous_monitor_confirm")
+                    }
+
+                    // 等待下一次检查
+                    delay(CONTINUOUS_CHECK_INTERVAL)
+
+                } catch (e: Exception) {
+                    Log.e(TAG, "持续监控出错: ${e.message}")
+                }
+            }
+            Log.d(TAG, "持续监控结束，共检查 $checkCount 次")
         }
     }
 

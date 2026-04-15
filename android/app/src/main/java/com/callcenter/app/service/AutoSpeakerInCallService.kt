@@ -21,7 +21,10 @@ class AutoSpeakerInCallService : InCallService() {
 
     companion object {
         private const val TAG = "AutoSpeakerInCall"
-        private val ROUTE_RETRY_DELAYS = listOf(0L, 150L, 500L, 1000L, 2000L, 3500L)
+        // 增强重试频率
+        private val ROUTE_RETRY_DELAYS = listOf(
+            0L, 100L, 250L, 450L, 700L, 1000L, 1500L, 2200L, 3000L, 4000L, 5500L, 7500L, 10000L
+        )
     }
 
     private val handler = Handler(Looper.getMainLooper())

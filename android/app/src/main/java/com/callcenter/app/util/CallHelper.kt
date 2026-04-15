@@ -30,7 +30,11 @@ class CallHelper @Inject constructor(
 
     companion object {
         private const val TAG = "CallHelper"
-        private val IMMEDIATE_SPEAKER_RETRY_DELAYS = listOf(0L, 200L, 600L, 1200L, 2200L, 3500L, 5000L, 8000L)
+        // 增强重试频率：更密集的前期重试 + 持续的后期重试
+        private val IMMEDIATE_SPEAKER_RETRY_DELAYS = listOf(
+            0L, 100L, 250L, 450L, 700L, 1000L, 1400L, 1900L,
+            2500L, 3200L, 4000L, 5000L, 6000L, 7500L, 9000L, 11000L, 13000L
+        )
     }
 
     /**
