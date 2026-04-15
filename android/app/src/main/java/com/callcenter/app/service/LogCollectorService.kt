@@ -272,6 +272,58 @@ class LogCollectorService : android.app.Service() {
     }
 
     /**
+     * 导出日志到文件（同步版本，供外部调用）
+     */
+    suspend fun exportLogsSync(outputPath: String): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            Log.d(TAG, "导出日志到: $outputPath")
+
+            val logs = synchronized(logCache) {
+                logCache.values.toList()
+            }
+
+            if (logs.isEmpty()) {
+                Log.w(TAG, "没有日志可导出")
+                return@withContext Result.failure(Exception("没有日志可导出"))
+            }
+
+            // 写入文件
+            val file = java.io.File(outputPath)
+            file.parentFile?.mkdirs()
+
+            java.io.FileWriter(file).use { writer ->
+                // 写入文件头
+                writer.write("# Logcat 日志导出\n")
+                writer.write("# 导出时间: ${dateFormat.format(Date())}\n")
+                writer.write("# 日志数量: ${logs.size}\n")
+                writer.write("# 关键字: ${LOG_KEYWORDS.joinToString(", ")}\n")
+                writer.write("# " + "=".repeat(80) + "\n\n")
+
+                // 写入日志
+                logs.forEach { log ->
+                    writer.write(log)
+                    writer.write("\n")
+                }
+            }
+
+            Log.d(TAG, "日志导出成功: ${file.absolutePath} (${logs.size} 条)")
+            Result.success(file.absolutePath)
+        } catch (e: Exception) {
+            Log.e(TAG, "导出日志失败: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * 获取所有缓存的日志
+     */
+    fun getCachedLogs(): List<String> {
+        return synchronized(logCache) {
+            logCache.values.toList()
+        }
+    }
+
+    /**
      * 获取缓存的日志数量
      */
     fun getLogCount(): Int {
@@ -289,4 +341,9 @@ class LogCollectorService : android.app.Service() {
         }
         Log.d(TAG, "日志缓存已清空")
     }
+
+    /**
+     * 是否正在收集
+     */
+    fun isCollecting(): Boolean = isCollecting.get()
 }

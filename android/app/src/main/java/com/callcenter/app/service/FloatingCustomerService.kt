@@ -749,6 +749,11 @@ private fun ExpandedFloatingPanel(
     onShowHistoryChange: (Boolean) -> Unit,
     onCurrentCallStateChange: (RootCallState?) -> Unit
 ) {
+    val nameLine = customer?.let { formatFloatingCustomerNameLine(it) } ?: "未命名"
+    val primaryName = customer?.let { getPrimaryCustomerName(it) } ?: "?"
+    val phoneLine = customer?.phone?.takeIf { it.isNotBlank() } ?: "暂无电话号码"
+    val emailLine = customer?.email?.takeIf { it.isNotBlank() } ?: "暂无邮箱地址"
+
     Card(
         modifier = Modifier
             .width(320.dp)
@@ -937,7 +942,7 @@ private fun ExpandedFloatingPanel(
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Text(
-                                text = (customer.name?.firstOrNull()?.toString() ?: "?"),
+                                text = primaryName.firstOrNull()?.toString() ?: "?",
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
@@ -949,7 +954,7 @@ private fun ExpandedFloatingPanel(
                     // 客户信息
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = customer.name ?: "未命名",
+                            text = nameLine,
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -957,19 +962,17 @@ private fun ExpandedFloatingPanel(
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = customer.phone ?: "",
+                            text = phoneLine,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        if (!customer.company.isNullOrBlank()) {
-                            Text(
-                                text = customer.company,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
+                        Text(
+                            text = emailLine,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
 
                     // 右侧：拨打下一个按钮（常驻显示）
@@ -1218,6 +1221,34 @@ private fun ExpandedFloatingPanel(
             }
         }
     }
+}
+
+private fun formatFloatingCustomerNameLine(customer: Customer): String {
+    val rawName = customer.name?.trim().orEmpty()
+    if (rawName.isBlank()) return "未命名"
+
+    val chineseName = rawName.filter { isChineseChar(it) }.trim()
+    val englishName = rawName
+        .replace(Regex("[\u4E00-\u9FFF]"), " ")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+
+    return when {
+        chineseName.isNotBlank() && englishName.isNotBlank() -> "$chineseName $englishName"
+        else -> rawName
+    }
+}
+
+private fun getPrimaryCustomerName(customer: Customer): String {
+    val rawName = customer.name?.trim().orEmpty()
+    if (rawName.isBlank()) return "?"
+
+    val chineseName = rawName.filter { isChineseChar(it) }.trim()
+    return if (chineseName.isNotBlank()) chineseName else rawName
+}
+
+private fun isChineseChar(char: Char): Boolean {
+    return char in '\u4E00'..'\u9FFF'
 }
 
 /**

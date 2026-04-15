@@ -1,0 +1,11 @@
+## 2026-04-15 悬浮窗客户信息格式优化
+- 本次完成：优化 Android 悬浮弹窗中当前通话客户信息的展示格式。
+- 展示规则：第一行显示中文名 + 英文名（从 `customer.name` 中按中英文字符自动拆分组合）；第二行显示电话号码；第三行显示邮箱地址。
+- 兼容处理：当电话号码或邮箱为空时，分别显示“暂无电话号码”“暂无邮箱地址”；头像优先取中文名首字。
+- 验证结果：已执行 `./gradlew :app:compileDebugKotlin`，编译通过。
+
+## 2026-04-15 记录
+- 协作约定：后续所有 `git commit` 和 `git push` 操作，必须先获得用户明确同意后再执行。
+- 本次完成：补全 `SettingsScreen` 的日志下载能力，修复导出流程由异步文件写入导致的空文件/未写完问题。
+- 实现摘要：`SettingsViewModel` 新增 `exportLogsToUri()`，直接读取并过滤 `logcat` 后写入目标 `Uri`；`SettingsScreen` 增加导出中状态和导出结果提示；`LogCollectorService` 补充同步导出/缓存读取辅助方法。
+- 验证结果：已执行 `./gradlew :app:compileDebugKotlin`，编译通过。

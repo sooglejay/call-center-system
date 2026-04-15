@@ -1,3 +1,11 @@
+## v1.9.16 (2026-04-15) - feat(android): 在'我的'页面添加日志收集高级配置入口
+
+### 构建信息
+- **Commit ID**: `16b64c98`
+- **Commit Message**: feat(android): 在'我的'页面添加日志收集高级配置入口
+
+---
+
 ## v1.9.15 (2026-04-15) - fix(android): 修复 AutoDialService 中 getCallState 未定义的问题
 
 ### 构建信息

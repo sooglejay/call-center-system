@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
@@ -17,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.callcenter.app.BuildConfig
@@ -153,10 +155,20 @@ fun SettingsScreen(
             SettingsGroup(title = "调试") {
                 // 日志收集开关
                 var collectLogcatEnabled by remember { mutableStateOf(callSettings.collectLogcat) }
+                val isExporting = viewModel.isExportingLogs.collectAsState()
+                var exportResult by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
 
                 // 监听设置变化
                 LaunchedEffect(callSettings.collectLogcat) {
                     collectLogcatEnabled = callSettings.collectLogcat
+                }
+
+                // 显示导出结果
+                LaunchedEffect(exportResult) {
+                    exportResult?.let { (success, message) ->
+                        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                        exportResult = null
+                    }
                 }
 
                 // 日志下载启动器
@@ -164,10 +176,8 @@ fun SettingsScreen(
                     contract = ActivityResultContracts.CreateDocument("text/plain")
                 ) { uri: Uri? ->
                     if (uri != null) {
-                        context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                            val logFile = viewModel.exportLogs(context)
-                            logFile?.inputStream()?.copyTo(outputStream)
-                            Toast.makeText(context, "日志导出成功", Toast.LENGTH_SHORT).show()
+                        viewModel.exportLogsToUri(context, uri) { success, message ->
+                            exportResult = Pair(success, message)
                         }
                     }
                 }
@@ -202,12 +212,12 @@ fun SettingsScreen(
                 // 日志下载项
                 ListItem(
                     headlineContent = { Text("下载日志") },
-                    supportingContent = { Text("导出当前缓存的日志到文件") },
+                    supportingContent = { Text("导出扩音相关的日志到文件") },
                     leadingContent = {
                         Icon(Icons.Default.Download, null, tint = MaterialTheme.colorScheme.primary)
                     },
                     trailingContent = {
-                        if (viewModel.isExportingLogs.collectAsState().value) {
+                        if (isExporting.value) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(24.dp),
                                 strokeWidth = 2.dp
@@ -216,12 +226,7 @@ fun SettingsScreen(
                             Icon(Icons.Default.ChevronRight, null)
                         }
                     },
-                    modifier = Modifier.clickable(enabled = !viewModel.isExportingLogs.collectAsState().value) {
-                        if (!collectLogcatEnabled) {
-                            Toast.makeText(context, "请先开启日志收集", Toast.LENGTH_SHORT).show()
-                            return@clickable
-                        }
-
+                    modifier = Modifier.clickable(enabled = !isExporting.value) {
                         val fileName = "callcenter_log_${System.currentTimeMillis()}.txt"
                         logDownloadLauncher.launch(fileName)
                     }
@@ -703,18 +708,26 @@ private fun LogCollectorConfigDialog(
 ) {
     val context = LocalContext.current
     val logStatus = viewModel.logCollectorStatus.collectAsState()
+    val isExporting = viewModel.isExportingLogs.collectAsState()
     var maxCacheSizeInput by remember { mutableStateOf(logStatus.value.maxCacheSize.toString()) }
+    var exportResult by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
 
     // 日志下载启动器
     val logDownloadLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/plain")
     ) { uri: Uri? ->
         if (uri != null) {
-            context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                val logFile = viewModel.exportLogs(context)
-                logFile?.inputStream()?.copyTo(outputStream)
-                Toast.makeText(context, "日志导出成功", Toast.LENGTH_SHORT).show()
+            viewModel.exportLogsToUri(context, uri) { success, message ->
+                exportResult = Pair(success, message)
             }
+        }
+    }
+
+    // 显示导出结果
+    LaunchedEffect(exportResult) {
+        exportResult?.let { (success, message) ->
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            exportResult = null
         }
     }
 
@@ -810,19 +823,22 @@ private fun LogCollectorConfigDialog(
                     // 导出日志
                     OutlinedButton(
                         onClick = {
-                            if (logStatus.value.isCollecting) {
-                                val fileName = "callcenter_log_${System.currentTimeMillis()}.txt"
-                                logDownloadLauncher.launch(fileName)
-                            } else {
-                                Toast.makeText(context, "请先开启日志收集", Toast.LENGTH_SHORT).show()
-                            }
+                            val fileName = "callcenter_log_${System.currentTimeMillis()}.txt"
+                            logDownloadLauncher.launch(fileName)
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = logStatus.value.isCollecting
+                        enabled = !isExporting.value
                     ) {
-                        Icon(Icons.Default.Download, null)
+                        if (isExporting.value) {
+                            androidx.compose.material3.CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(Icons.Default.Download, null)
+                        }
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("导出日志")
+                        Text(if (isExporting.value) "导出中..." else "导出日志")
                     }
 
                     Divider()
@@ -845,8 +861,8 @@ private fun LogCollectorConfigDialog(
                         placeholder = { Text("默认: 10000") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                            keyboardType = androidx.compose.foundation.text.KeyboardType.Number
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number
                         )
                     )
                     Spacer(modifier = Modifier.height(8.dp))
@@ -875,9 +891,4 @@ private fun LogCollectorConfigDialog(
             }
         }
     )
-}
-    } else {
-        val minutes = seconds / 60
-        "${minutes}m"
-    }
 }
