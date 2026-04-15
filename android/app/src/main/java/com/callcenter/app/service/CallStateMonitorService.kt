@@ -8,6 +8,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.callcenter.app.util.CallHelper
 import com.callcenter.app.util.RootUtil
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -58,7 +59,7 @@ class CallStateMonitorService : android.app.Service() {
     }
 
     @Inject
-    lateinit var callManager: CallManager
+    lateinit var callHelper: CallHelper
 
     private lateinit var audioManager: AudioManager
     private val handler = Handler(Looper.getMainLooper())
@@ -139,7 +140,7 @@ class CallStateMonitorService : android.app.Service() {
     private fun checkAndFixSpeakerState() {
         try {
             // 检查是否在通话中
-            val isInCall = callManager.isInCall()
+            val isInCall = callHelper.isInCall()
             if (!isInCall) {
                 Log.d(TAG, "不在通话中，跳过检查")
                 stopMonitoring()
