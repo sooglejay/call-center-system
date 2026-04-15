@@ -1,3 +1,16 @@
+## v1.9.22 (2026-04-16) - 2026-04-15 扩音音量与调试分组修复
+
+- 本次完成：在切换到扬声器模式时自动将通话音量拉满，并修复设置页 `SettingsGroup(title = "调试")` 未显示的问题。
+- 音量增强：新增 `applyMaxSpeakerVolume()`，统一在 `CallHelper`、`CallStateMonitorService`、`AutoSpeakerInCallService` 的扩音路径中调用，优先拉满 `STREAM_VOICE_CALL`，并用 `STREAM_MUSIC` 做兜底。
+- 调试分组：将日志收集区域抽成独立 `DebugSettingsGroup` 组件，避免复杂状态和启动器内联导致分组未稳定渲染。
+- 验证结果：已执行 `./gradlew :app:compileDebugKotlin`，编译通过。
+
+### 构建信息
+- **Commit ID**: `2eb40ab6`
+- **Commit Message**: refactor(android): 删除手动拨号和通讯录功能，简化应用架构
+
+---
+
 ## v1.9.21 (2026-04-16) - 2026-04-15 扩音音量与调试分组修复
 
 - 本次完成：在切换到扬声器模式时自动将通话音量拉满，并修复设置页 `SettingsGroup(title = "调试")` 未显示的问题。
