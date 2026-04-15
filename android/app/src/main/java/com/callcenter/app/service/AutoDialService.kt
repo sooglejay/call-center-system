@@ -164,13 +164,18 @@ class AutoDialService : Service() {
 
     // 当前通话状态
     private var currentCallState: Int = TelephonyManager.CALL_STATE_IDLE
-    
+
     // Root 通话状态检测器
     private lateinit var rootCallStateDetector: RootCallStateDetector
-    
+
+    // TelephonyManager
+    private val telephonyManager by lazy {
+        getSystemService(android.content.Context.TELEPHONY_SERVICE) as TelephonyManager
+    }
+
     // 是否已自动标记当前通话状态
     private var hasAutoMarkedCurrentCall: Boolean = false
-    
+
     // 当前通话是否明确接通过，用于避免挂断后状态回落到 IDLE 时被误判为未接
     private var lastCallWasConnected: Boolean = false
     private var lastResolvedCallResult: String? = null
@@ -196,7 +201,7 @@ class AutoDialService : Service() {
                     Log.d(TAG, "[manualDialCallback.onDialNext] 当前状态: _isRunning=$_isRunning.value, _isAutoDialMode=$_isAutoDialMode.value, manualDialWaitJob=$manualDialWaitJob")
                     
                     // 检查当前通话状态
-                    val callState = callHelper.getCallState()
+                    val callState = getCallState()
                     Log.d(TAG, "[manualDialCallback.onDialNext] 当前通话状态: $callState")
                     
                     if (callState != TelephonyManager.CALL_STATE_IDLE) {
@@ -206,12 +211,12 @@ class AutoDialService : Service() {
                         
                         // 等待通话挂断（最多等待3秒）
                         var waitCount = 0
-                        while (callHelper.getCallState() != TelephonyManager.CALL_STATE_IDLE && waitCount < 30) {
+                        while (getCallState() != TelephonyManager.CALL_STATE_IDLE && waitCount < 30) {
                             delay(100)
                             waitCount++
                         }
                         
-                        if (callHelper.getCallState() != TelephonyManager.CALL_STATE_IDLE) {
+                        if (getCallState() != TelephonyManager.CALL_STATE_IDLE) {
                             Log.e(TAG, "[manualDialCallback.onDialNext] 无法挂断当前电话，取消拨打下一个")
                             UserNotifier.showError("无法挂断当前电话，已取消拨打下一个")
                             return@launch
@@ -250,7 +255,7 @@ class AutoDialService : Service() {
                     }
                     
                     // 检查当前通话状态
-                    val callState = callHelper.getCallState()
+                    val callState = getCallState()
                     if (callState == TelephonyManager.CALL_STATE_IDLE) {
                         // 当前没有在通话中，可以安全地继续
                         serviceScope.launch {
@@ -459,7 +464,7 @@ class AutoDialService : Service() {
                 val isInForeground = AppLifecycleManager.isAppInForeground()
                 
                 // 检查当前通话状态
-                currentCallState = callHelper.getCallState()
+                currentCallState = getCallState()
                 val isCallIdle = currentCallState == TelephonyManager.CALL_STATE_IDLE
                 
                 // 判断是否应该挂起自动拨号
@@ -500,7 +505,7 @@ class AutoDialService : Service() {
         }
         
         // 检查通话状态
-        val callState = callHelper.getCallState()
+        val callState = getCallState()
         if (callState != TelephonyManager.CALL_STATE_IDLE) {
             Log.w(TAG, "不能拨打: 当前通话状态不是空闲, state=$callState")
             return false
@@ -522,7 +527,7 @@ class AutoDialService : Service() {
             
             // 更新悬浮窗状态
             val isInForeground = AppLifecycleManager.isAppInForeground()
-            val callState = callHelper.getCallState()
+            val callState = getCallState()
             
             when {
                 !isInForeground -> updateFloatingWindowStatus("已挂起 - 请回到应用")
@@ -642,7 +647,7 @@ class AutoDialService : Service() {
                     Log.d(TAG, "[ACTION_DIAL_NEXT] 当前状态: _isRunning=$_isRunning.value, _isAutoDialMode=$_isAutoDialMode.value, manualDialWaitJob=$manualDialWaitJob")
                     
                     // 检查当前通话状态
-                    val callState = callHelper.getCallState()
+                    val callState = getCallState()
                     Log.d(TAG, "[ACTION_DIAL_NEXT] 当前通话状态: $callState")
                     
                     if (callState != TelephonyManager.CALL_STATE_IDLE) {
@@ -652,12 +657,12 @@ class AutoDialService : Service() {
                         
                         // 等待通话挂断（最多等待3秒）
                         var waitCount = 0
-                        while (callHelper.getCallState() != TelephonyManager.CALL_STATE_IDLE && waitCount < 30) {
+                        while (getCallState() != TelephonyManager.CALL_STATE_IDLE && waitCount < 30) {
                             delay(100)
                             waitCount++
                         }
                         
-                        if (callHelper.getCallState() != TelephonyManager.CALL_STATE_IDLE) {
+                        if (getCallState() != TelephonyManager.CALL_STATE_IDLE) {
                             Log.e(TAG, "[ACTION_DIAL_NEXT] 无法挂断当前电话，取消拨打下一个")
                             UserNotifier.showError("无法挂断当前电话，已取消拨打下一个")
                             return@launch
@@ -692,7 +697,7 @@ class AutoDialService : Service() {
                 
                 // 如果从手动切换到自动，且当前正在等待手动拨号，则继续
                 if (isAutoMode && manualDialWaitJob?.isActive == true && !isWaitingForNextDial) {
-                    val callState = callHelper.getCallState()
+                    val callState = getCallState()
                     if (callState == TelephonyManager.CALL_STATE_IDLE) {
                         serviceScope.launch {
                             resumeManualDial()
@@ -1340,6 +1345,18 @@ class AutoDialService : Service() {
             .setOngoing(true)
             .setSilent(true)
             .build()
+    }
+
+    /**
+     * 获取当前通话状态
+     */
+    private fun getCallState(): Int {
+        return try {
+            telephonyManager.callState
+        } catch (e: Exception) {
+            Log.e(TAG, "获取通话状态失败: ${e.message}")
+            TelephonyManager.CALL_STATE_IDLE
+        }
     }
 
     override fun onDestroy() {
