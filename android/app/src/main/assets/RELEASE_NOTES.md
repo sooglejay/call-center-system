@@ -1,3 +1,11 @@
+## v1.9.15 (2026-04-15) - fix(android): 修复 AutoDialService 中 getCallState 未定义的问题
+
+### 构建信息
+- **Commit ID**: `7d6d317d`
+- **Commit Message**: fix(android): 修复 AutoDialService 中 getCallState 未定义的问题
+
+---
+
 ## v1.9.13 (2026-04-15) - feat: 实现真正的一次性成功自动扩音方案
 
 ### 构建信息
