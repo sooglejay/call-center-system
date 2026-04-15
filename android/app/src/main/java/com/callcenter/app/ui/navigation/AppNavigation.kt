@@ -271,7 +271,7 @@ fun AppNavigation(
                 },
                 onCallCustomer = { phone ->
                     // 拨打电话
-                    callHelper.makeCall(phone, directCall = true)
+                    callHelper.makeCall(phone)
                 }
             )
         }
@@ -353,7 +353,7 @@ fun AppNavigation(
                 onNavigateBack = { navController.popBackStack() },
                 onContactClick = { phone ->
                     // 直接拨打选中的号码
-                    callHelper.makeCall(phone, directCall = true)
+                    callHelper.makeCall(phone)
                 },
                 onAddContact = {
                     navController.navigate(Screen.AddContact.route)

@@ -109,7 +109,9 @@ class LogCollectorService : android.app.Service() {
             ACTION_EXPORT_LOGS -> {
                 val outputPath = intent.getStringExtra(EXTRA_LOG_OUTPUT_PATH)
                 if (outputPath != null) {
-                    exportLogs(outputPath)
+                    serviceScope.launch {
+                        exportLogs(outputPath)
+                    }
                 }
             }
             ACTION_SET_MAX_SIZE -> {

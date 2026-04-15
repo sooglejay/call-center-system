@@ -77,9 +77,13 @@ class CallHelper @Inject constructor(
     private fun makeCallWithTelecomManager(phoneNumber: String) {
         try {
             val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
-            val phoneAccountHandle = telecomManager.phoneAccountsForUser(
-                android.os.Process.myUserHandle()
-            ).firstOrNull()
+
+            // 尝试获取第一个可用的 SIM 卡账户
+            val phoneAccountHandle = try {
+                telecomManager.callCapablePhoneAccounts.firstOrNull()
+            } catch (e: Exception) {
+                null
+            }
 
             if (phoneAccountHandle != null) {
                 val uri = Uri.fromParts("tel", phoneNumber, null)

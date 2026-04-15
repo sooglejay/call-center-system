@@ -2064,9 +2064,9 @@ private fun AgentCustomersTab(
 
     fun makeCall(phone: String) {
         if (checkAndRequestCallPermission()) {
-            callHelper.makeCall(phone, directCall = true)
+            callHelper.makeCall(phone)
         } else {
-            callHelper.makeCall(phone, directCall = false)
+            callHelper.makeCall(phone)
         }
     }
 

@@ -303,7 +303,7 @@ fun AgentTaskExecutionScreen(
 
                         if (!checkAndRequestCallPermission()) {
                             Toast.makeText(context, "请先授予拨号权限后再发起通话，这样才能准确追踪状态并上传录音", Toast.LENGTH_LONG).show()
-                            callHelper.makeCall(phone, directCall = false)
+                            callHelper.makeCall(phone)
                             return@TaskExecutionContent
                         }
 
@@ -311,7 +311,7 @@ fun AgentTaskExecutionScreen(
                             customer = taskCustomer,
                             onSuccess = { callRecord ->
                                 try {
-                                    callHelper.makeCall(phone, directCall = true)
+                                    callHelper.makeCall(phone)
                                     viewModel.updateCustomerStatus(taskId, customerId, "called", null, callRecord?.id)
                                 } catch (e: Exception) {
                                     Toast.makeText(context, "拨号失败: ${e.message}", Toast.LENGTH_LONG).show()

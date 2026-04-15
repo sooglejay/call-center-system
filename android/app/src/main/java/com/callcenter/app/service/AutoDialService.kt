@@ -1201,12 +1201,13 @@ class AutoDialService : Service() {
                             
                             // 自动打开扬声器（免提），与 AutoSpeakerInCallService 和 CallStateMonitorService 配合
                             android.util.Log.d(TAG, "尝试打开扬声器...")
-                            val speakerEnabled = callHelper.enableSpeakerphone()
-                            if (speakerEnabled) {
+                            try {
+                                callHelper.forceEnableSpeaker()
                                 android.util.Log.d(TAG, "扬声器已自动打开")
                                 FloatingCustomerService.addCallStateHistory("扬声器已开启", _currentCustomer.value?.phone, _currentCustomer.value?.name)
-                            } else {
-                                android.util.Log.w(TAG, "扬声器打开失败")
+                            } catch (e: Exception) {
+                                android.util.Log.w(TAG, "扬声器打开失败: ${e.message}")
+                                FloatingCustomerService.addCallStateHistory("扬声器打开失败", _currentCustomer.value?.phone, _currentCustomer.value?.name)
                             }
                         }
                     }

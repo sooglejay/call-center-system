@@ -79,7 +79,7 @@ fun DialerScreen(
     ) { isGranted ->
         hasCallPermission = isGranted
         if (isGranted && phoneNumber.isNotEmpty()) {
-            callHelper.makeCall(phoneNumber, directCall = true)
+            callHelper.makeCall(phoneNumber)
         }
     }
 
@@ -217,10 +217,10 @@ fun DialerScreen(
                 contentAlignment = Alignment.Center
             ) {
                 CallButton(
-                    enabled = phoneNumber.isNotEmpty() && callHelper.isValidPhoneNumber(phoneNumber),
+                    enabled = phoneNumber.isNotEmpty() && isValidPhoneNumber(phoneNumber),
                     onClick = {
                         if (hasCallPermission) {
-                            callHelper.makeCall(phoneNumber, directCall = true)
+                            callHelper.makeCall(phoneNumber)
                         } else {
                             permissionLauncher.launch(Manifest.permission.CALL_PHONE)
                         }
@@ -314,4 +314,11 @@ private fun getLettersForNumber(number: Int): String {
         9 -> "WXYZ"
         else -> ""
     }
+}
+
+/**
+ * 简单的电话号码验证
+ */
+private fun isValidPhoneNumber(phone: String): Boolean {
+    return phone.isNotEmpty() && phone.length >= 3 && phone.all { it.isDigit() }
 }

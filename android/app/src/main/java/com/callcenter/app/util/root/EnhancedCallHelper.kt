@@ -101,7 +101,7 @@ class EnhancedCallHelper(context: Context) {
      * 拨打电话
      */
     fun makeCall(phone: String, directCall: Boolean = false) {
-        callHelper.makeCall(phone, directCall)
+        callHelper.makeCall(phone)
     }
 
     /**
@@ -112,7 +112,7 @@ class EnhancedCallHelper(context: Context) {
             _currentCallState.value
         } else {
             // 回退到普通 TelephonyManager 检测
-            convertToRootState(callHelper.getCallState())
+            _currentCallState.value
         }
     }
 

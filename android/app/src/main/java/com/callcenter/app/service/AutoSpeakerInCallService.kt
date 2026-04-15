@@ -50,7 +50,7 @@ class AutoSpeakerInCallService : InCallService() {
         currentCall = call
         Log.d(TAG, "========== onCallAdded ==========")
         Log.d(TAG, "Call: $call, State: ${call.state}, Details: ${call.details}")
-        Log.d(TAG, "CallAudioState: ${call.details?.audioState}")
+        Log.d(TAG, "Call: $call, State: ${call.state}, Details: ${call.details}")
 
         // 注册状态回调
         call.registerCallback(callCallback)
@@ -83,7 +83,6 @@ class AutoSpeakerInCallService : InCallService() {
 
             Log.d(TAG, "========== onStateChanged ==========")
             Log.d(TAG, "State: $state, Call: $call")
-            Log.d(TAG, "CallAudioState: ${call.details?.audioState}")
 
             when (state) {
                 Call.STATE_DIALING -> {
@@ -106,7 +105,6 @@ class AutoSpeakerInCallService : InCallService() {
         super.onCallAudioStateChanged(audioState)
         Log.d(TAG, "========== onCallAudioStateChanged ==========")
         Log.d(TAG, "AudioState: $audioState")
-        Log.d(TAG, "Route: ${audioState?.route}, Supported: ${audioState?.supportedRouteMask}")
 
         // 检查是否支持扬声器路由
         val supportsSpeaker = (audioState?.supportedRouteMask ?: 0) and CallAudioState.ROUTE_SPEAKER != 0
@@ -193,8 +191,7 @@ class AutoSpeakerInCallService : InCallService() {
 
             // 等待设置生效
             handler.postDelayed({
-                val audioState = currentCall?.details?.audioState
-                Log.d(TAG, "[$reason] setAudioRoute 后的音频状态: ${audioState?.route}")
+                Log.d(TAG, "[$reason] setAudioRoute 已执行")
             }, 50)
         } catch (e: Exception) {
             Log.e(TAG, "[$reason] setAudioRoute 失败: ${e.message}")
@@ -347,11 +344,6 @@ class AutoSpeakerInCallService : InCallService() {
             Log.d(TAG, "  - isSpeakerphoneOn: $isSpeakerOn")
             Log.d(TAG, "  - mode: $mode")
             Log.d(TAG, "  - 通话音量: $streamVolume / $maxVolume")
-
-            // 检查 CallAudioState
-            val audioState = currentCall?.details?.audioState
-            Log.d(TAG, "  - callAudioState.route: ${audioState?.route}")
-            Log.d(TAG, "  - callAudioState.supportedRouteMask: ${audioState?.supportedRouteMask}")
 
             // 检查通信设备（Android 12+）
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
