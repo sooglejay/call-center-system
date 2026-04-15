@@ -50,7 +50,8 @@ fun SettingsScreen(
     var showSwitchAccountConfirmDialog by remember { mutableStateOf(false) }
     var showReleaseNotesDialog by remember { mutableStateOf(false) }
     var showUpdateDialog by remember { mutableStateOf(false) }
-    
+    var showLogConfigDialog by remember { mutableStateOf(false) }
+
     // 读取 release notes
     val releaseNotes = remember { VersionInfoUtil.readReleaseNotes(context) }
 
@@ -225,6 +226,35 @@ fun SettingsScreen(
                         logDownloadLauncher.launch(fileName)
                     }
                 )
+
+                Divider()
+
+                // 日志收集高级配置
+                val logStatus = viewModel.logCollectorStatus.collectAsState()
+                ListItem(
+                    headlineContent = { Text("高级配置") },
+                    supportingContent = {
+                        Column {
+                            Text(
+                                text = "状态: ${if (logStatus.value.isCollecting) "收集中" else "已停止"}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                text = "缓存: ${logStatus.value.cacheSize} / ${logStatus.value.maxCacheSize}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    },
+                    leadingContent = {
+                        Icon(Icons.Default.Settings, null, tint = MaterialTheme.colorScheme.primary)
+                    },
+                    trailingContent = {
+                        Icon(Icons.Default.ChevronRight, null)
+                    },
+                    modifier = Modifier.clickable {
+                        showLogConfigDialog = true
+                    }
+                )
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -374,6 +404,14 @@ fun SettingsScreen(
                 val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(latestVersionInfo?.apkUrl))
                 context.startActivity(intent)
             }
+        )
+    }
+
+    // 日志收集配置对话框
+    if (showLogConfigDialog) {
+        LogCollectorConfigDialog(
+            viewModel = viewModel,
+            onDismiss = { showLogConfigDialog = false }
         )
     }
 }
@@ -649,6 +687,195 @@ private fun ServerUrlDialog(
 private fun formatDuration(seconds: Int): String {
     return if (seconds < 60) {
         "${seconds}s"
+    } else {
+        val minutes = seconds / 60
+        "${minutes}m"
+    }
+}
+
+/**
+ * 日志收集配置对话框
+ */
+@Composable
+private fun LogCollectorConfigDialog(
+    viewModel: SettingsViewModel,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val logStatus = viewModel.logCollectorStatus.collectAsState()
+    var maxCacheSizeInput by remember { mutableStateOf(logStatus.value.maxCacheSize.toString()) }
+
+    // 日志下载启动器
+    val logDownloadLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri: Uri? ->
+        if (uri != null) {
+            context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                val logFile = viewModel.exportLogs(context)
+                logFile?.inputStream()?.copyTo(outputStream)
+                Toast.makeText(context, "日志导出成功", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("日志收集配置") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                // 状态显示
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (logStatus.value.isCollecting) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant
+                        }
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                if (logStatus.value.isCollecting) Icons.Default.PlayArrow else Icons.Default.Pause,
+                                contentDescription = null,
+                                tint = if (logStatus.value.isCollecting) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (logStatus.value.isCollecting) "正在收集日志" else "日志收集已停止",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = if (logStatus.value.isCollecting) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "缓存大小: ${logStatus.value.cacheSize} / ${logStatus.value.maxCacheSize} 条",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // 控制按钮
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // 开始/停止收集
+                    Button(
+                        onClick = {
+                            if (logStatus.value.isCollecting) {
+                                viewModel.stopLogCollection(context)
+                                Toast.makeText(context, "日志收集已停止", Toast.LENGTH_SHORT).show()
+                            } else {
+                                viewModel.startLogCollection(context)
+                                Toast.makeText(context, "日志收集已开始", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (logStatus.value.isCollecting) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            }
+                        )
+                    ) {
+                        Icon(
+                            if (logStatus.value.isCollecting) Icons.Default.Stop else Icons.Default.PlayArrow,
+                            null
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(if (logStatus.value.isCollecting) "停止收集" else "开始收集")
+                    }
+
+                    // 导出日志
+                    OutlinedButton(
+                        onClick = {
+                            if (logStatus.value.isCollecting) {
+                                val fileName = "callcenter_log_${System.currentTimeMillis()}.txt"
+                                logDownloadLauncher.launch(fileName)
+                            } else {
+                                Toast.makeText(context, "请先开启日志收集", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = logStatus.value.isCollecting
+                    ) {
+                        Icon(Icons.Default.Download, null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("导出日志")
+                    }
+
+                    Divider()
+
+                    // 最大缓存大小设置
+                    Text(
+                        text = "最大缓存大小",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = maxCacheSizeInput,
+                        onValueChange = { input ->
+                            // 只允许数字
+                            if (input.all { it.isDigit() }) {
+                                maxCacheSizeInput = input
+                            }
+                        },
+                        label = { Text("最大缓存数量") },
+                        placeholder = { Text("默认: 10000") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.foundation.text.KeyboardType.Number
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            val newSize = maxCacheSizeInput.toIntOrNull()
+                            if (newSize != null && newSize > 0) {
+                                viewModel.setLogMaxSize(context, newSize)
+                                Toast.makeText(context, "最大缓存大小已更新", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "请输入有效的数字", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Save, null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("保存设置")
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("关闭")
+            }
+        }
+    )
+}
     } else {
         val minutes = seconds / 60
         "${minutes}m"

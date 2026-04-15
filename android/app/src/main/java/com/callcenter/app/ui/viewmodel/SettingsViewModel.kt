@@ -57,6 +57,15 @@ class SettingsViewModel @Inject constructor(
     private val _isExportingLogs = MutableStateFlow(false)
     val isExportingLogs: StateFlow<Boolean> = _isExportingLogs.asStateFlow()
 
+    private val _logCollectorStatus = MutableStateFlow(LogCollectorStatus())
+    val logCollectorStatus: StateFlow<LogCollectorStatus> = _logCollectorStatus.asStateFlow()
+
+    data class LogCollectorStatus(
+        val isCollecting: Boolean = false,
+        val cacheSize: Int = 0,
+        val maxCacheSize: Int = 10000
+    )
+
     fun loadSettings() {
         viewModelScope.launch {
             _isLoading.value = true
@@ -141,7 +150,53 @@ class SettingsViewModel @Inject constructor(
     fun updateCollectLogcat(enabled: Boolean) {
         viewModelScope.launch {
             callSettingsManager.saveCollectLogcat(enabled)
+
+            // 更新状态
+            _logCollectorStatus.value = _logCollectorStatus.value.copy(isCollecting = enabled)
         }
+    }
+
+    /**
+     * 更新最大缓存大小
+     */
+    fun updateLogcatMaxCacheSize(size: Int) {
+        viewModelScope.launch {
+            callSettingsManager.saveLogcatMaxCacheSize(size)
+
+            // 更新服务配置
+            _logCollectorStatus.value = _logCollectorStatus.value.copy(maxCacheSize = size)
+        }
+    }
+
+    /**
+     * 开始收集日志
+     */
+    fun startLogCollection(context: android.content.Context) {
+        com.callcenter.app.service.LogCollectorService.startCollecting(context)
+        _logCollectorStatus.value = _logCollectorStatus.value.copy(isCollecting = true)
+    }
+
+    /**
+     * 停止收集日志
+     */
+    fun stopLogCollection(context: android.content.Context) {
+        com.callcenter.app.service.LogCollectorService.stopCollecting(context)
+        _logCollectorStatus.value = _logCollectorStatus.value.copy(isCollecting = false)
+    }
+
+    /**
+     * 设置最大缓存大小
+     */
+    fun setLogMaxSize(context: android.content.Context, size: Int) {
+        com.callcenter.app.service.LogCollectorService.setMaxSize(context, size)
+        _logCollectorStatus.value = _logCollectorStatus.value.copy(maxCacheSize = size)
+    }
+
+    /**
+     * 更新缓存数量（由服务或外部更新）
+     */
+    fun updateCacheSize(size: Int) {
+        _logCollectorStatus.value = _logCollectorStatus.value.copy(cacheSize = size)
     }
 
     /**
