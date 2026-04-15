@@ -184,25 +184,6 @@ object RootUtil {
         Log.d(TAG, "强制开启扬声器结果: ${result.success}, output=${result.output}, error=${result.error}")
         return result.success
     }
-
-    /**
-     * 在 root 设备上强制设置默认拨号应用。
-     *
-     * Android 高版本下，仅写 secure setting 不一定总是足够，
-     * 因此这里按“settings + cmd role”多路兜底处理。
-     */
-    fun setDefaultDialerPackage(packageName: String): Boolean {
-        val commands = listOf(
-            "cmd role set-bypassing-role-qualification true",
-            "settings put secure dialer_default_application $packageName",
-            "cmd role add-role-holder android.app.role.DIALER $packageName 0",
-            "cmd role add-role-holder android.app.role.DIALER $packageName 0"
-        )
-
-        val result = executeMultipleWithRoot(commands)
-        Log.d(TAG, "设置默认拨号应用结果: ${result.success}, output=${result.output}, error=${result.error}")
-        return result.success
-    }
 }
 
 /**

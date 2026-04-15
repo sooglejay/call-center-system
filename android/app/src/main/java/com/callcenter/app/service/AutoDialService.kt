@@ -23,6 +23,7 @@ import com.callcenter.app.data.repository.TaskRepository
 import com.callcenter.app.ui.viewmodel.AutoDialScopeType
 import com.callcenter.app.util.AppLifecycleManager
 import com.callcenter.app.util.CallHelper
+import com.callcenter.app.util.CallSpeakerHelper
 import com.callcenter.app.util.FloatingWindowManager
 import com.callcenter.app.util.UserNotifier
 import com.callcenter.app.util.root.RootCallState
@@ -173,6 +174,9 @@ class AutoDialService : Service() {
         getSystemService(android.content.Context.TELEPHONY_SERVICE) as TelephonyManager
     }
 
+    // 通话自动免提助手
+    private lateinit var callSpeakerHelper: CallSpeakerHelper
+
     // 是否已自动标记当前通话状态
     private var hasAutoMarkedCurrentCall: Boolean = false
 
@@ -184,6 +188,9 @@ class AutoDialService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        
+        // 初始化通话自动免提助手
+        callSpeakerHelper = CallSpeakerHelper(this)
         
         // 初始化 Root 通话状态检测器
         rootCallStateDetector = RootCallStateDetector()
@@ -607,6 +614,10 @@ class AutoDialService : Service() {
                 _isAutoDialMode.value = true
                 FloatingCustomerService.setAutoDialMode(true)
 
+                // 启动通话自动免提助手
+                callSpeakerHelper.start()
+                Log.d(TAG, "通话自动免提助手已启动")
+
                 // 保存初始进度
                 serviceScope.launch {
                     saveProgress()
@@ -615,6 +626,10 @@ class AutoDialService : Service() {
                 startAutoDial()
             }
             ACTION_STOP -> {
+                // 停止通话自动免提助手
+                callSpeakerHelper.stop()
+                Log.d(TAG, "通话自动免提助手已停止")
+                
                 // 清除进度
                 serviceScope.launch {
                     progressManager.clearProgress()
@@ -1204,7 +1219,7 @@ class AutoDialService : Service() {
                             _currentCallState.value = com.callcenter.app.util.root.RootCallState.ACTIVE
                             FloatingCustomerService.addCallStateHistory("通话已接通", _currentCustomer.value?.phone, _currentCustomer.value?.name)
                             
-                            // 自动打开扬声器（免提），与 AutoSpeakerInCallService 和 CallStateMonitorService 配合
+                            // 自动打开扬声器（免提），与 CallSpeakerHelper 配合
                             android.util.Log.d(TAG, "尝试打开扬声器...")
                             try {
                                 callHelper.forceEnableSpeaker()
@@ -1362,6 +1377,12 @@ class AutoDialService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         stopAutoDial()
+        
+        // 停止通话自动免提助手
+        if (::callSpeakerHelper.isInitialized) {
+            callSpeakerHelper.stop()
+        }
+        
         serviceScope.cancel()
         lastCallWasConnected = false
         lastResolvedCallResult = null

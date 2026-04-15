@@ -9,8 +9,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
-import android.app.role.RoleManager
-import android.telecom.TelecomManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -47,9 +45,6 @@ class MainActivity : ComponentActivity() {
 
     private var pendingDialNumber by mutableStateOf<String?>(null)
     private var pendingOpenDialer by mutableStateOf(false)
-    private var hasRetriedDefaultDialerOnResume = false
-    private var isRequestingDefaultDialer = false
-    private var pendingAutoDefaultDialerRequest = false
     private val mainHandler = Handler(Looper.getMainLooper())
 
     // 权限申请回调
@@ -65,21 +60,6 @@ class MainActivity : ComponentActivity() {
                 Toast.LENGTH_LONG
             ).show()
         }
-        // 标记为在 onResume 中自动申请，避免冷启动阶段过早拉起系统角色页
-        pendingAutoDefaultDialerRequest = true
-    }
-
-    private val defaultDialerRoleLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) {
-        isRequestingDefaultDialer = false
-        pendingAutoDefaultDialerRequest = false
-        if (isDefaultDialer()) {
-            Toast.makeText(this, "已启用默认拨号应用，自动外放能力已增强", Toast.LENGTH_SHORT).show()
-        }
-
-        // 默认拨号申请结束后，再检查悬浮窗权限
-        checkFloatingWindowPermission()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -87,10 +67,11 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         pendingDialNumber = extractDialNumber(intent)
         pendingOpenDialer = shouldOpenDialer(intent)
-        hasRetriedDefaultDialerOnResume = false
 
         // 检查并申请通话/拨号相关权限
         checkAndRequestCallPermissions()
+        // 权限检查完成后检查悬浮窗权限
+        checkFloatingWindowPermission()
 
         lifecycleScope.launch {
             tryUploadPendingRecordings()
@@ -146,22 +127,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-
-        if (pendingAutoDefaultDialerRequest && !isRequestingDefaultDialer && !isDefaultDialer()) {
-            pendingAutoDefaultDialerRequest = false
-            mainHandler.postDelayed({
-                if (!isFinishing && !isDestroyed && !isRequestingDefaultDialer && !isDefaultDialer()) {
-                    checkAndRequestDefaultDialerRole()
-                }
-            }, 500)
-        } else if (!hasRetriedDefaultDialerOnResume && !isRequestingDefaultDialer && !isDefaultDialer()) {
-            hasRetriedDefaultDialerOnResume = true
-            mainHandler.postDelayed({
-                if (!isFinishing && !isDestroyed && !isRequestingDefaultDialer && !isDefaultDialer()) {
-                    checkAndRequestDefaultDialerRole()
-                }
-            }, 500)
-        }
     }
 
     /**
@@ -211,61 +176,6 @@ class MainActivity : ComponentActivity() {
         // 如果有权限需要申请
         if (permissionsToRequest.isNotEmpty()) {
             permissionLauncher.launch(permissionsToRequest.toTypedArray())
-        } else {
-            // 所有权限都已授予，等 Activity 进入前台后再自动申请默认拨号角色
-            pendingAutoDefaultDialerRequest = true
-        }
-    }
-
-    private fun checkAndRequestDefaultDialerRole() {
-        if (isDefaultDialer()) {
-            isRequestingDefaultDialer = false
-            checkFloatingWindowPermission()
-            return
-        }
-
-        if (isRequestingDefaultDialer) {
-            return
-        }
-
-        try {
-            if (RootUtil.isDeviceRooted()) {
-                val rootSuccess = RootUtil.setDefaultDialerPackage(packageName)
-                if (rootSuccess && isDefaultDialer()) {
-                    isRequestingDefaultDialer = false
-                    Toast.makeText(this, "已通过 Root 自动设置默认拨号应用", Toast.LENGTH_SHORT).show()
-                    checkFloatingWindowPermission()
-                    return
-                }
-            }
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val roleManager = getSystemService(RoleManager::class.java)
-                if (roleManager != null && roleManager.isRoleAvailable(RoleManager.ROLE_DIALER)) {
-                    isRequestingDefaultDialer = true
-                    val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_DIALER)
-                    defaultDialerRoleLauncher.launch(intent)
-                    return
-                }
-            }
-
-            isRequestingDefaultDialer = true
-            val intent = Intent(TelecomManager.ACTION_CHANGE_DEFAULT_DIALER).apply {
-                putExtra(TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME, packageName)
-            }
-            defaultDialerRoleLauncher.launch(intent)
-        } catch (e: Exception) {
-            isRequestingDefaultDialer = false
-            Toast.makeText(this, "请求默认拨号应用失败: ${e.message}", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    private fun isDefaultDialer(): Boolean {
-        return try {
-            val telecomManager = getSystemService(TelecomManager::class.java)
-            telecomManager?.defaultDialerPackage == packageName
-        } catch (_: Exception) {
-            false
         }
     }
 
