@@ -177,32 +177,34 @@ class CallHelper @Inject constructor(
             }
 
             // Phase 3: 使用反射调用 AudioSystem.setForceUse
-            try {
-                val audioSystemClass = Class.forName("android.media.AudioSystem")
-                val setForceUse = try {
-                    audioSystemClass.getDeclaredMethod(
-                        "setForceUse",
-                        Int::class.javaPrimitiveType,
-                        Int::class.javaPrimitiveType
-                    )
-                } catch (e: NoSuchMethodException) {
-                    try {
+            run {
+                try {
+                    val audioSystemClass = Class.forName("android.media.AudioSystem")
+                    val setForceUse = try {
                         audioSystemClass.getDeclaredMethod(
                             "setForceUse",
-                            String::class.java,
+                            Int::class.javaPrimitiveType,
                             Int::class.javaPrimitiveType
                         )
-                    } catch (e2: Exception) {
-                        Log.w(TAG, "[$reason] Phase 3: 无法找到 setForceUse 方法")
-                        return@try
+                    } catch (e: NoSuchMethodException) {
+                        try {
+                            audioSystemClass.getDeclaredMethod(
+                                "setForceUse",
+                                String::class.java,
+                                Int::class.javaPrimitiveType
+                            )
+                        } catch (e2: Exception) {
+                            Log.w(TAG, "[$reason] Phase 3: 无法找到 setForceUse 方法")
+                            return@run
+                        }
                     }
-                }
 
-                setForceUse.invoke(null, 0, 1)  // FOR_COMMUNICATION, FORCE_SPEAKER
-                setForceUse.invoke(null, 1, 1)  // FOR_MEDIA, FORCE_SPEAKER
-                Log.d(TAG, "[$reason] Phase 3: AudioSystem.setForceUse 已执行")
-            } catch (e: Throwable) {
-                Log.w(TAG, "[$reason] Phase 3 失败: ${e.message}")
+                    setForceUse.invoke(null, 0, 1)  // FOR_COMMUNICATION, FORCE_SPEAKER
+                    setForceUse.invoke(null, 1, 1)  // FOR_MEDIA, FORCE_SPEAKER
+                    Log.d(TAG, "[$reason] Phase 3: AudioSystem.setForceUse 已执行")
+                } catch (e: Throwable) {
+                    Log.w(TAG, "[$reason] Phase 3 失败: ${e.message}")
+                }
             }
 
             // Phase 4: Android 12+ 使用 setCommunicationDevice
