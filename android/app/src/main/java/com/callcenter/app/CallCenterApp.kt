@@ -5,8 +5,16 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 import com.callcenter.app.util.AppLifecycleManager
+import com.callcenter.app.data.local.preferences.CallSettingsManager
+import com.callcenter.app.service.LogCollectorService
+import javax.inject.Inject
 
 @HiltAndroidApp
 class CallCenterApp : Application() {
@@ -19,14 +27,43 @@ class CallCenterApp : Application() {
             private set
     }
 
+    @Inject
+    lateinit var callSettingsManager: CallSettingsManager
+
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     override fun onCreate() {
         super.onCreate()
         instance = this
-        
+
         // 初始化应用生命周期管理器
         AppLifecycleManager.init(this)
-        
+
         createNotificationChannels()
+
+        // 初始化日志收集服务
+        initLogCollectorService()
+    }
+
+    /**
+     * 初始化日志收集服务
+     */
+    private fun initLogCollectorService() {
+        applicationScope.launch {
+            try {
+                // 读取日志收集配置
+                val callSettings = callSettingsManager.callSettingsFlow.first()
+
+                if (callSettings.collectLogcat) {
+                    // 开启日志收集
+                    LogCollectorService.startCollecting(this@CallCenterApp)
+                    // 设置最大缓存大小
+                    LogCollectorService.setMaxSize(this@CallCenterApp, callSettings.logcatMaxCacheSize)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
     private fun createNotificationChannels() {

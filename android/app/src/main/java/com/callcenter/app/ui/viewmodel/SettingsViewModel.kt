@@ -53,6 +53,10 @@ class SettingsViewModel @Inject constructor(
     private val _currentVersionCode = MutableStateFlow(0)
     val currentVersionCode: StateFlow<Int> = _currentVersionCode.asStateFlow()
 
+    // 日志收集相关
+    private val _isExportingLogs = MutableStateFlow(false)
+    val isExportingLogs: StateFlow<Boolean> = _isExportingLogs.asStateFlow()
+
     fun loadSettings() {
         viewModelScope.launch {
             _isLoading.value = true
@@ -129,5 +133,43 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             authRepository.logout()
         }
+    }
+
+    /**
+     * 更新日志收集设置
+     */
+    fun updateCollectLogcat(enabled: Boolean) {
+        viewModelScope.launch {
+            callSettingsManager.saveCollectLogcat(enabled)
+        }
+    }
+
+    /**
+     * 导出日志到文件
+     */
+    fun exportLogs(context: android.content.Context): java.io.File? {
+        _isExportingLogs.value = true
+
+        return try {
+            val fileName = "callcenter_log_${System.currentTimeMillis()}.txt"
+            val file = java.io.File(context.getExternalFilesDir(null), fileName)
+
+            // 调用服务导出日志
+            com.callcenter.app.service.LogCollectorService.exportLogs(context, file.absolutePath)
+
+            file
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        } finally {
+            _isExportingLogs.value = false
+        }
+    }
+
+    /**
+     * 获取日志文件输出目录
+     */
+    fun getLogOutputDirectory(context: android.content.Context): String {
+        return context.getExternalFilesDir(null)?.absolutePath ?: ""
     }
 }

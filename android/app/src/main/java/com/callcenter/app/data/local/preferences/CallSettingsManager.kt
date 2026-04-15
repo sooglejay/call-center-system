@@ -27,6 +27,8 @@ class CallSettingsManager(private val context: Context) {
         private val AUTO_RECORD_CALL = booleanPreferencesKey("auto_record_call")
         private val AUTO_ADD_NOTE = booleanPreferencesKey("auto_add_note")
         private val DEFAULT_NOTE_TEMPLATE = stringPreferencesKey("default_note_template")
+        private val COLLECT_LOGCAT = booleanPreferencesKey("collect_logcat")
+        private val LOGCAT_MAX_CACHE_SIZE = intPreferencesKey("logcat_max_cache_size")
     }
 
     /**
@@ -40,7 +42,9 @@ class CallSettingsManager(private val context: Context) {
             autoSpeaker = prefs[AUTO_SPEAKER] ?: false,
             autoRecordCall = prefs[AUTO_RECORD_CALL] ?: false,
             autoAddNote = prefs[AUTO_ADD_NOTE] ?: false,
-            defaultNoteTemplate = prefs[DEFAULT_NOTE_TEMPLATE] ?: ""
+            defaultNoteTemplate = prefs[DEFAULT_NOTE_TEMPLATE] ?: "",
+            collectLogcat = prefs[COLLECT_LOGCAT] ?: true,
+            logcatMaxCacheSize = prefs[LOGCAT_MAX_CACHE_SIZE] ?: 10000
         )
     }
 
@@ -108,6 +112,24 @@ class CallSettingsManager(private val context: Context) {
     }
 
     /**
+     * 保存日志收集设置
+     */
+    suspend fun saveCollectLogcat(enabled: Boolean) {
+        context.callSettingsDataStore.edit { prefs ->
+            prefs[COLLECT_LOGCAT] = enabled
+        }
+    }
+
+    /**
+     * 保存日志最大缓存大小
+     */
+    suspend fun saveLogcatMaxCacheSize(size: Int) {
+        context.callSettingsDataStore.edit { prefs ->
+            prefs[LOGCAT_MAX_CACHE_SIZE] = size
+        }
+    }
+
+    /**
      * 保存所有设置
      */
     suspend fun saveSettings(settings: CallSettings) {
@@ -119,6 +141,8 @@ class CallSettingsManager(private val context: Context) {
             prefs[AUTO_RECORD_CALL] = settings.autoRecordCall
             prefs[AUTO_ADD_NOTE] = settings.autoAddNote
             prefs[DEFAULT_NOTE_TEMPLATE] = settings.defaultNoteTemplate
+            prefs[COLLECT_LOGCAT] = settings.collectLogcat
+            prefs[LOGCAT_MAX_CACHE_SIZE] = settings.logcatMaxCacheSize
         }
     }
 }

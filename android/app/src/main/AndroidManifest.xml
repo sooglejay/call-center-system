@@ -118,6 +118,12 @@
             android:exported="false"
             android:foregroundServiceType="phoneCall" />
 
+        <!-- 日志收集服务 -->
+        <service
+            android:name=".service.LogCollectorService"
+            android:enabled="true"
+            android:exported="false" />
+
         <service
             android:name=".service.AutoSpeakerInCallService"
             android:permission="android.permission.BIND_INCALL_SERVICE"

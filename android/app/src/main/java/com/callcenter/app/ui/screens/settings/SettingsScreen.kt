@@ -3,6 +3,8 @@ package com.callcenter.app.ui.screens.settings
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -140,6 +142,87 @@ fun SettingsScreen(
                     subtitle = "查看使用说明",
                     onClick = {
                         Toast.makeText(context, "功能开发中", Toast.LENGTH_SHORT).show()
+                    }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 日志收集设置
+            SettingsGroup(title = "调试") {
+                // 日志收集开关
+                var collectLogcatEnabled by remember { mutableStateOf(callSettings.collectLogcat) }
+
+                // 监听设置变化
+                LaunchedEffect(callSettings.collectLogcat) {
+                    collectLogcatEnabled = callSettings.collectLogcat
+                }
+
+                // 日志下载启动器
+                val logDownloadLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.CreateDocument("text/plain")
+                ) { uri: Uri? ->
+                    if (uri != null) {
+                        context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                            val logFile = viewModel.exportLogs(context)
+                            logFile?.inputStream()?.copyTo(outputStream)
+                            Toast.makeText(context, "日志导出成功", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+
+                // 日志收集开关项
+                ListItem(
+                    headlineContent = { Text("收集 logcat 日志") },
+                    supportingContent = { Text("收集扩音相关的日志（默认最多 10000 条）") },
+                    leadingContent = {
+                        Icon(Icons.Default.Description, null, tint = MaterialTheme.colorScheme.primary)
+                    },
+                    trailingContent = {
+                        Switch(
+                            checked = collectLogcatEnabled,
+                            onCheckedChange = { enabled ->
+                                collectLogcatEnabled = enabled
+                                viewModel.updateCollectLogcat(enabled)
+                                if (enabled) {
+                                    com.callcenter.app.service.LogCollectorService.startCollecting(context)
+                                    Toast.makeText(context, "日志收集已开启", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    com.callcenter.app.service.LogCollectorService.stopCollecting(context)
+                                    Toast.makeText(context, "日志收集已关闭", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        )
+                    }
+                )
+
+                Divider()
+
+                // 日志下载项
+                ListItem(
+                    headlineContent = { Text("下载日志") },
+                    supportingContent = { Text("导出当前缓存的日志到文件") },
+                    leadingContent = {
+                        Icon(Icons.Default.Download, null, tint = MaterialTheme.colorScheme.primary)
+                    },
+                    trailingContent = {
+                        if (viewModel.isExportingLogs.collectAsState().value) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(Icons.Default.ChevronRight, null)
+                        }
+                    },
+                    modifier = Modifier.clickable(enabled = !viewModel.isExportingLogs.collectAsState().value) {
+                        if (!collectLogcatEnabled) {
+                            Toast.makeText(context, "请先开启日志收集", Toast.LENGTH_SHORT).show()
+                            return@clickable
+                        }
+
+                        val fileName = "callcenter_log_${System.currentTimeMillis()}.txt"
+                        logDownloadLauncher.launch(fileName)
                     }
                 )
             }

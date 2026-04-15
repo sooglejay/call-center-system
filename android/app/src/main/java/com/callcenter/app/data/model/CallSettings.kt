@@ -39,5 +39,15 @@ data class CallSettings(
     /**
      * 默认通话备注模板
      */
-    val defaultNoteTemplate: String = ""
+    val defaultNoteTemplate: String = "",
+
+    /**
+     * 收集 logcat 日志
+     */
+    val collectLogcat: Boolean = true,
+
+    /**
+     * logcat 日志最大缓存数量
+     */
+    val logcatMaxCacheSize: Int = 10000
 ) : Serializable
