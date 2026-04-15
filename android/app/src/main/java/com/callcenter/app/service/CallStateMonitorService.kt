@@ -10,6 +10,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.callcenter.app.util.CallHelper
 import com.callcenter.app.util.RootUtil
+import com.callcenter.app.util.applyMaxSpeakerVolume
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -244,9 +245,7 @@ class CallStateMonitorService : android.app.Service() {
                 @Suppress("DEPRECATION")
                 audioManager.isSpeakerphoneOn = true
 
-                // 设置音量到最大
-                val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
-                audioManager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, maxVolume, 0)
+                applyMaxSpeakerVolume(audioManager, TAG, reason)
                 Log.d(TAG, "[$reason] isSpeakerphoneOn = true")
             } catch (e: Exception) {
                 Log.e(TAG, "[$reason] isSpeakerphoneOn 失败: ${e.message}")

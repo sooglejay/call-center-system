@@ -53,9 +53,34 @@ fun SettingsScreen(
     var showReleaseNotesDialog by remember { mutableStateOf(false) }
     var showUpdateDialog by remember { mutableStateOf(false) }
     var showLogConfigDialog by remember { mutableStateOf(false) }
+    var collectLogcatEnabled by remember { mutableStateOf(callSettings.collectLogcat) }
+    val isExporting by viewModel.isExportingLogs.collectAsState()
+    val logStatus by viewModel.logCollectorStatus.collectAsState()
+    var exportResult by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
 
     // 读取 release notes
     val releaseNotes = remember { VersionInfoUtil.readReleaseNotes(context) }
+
+    LaunchedEffect(callSettings.collectLogcat) {
+        collectLogcatEnabled = callSettings.collectLogcat
+    }
+
+    LaunchedEffect(exportResult) {
+        exportResult?.let { (_, message) ->
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            exportResult = null
+        }
+    }
+
+    val logDownloadLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri: Uri? ->
+        if (uri != null) {
+            viewModel.exportLogsToUri(context, uri) { success, message ->
+                exportResult = Pair(success, message)
+            }
+        }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.loadSettings()
@@ -152,115 +177,29 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             // 日志收集设置
-            SettingsGroup(title = "调试") {
-                // 日志收集开关
-                var collectLogcatEnabled by remember { mutableStateOf(callSettings.collectLogcat) }
-                val isExporting = viewModel.isExportingLogs.collectAsState()
-                var exportResult by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
-
-                // 监听设置变化
-                LaunchedEffect(callSettings.collectLogcat) {
-                    collectLogcatEnabled = callSettings.collectLogcat
+            DebugSettingsGroup(
+                collectLogcatEnabled = collectLogcatEnabled,
+                isExporting = isExporting,
+                logStatus = logStatus,
+                onToggleLogCollection = { enabled ->
+                    collectLogcatEnabled = enabled
+                    viewModel.updateCollectLogcat(enabled)
+                    if (enabled) {
+                        com.callcenter.app.service.LogCollectorService.startCollecting(context)
+                        Toast.makeText(context, "日志收集已开启", Toast.LENGTH_SHORT).show()
+                    } else {
+                        com.callcenter.app.service.LogCollectorService.stopCollecting(context)
+                        Toast.makeText(context, "日志收集已关闭", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onExportLogs = {
+                    val fileName = "callcenter_log_${System.currentTimeMillis()}.txt"
+                    logDownloadLauncher.launch(fileName)
+                },
+                onOpenAdvancedConfig = {
+                    showLogConfigDialog = true
                 }
-
-                // 显示导出结果
-                LaunchedEffect(exportResult) {
-                    exportResult?.let { (success, message) ->
-                        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
-                        exportResult = null
-                    }
-                }
-
-                // 日志下载启动器
-                val logDownloadLauncher = rememberLauncherForActivityResult(
-                    contract = ActivityResultContracts.CreateDocument("text/plain")
-                ) { uri: Uri? ->
-                    if (uri != null) {
-                        viewModel.exportLogsToUri(context, uri) { success, message ->
-                            exportResult = Pair(success, message)
-                        }
-                    }
-                }
-
-                // 日志收集开关项
-                ListItem(
-                    headlineContent = { Text("收集 logcat 日志") },
-                    supportingContent = { Text("收集扩音相关的日志（默认最多 10000 条）") },
-                    leadingContent = {
-                        Icon(Icons.Default.Description, null, tint = MaterialTheme.colorScheme.primary)
-                    },
-                    trailingContent = {
-                        Switch(
-                            checked = collectLogcatEnabled,
-                            onCheckedChange = { enabled ->
-                                collectLogcatEnabled = enabled
-                                viewModel.updateCollectLogcat(enabled)
-                                if (enabled) {
-                                    com.callcenter.app.service.LogCollectorService.startCollecting(context)
-                                    Toast.makeText(context, "日志收集已开启", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    com.callcenter.app.service.LogCollectorService.stopCollecting(context)
-                                    Toast.makeText(context, "日志收集已关闭", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        )
-                    }
-                )
-
-                Divider()
-
-                // 日志下载项
-                ListItem(
-                    headlineContent = { Text("下载日志") },
-                    supportingContent = { Text("导出扩音相关的日志到文件") },
-                    leadingContent = {
-                        Icon(Icons.Default.Download, null, tint = MaterialTheme.colorScheme.primary)
-                    },
-                    trailingContent = {
-                        if (isExporting.value) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Icon(Icons.Default.ChevronRight, null)
-                        }
-                    },
-                    modifier = Modifier.clickable(enabled = !isExporting.value) {
-                        val fileName = "callcenter_log_${System.currentTimeMillis()}.txt"
-                        logDownloadLauncher.launch(fileName)
-                    }
-                )
-
-                Divider()
-
-                // 日志收集高级配置
-                val logStatus = viewModel.logCollectorStatus.collectAsState()
-                ListItem(
-                    headlineContent = { Text("高级配置") },
-                    supportingContent = {
-                        Column {
-                            Text(
-                                text = "状态: ${if (logStatus.value.isCollecting) "收集中" else "已停止"}",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                            Text(
-                                text = "缓存: ${logStatus.value.cacheSize} / ${logStatus.value.maxCacheSize}",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    },
-                    leadingContent = {
-                        Icon(Icons.Default.Settings, null, tint = MaterialTheme.colorScheme.primary)
-                    },
-                    trailingContent = {
-                        Icon(Icons.Default.ChevronRight, null)
-                    },
-                    modifier = Modifier.clickable {
-                        showLogConfigDialog = true
-                    }
-                )
-            }
+            )
 
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -580,6 +519,78 @@ private fun SettingsItem(
         },
         modifier = Modifier.clickable(onClick = onClick)
     )
+}
+
+@Composable
+private fun DebugSettingsGroup(
+    collectLogcatEnabled: Boolean,
+    isExporting: Boolean,
+    logStatus: SettingsViewModel.LogCollectorStatus,
+    onToggleLogCollection: (Boolean) -> Unit,
+    onExportLogs: () -> Unit,
+    onOpenAdvancedConfig: () -> Unit
+) {
+    SettingsGroup(title = "调试") {
+        ListItem(
+            headlineContent = { Text("收集 logcat 日志") },
+            supportingContent = { Text("收集扩音相关的日志（默认最多 10000 条）") },
+            leadingContent = {
+                Icon(Icons.Default.Description, null, tint = MaterialTheme.colorScheme.primary)
+            },
+            trailingContent = {
+                Switch(
+                    checked = collectLogcatEnabled,
+                    onCheckedChange = onToggleLogCollection
+                )
+            }
+        )
+
+        Divider()
+
+        ListItem(
+            headlineContent = { Text("下载日志") },
+            supportingContent = { Text("导出扩音相关的日志到文件") },
+            leadingContent = {
+                Icon(Icons.Default.Download, null, tint = MaterialTheme.colorScheme.primary)
+            },
+            trailingContent = {
+                if (isExporting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(Icons.Default.ChevronRight, null)
+                }
+            },
+            modifier = Modifier.clickable(enabled = !isExporting, onClick = onExportLogs)
+        )
+
+        Divider()
+
+        ListItem(
+            headlineContent = { Text("高级配置") },
+            supportingContent = {
+                Column {
+                    Text(
+                        text = "状态: ${if (logStatus.isCollecting) "收集中" else "已停止"}",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        text = "缓存: ${logStatus.cacheSize} / ${logStatus.maxCacheSize}",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            },
+            leadingContent = {
+                Icon(Icons.Default.Settings, null, tint = MaterialTheme.colorScheme.primary)
+            },
+            trailingContent = {
+                Icon(Icons.Default.ChevronRight, null)
+            },
+            modifier = Modifier.clickable(onClick = onOpenAdvancedConfig)
+        )
+    }
 }
 
 /**

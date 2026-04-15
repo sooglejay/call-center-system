@@ -15,6 +15,34 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
+fun applyMaxSpeakerVolume(audioManager: AudioManager, tag: String, reason: String) {
+    try {
+        val voiceMax = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
+        val voiceCurrent = audioManager.getStreamVolume(AudioManager.STREAM_VOICE_CALL)
+        if (voiceCurrent < voiceMax) {
+            audioManager.setStreamVolume(
+                AudioManager.STREAM_VOICE_CALL,
+                voiceMax,
+                AudioManager.FLAG_REMOVE_SOUND_AND_VIBRATE
+            )
+        }
+        Log.d(tag, "[$reason] 通话音量已拉满: $voiceCurrent -> $voiceMax")
+
+        val musicMax = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        val musicCurrent = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        if (musicCurrent < musicMax) {
+            audioManager.setStreamVolume(
+                AudioManager.STREAM_MUSIC,
+                musicMax,
+                AudioManager.FLAG_REMOVE_SOUND_AND_VIBRATE
+            )
+        }
+        Log.d(tag, "[$reason] 媒体音量兜底拉满: $musicCurrent -> $musicMax")
+    } catch (e: Exception) {
+        Log.e(tag, "[$reason] 拉满音量失败: ${e.message}")
+    }
+}
+
 /**
  * 呼叫辅助工具类（改进版）
  *
@@ -66,7 +94,7 @@ class CallHelper @Inject constructor(
             Log.e(TAG, "✗ 缺少拨号权限: ${e.message}")
             e.printStackTrace()
             throw e
-        } catch (android.content.ActivityNotFoundException e) {
+        } catch (e: android.content.ActivityNotFoundException) {
             Log.e(TAG, "✗ 未找到拨号应用: ${e.message}")
             e.printStackTrace()
             throw e
@@ -135,9 +163,7 @@ class CallHelper @Inject constructor(
                 Log.d(TAG, "[$reason] Phase 2: audioManager.isSpeakerphoneOn = true")
 
                 // 设置音量到最大
-                val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
-                audioManager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, maxVolume, 0)
-                Log.d(TAG, "[$reason] 通话音量: $maxVolume")
+                applyMaxSpeakerVolume(audioManager, TAG, reason)
             } catch (e: Exception) {
                 Log.e(TAG, "[$reason] Phase 2 失败: ${e.message}")
             }

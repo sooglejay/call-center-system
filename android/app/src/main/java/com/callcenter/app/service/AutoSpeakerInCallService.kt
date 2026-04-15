@@ -10,6 +10,7 @@ import android.telecom.CallAudioState
 import android.telecom.InCallService
 import android.util.Log
 import com.callcenter.app.util.RootUtil
+import com.callcenter.app.util.applyMaxSpeakerVolume
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -286,10 +287,7 @@ class AutoSpeakerInCallService : InCallService() {
             audioManager.isSpeakerphoneOn = true
             Log.d(TAG, "[$reason] audioManager.isSpeakerphoneOn = true")
 
-            // 设置音量到最大
-            val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
-            audioManager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, maxVolume, 0)
-            Log.d(TAG, "[$reason] 通话音量已设置为最大: $maxVolume")
+            applyMaxSpeakerVolume(audioManager, TAG, reason)
         } catch (e: Exception) {
             Log.e(TAG, "[$reason] setSpeakerphoneOn 失败: ${e.message}")
         }

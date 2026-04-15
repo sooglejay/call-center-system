@@ -1,3 +1,9 @@
+## 2026-04-15 扩音音量与调试分组修复
+- 本次完成：在切换到扬声器模式时自动将通话音量拉满，并修复设置页 `SettingsGroup(title = "调试")` 未显示的问题。
+- 音量增强：新增 `applyMaxSpeakerVolume()`，统一在 `CallHelper`、`CallStateMonitorService`、`AutoSpeakerInCallService` 的扩音路径中调用，优先拉满 `STREAM_VOICE_CALL`，并用 `STREAM_MUSIC` 做兜底。
+- 调试分组：将日志收集区域抽成独立 `DebugSettingsGroup` 组件，避免复杂状态和启动器内联导致分组未稳定渲染。
+- 验证结果：已执行 `./gradlew :app:compileDebugKotlin`，编译通过。
+
 ## 2026-04-15 APK 下载地址 404 修复
 - 本次完成：修复 `/admin/version` 返回的 APK 地址可用性问题，避免 `/uploads/apk/app-release-xxx.apk` 出现 404。
 - 根因：版本创建、APK 上传和静态文件访问都只依赖单一 `uploads/apk` 目录；一旦线上运行目录与上传落盘目录不一致，版本接口能返回 URL，但静态资源找不到文件。
