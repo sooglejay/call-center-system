@@ -42,70 +42,38 @@ class CallHelper @Inject constructor(
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
 
-            // 检查是否是默认拨号应用
-            val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as? TelecomManager
-            val isDefaultDialer = telecomManager?.defaultDialerPackage == context.packageName
-
             Log.d(TAG, "========== makeCall ==========")
             Log.d(TAG, "PhoneNumber: $phoneNumber")
-            Log.d(TAG, "IsDefaultDialer: $isDefaultDialer")
+            Log.d(TAG, "Intent: ${intent.action}")
+            Log.d(TAG, "Data: ${intent.data}")
 
-            // 如果是默认拨号应用，使用 TelecomManager API（兼容性更好）
-            if (isDefaultDialer && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                makeCallWithTelecomManager(phoneNumber)
-            } else {
-                // 否则使用标准 Intent
-                context.startActivity(intent)
+            // 检查拨号权限
+            if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
+                context.checkSelfPermission(android.Manifest.permission.CALL_PHONE)
+            ) {
+                Log.e(TAG, "缺少拨号权限 (CALL_PHONE)")
+                throw SecurityException("缺少拨号权限")
             }
+
+            // 直接使用 Intent.ACTION_CALL，这是最兼容的方式
+            context.startActivity(intent)
+            Log.d(TAG, "✓ 使用 Intent.ACTION_CALL 拨号成功")
 
             // 启动扬声器服务（17 次重试）
             enableSpeakerWithRetry(17)
 
         } catch (e: SecurityException) {
-            Log.e(TAG, "缺少拨号权限: ${e.message}")
+            Log.e(TAG, "✗ 缺少拨号权限: ${e.message}")
+            e.printStackTrace()
+            throw e
+        } catch (android.content.ActivityNotFoundException e) {
+            Log.e(TAG, "✗ 未找到拨号应用: ${e.message}")
+            e.printStackTrace()
             throw e
         } catch (e: Exception) {
-            Log.e(TAG, "拨号失败: ${e.message}")
+            Log.e(TAG, "✗ 拨号失败: ${e.message}")
+            e.printStackTrace()
             throw e
-        }
-    }
-
-    /**
-     * 使用 TelecomManager 拨号（Android 6.0+）
-     */
-    @RequiresApi(Build.VERSION_CODES.M)
-    private fun makeCallWithTelecomManager(phoneNumber: String) {
-        try {
-            val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
-
-            // 尝试获取第一个可用的 SIM 卡账户
-            val phoneAccountHandle = try {
-                telecomManager.callCapablePhoneAccounts.firstOrNull()
-            } catch (e: Exception) {
-                null
-            }
-
-            if (phoneAccountHandle != null) {
-                val uri = Uri.fromParts("tel", phoneNumber, null)
-                telecomManager.placeCall(uri, null)
-                Log.d(TAG, "使用 TelecomManager 拨号成功")
-            } else {
-                // 降级到 Intent
-                val intent = Intent(Intent.ACTION_CALL).apply {
-                    data = Uri.parse("tel:$phoneNumber")
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                }
-                context.startActivity(intent)
-                Log.d(TAG, "降级到 Intent 拨号")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "TelecomManager 拨号失败: ${e.message}")
-            // 降级到 Intent
-            val intent = Intent(Intent.ACTION_CALL).apply {
-                data = Uri.parse("tel:$phoneNumber")
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            context.startActivity(intent)
         }
     }
 
