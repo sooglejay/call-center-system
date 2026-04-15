@@ -85,27 +85,6 @@ class CallHelper @Inject constructor(
         Log.d(TAG, "开始启用扬声器（重试次数: $maxRetries）")
 
         val handler = android.os.Handler(android.os.Looper.getMainLooper())
-        var retryCount = 0
-
-        fun tryEnable() {
-            if (retryCount >= maxRetries) {
-                Log.w(TAG, "已达到最大重试次数 ($maxRetries)，停止重试")
-                return
-            }
-
-            val delay = (retryCount + 1) * 50L  // 50ms, 100ms, 150ms, ..., 850ms
-            retryCount++
-
-            handler.postDelayed({
-                Log.d(TAG, "第 $retryCount/$maxRetries 次尝试启用扬声器（延迟: ${delay}ms）")
-                enableSpeakerWithMultiPhase("retry_$retryCount")
-
-                // 如果重试次数未达到最大值，继续重试
-                if (retryCount < maxRetries) {
-                    tryEnable()
-                }
-            }, delay)
-        }
 
         // 启动持续监控
         CallStateMonitorService.startMonitoring(context)
@@ -113,8 +92,23 @@ class CallHelper @Inject constructor(
         // 立即尝试一次
         enableSpeakerWithMultiPhase("retry_0")
 
+        // 递归重试函数
+        fun scheduleRetry(attempt: Int) {
+            if (attempt >= maxRetries) {
+                Log.w(TAG, "已达到最大重试次数 ($maxRetries)，停止重试")
+                return
+            }
+
+            val delay = (attempt + 1) * 50L
+            handler.postDelayed({
+                Log.d(TAG, "第 $attempt/$maxRetries 次尝试启用扬声器（延迟: ${delay}ms）")
+                enableSpeakerWithMultiPhase("retry_$attempt")
+                scheduleRetry(attempt + 1)
+            }, delay)
+        }
+
         // 开始重试
-        tryEnable()
+        scheduleRetry(1)
     }
 
     /**
