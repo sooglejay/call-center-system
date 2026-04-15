@@ -1,3 +1,15 @@
+## 2026-04-15 APK 下载地址 404 修复
+- 本次完成：修复 `/admin/version` 返回的 APK 地址可用性问题，避免 `/uploads/apk/app-release-xxx.apk` 出现 404。
+- 根因：版本创建、APK 上传和静态文件访问都只依赖单一 `uploads/apk` 目录；一旦线上运行目录与上传落盘目录不一致，版本接口能返回 URL，但静态资源找不到文件。
+- 修复方式：服务端为 APK 增加多目录候选解析，版本创建时按候选目录查找文件，上传时统一写入可写目录，同时新增 `/uploads/apk/:fileName` 下载兜底路由，按多目录顺序查找并返回 APK。
+- 验证结果：已执行 `pnpm -C /Users/bytedance/del/call-center-system/server build`，构建通过。
+
+## 2026-04-15 自动扩音 diff 分析
+- 本次完成：对比 `HEAD` 与 `fd21db4dd84e961829a2b13a3a4dbc681eebdb4a`，聚焦“拨号后自动扩音”相关代码差异。
+- 关键变化：`CallHelper` 从“拨号后启动监听服务”升级为“拨号后 17 次重试 + 6 阶段强制路由”；`CallStateMonitorService` 从“基于 Telephony 状态监听的延迟扩音”改为“每 300ms 持续监控并自动修复”；`AutoSpeakerInCallService` 增加 `setAudioRoute`、`AudioSystem.setForceUse`、`setCommunicationDevice`、Root 命令等多层兜底。
+- 结论：HEAD 比 `fd21db4d` 更激进，因此在部分设备上能成功；但大量依赖 `MODE_IN_CALL`、隐藏 API 和厂商音频实现，仍可能导致部分设备失败。
+- 验证方式：已使用 `git diff`、`git log`、`git diff --stat` 对关键文件完成比对，未执行任何提交操作。
+
 ## 2026-04-15 release.sh 更新日志来源优化
 - 本次完成：优化 `release.sh` 的版本更新日志生成逻辑。
 - 新规则：发布时不再从 `RELEASE_NOTES.md` 回读更新日志，而是直接读取 `ai_coding.txt` 的首段文本，并以空白行作为段落分隔。

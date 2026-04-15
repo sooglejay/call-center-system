@@ -1,3 +1,16 @@
+## v1.9.18 (2026-04-15) - 2026-04-15 APK 下载地址 404 修复
+
+- 本次完成：修复 `/admin/version` 返回的 APK 地址可用性问题，避免 `/uploads/apk/app-release-xxx.apk` 出现 404。
+- 根因：版本创建、APK 上传和静态文件访问都只依赖单一 `uploads/apk` 目录；一旦线上运行目录与上传落盘目录不一致，版本接口能返回 URL，但静态资源找不到文件。
+- 修复方式：服务端为 APK 增加多目录候选解析，版本创建时按候选目录查找文件，上传时统一写入可写目录，同时新增 `/uploads/apk/:fileName` 下载兜底路由，按多目录顺序查找并返回 APK。
+- 验证结果：已执行 `pnpm -C /Users/bytedance/del/call-center-system/server build`，构建通过。
+
+### 构建信息
+- **Commit ID**: `ee4a8ca6`
+- **Commit Message**: release: v1.9.17
+
+---
+
 ## v1.9.17 (2026-04-15) - 2026-04-15 release.sh 更新日志来源优化
 
 - 本次完成：优化 `release.sh` 的版本更新日志生成逻辑。

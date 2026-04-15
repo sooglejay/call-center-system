@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import swaggerUi from 'swagger-ui-express';
 import { initDatabase } from './config/database';
 import { swaggerSpec } from './config/swagger';
@@ -26,6 +27,16 @@ dotenv.config();
 const app: express.Application = express();
 const PORT = process.env.PORT || 8081;
 
+const getApkStorageCandidates = () => {
+  const candidates = [
+    path.join(__dirname, '../uploads/apk'),
+    path.join(process.cwd(), 'uploads/apk'),
+    path.join(process.cwd(), 'server/uploads/apk'),
+  ];
+
+  return Array.from(new Set(candidates));
+};
+
 // 中间件 - CORS 配置
 app.use(cors({
   origin: true, // 允许所有来源
@@ -48,6 +59,22 @@ app.use((req, res, next) => {
 
 // 静态文件
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+app.get('/uploads/apk/:fileName', (req, res, next) => {
+  const { fileName } = req.params;
+
+  if (path.basename(fileName) !== fileName) {
+    return next();
+  }
+
+  for (const dir of getApkStorageCandidates()) {
+    const fullPath = path.join(dir, fileName);
+    if (fullPath.endsWith('.apk') && fs.existsSync(fullPath)) {
+      return res.sendFile(fullPath);
+    }
+  }
+
+  next();
+});
 
 // API 文档
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {

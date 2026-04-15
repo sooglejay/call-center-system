@@ -3,6 +3,37 @@ import { query } from '../config/database';
 import path from 'path';
 import fs from 'fs';
 
+const getApkStorageCandidates = () => {
+  const candidates = [
+    path.join(__dirname, '../../uploads/apk'),
+    path.join(process.cwd(), 'uploads/apk'),
+    path.join(process.cwd(), 'server/uploads/apk'),
+  ];
+
+  return Array.from(new Set(candidates));
+};
+
+const resolveExistingApkPath = (fileName: string) => {
+  for (const dir of getApkStorageCandidates()) {
+    const fullPath = path.join(dir, fileName);
+    if (fs.existsSync(fullPath)) {
+      return fullPath;
+    }
+  }
+
+  return '';
+};
+
+const ensureWritableApkDir = () => {
+  const preferredDir = getApkStorageCandidates()[0];
+
+  if (!fs.existsSync(preferredDir)) {
+    fs.mkdirSync(preferredDir, { recursive: true });
+  }
+
+  return preferredDir;
+};
+
 /**
  * 检查版本更新
  * GET /api/version/check
@@ -97,9 +128,9 @@ export const createVersion = async (req: Request, res: Response) => {
 
     // 检查APK文件是否存在
     const apkFileName = `app-release-${version_code}.apk`;
-    const apkPath = path.join(__dirname, '../../uploads/apk', apkFileName);
+    const apkPath = resolveExistingApkPath(apkFileName);
 
-    if (!fs.existsSync(apkPath)) {
+    if (!apkPath) {
       return res.status(400).json({
         error: 'APK文件不存在',
         message: `请先上传APK文件: ${apkFileName}`
@@ -202,10 +233,7 @@ export const uploadApk = async (req: Request, res: Response) => {
     }
 
     // 重命名文件为规范格式
-    const apkDir = path.join(__dirname, '../../uploads/apk');
-    if (!fs.existsSync(apkDir)) {
-      fs.mkdirSync(apkDir, { recursive: true });
-    }
+    const apkDir = ensureWritableApkDir();
 
     const newFileName = `app-release-${version_code}.apk`;
     const newPath = path.join(apkDir, newFileName);

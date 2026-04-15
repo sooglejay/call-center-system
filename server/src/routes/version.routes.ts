@@ -14,11 +14,28 @@ import { authMiddleware, adminMiddleware } from '../middleware/auth';
 
 const router = Router();
 
+const getApkStorageCandidates = () => {
+  const candidates = [
+    path.join(__dirname, '../../uploads/apk'),
+    path.join(process.cwd(), 'uploads/apk'),
+    path.join(process.cwd(), 'server/uploads/apk'),
+  ];
+
+  return Array.from(new Set(candidates));
+};
+
+const ensureWritableApkDir = () => {
+  const uploadDir = getApkStorageCandidates()[0];
+
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
+
+  return uploadDir;
+};
+
 // 确保上传目录存在
-const uploadDir = path.join(__dirname, '../../uploads/apk');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
+const uploadDir = ensureWritableApkDir();
 
 // 配置 multer
 const storage = multer.diskStorage({
