@@ -40,8 +40,6 @@ import com.callcenter.app.ui.screens.agent.AgentCreateRetryTaskScreen
 import com.callcenter.app.ui.screens.agent.AgentTaskListScreen
 import com.callcenter.app.ui.screens.stats.MyStatsScreen
 import com.callcenter.app.ui.screens.help.HelpScreen
-import com.callcenter.app.ui.screens.dialer.DialerScreen
-import com.callcenter.app.ui.screens.contact.ContactListScreen
 import com.callcenter.app.ui.screens.contact.AddEditContactScreen
 import com.callcenter.app.ui.viewmodel.AuthViewModel
 
@@ -68,19 +66,7 @@ sealed class Screen(val route: String) {
     object AutoDialSettings : Screen("auto_dial_settings")
     object PermissionTest : Screen("permission_test")
 
-    // 拨号
-    object Dialer : Screen("dialer?phoneNumber={phoneNumber}") {
-        fun createRoute(phoneNumber: String? = null): String {
-            return if (phoneNumber.isNullOrBlank()) {
-                "dialer"
-            } else {
-                "dialer?phoneNumber=${Uri.encode(phoneNumber)}"
-            }
-        }
-    }
-
     // 通讯录
-    object ContactList : Screen("contacts")
     object AddContact : Screen("contacts/add")
     object EditContact : Screen("contacts/edit/{contactId}") {
         fun createRoute(contactId: Int) = "contacts/edit/$contactId"
@@ -134,13 +120,6 @@ fun AppNavigation(
         }
     }
 
-    LaunchedEffect(isLoggedIn, pendingOpenDialer, pendingDialNumber) {
-        if (isLoggedIn && (pendingOpenDialer || !pendingDialNumber.isNullOrBlank())) {
-            navController.navigate(Screen.Dialer.createRoute(pendingDialNumber))
-            onDialIntentConsumed()
-        }
-    }
-
     // 显示启动加载界面，避免冷启动时的闪烁
     if (isCheckingAuth) {
         Box(
@@ -168,9 +147,7 @@ fun AppNavigation(
 
     NavHost(
         navController = navController,
-        startDestination = if (isLoggedIn && (pendingOpenDialer || !pendingDialNumber.isNullOrBlank())) {
-            Screen.Dialer.createRoute(pendingDialNumber)
-        } else if (isLoggedIn) {
+        startDestination = if (isLoggedIn) {
             Screen.Main.route
         } else {
             Screen.Login.route
@@ -180,18 +157,8 @@ fun AppNavigation(
         composable(Screen.Login.route) {
             LoginScreen(
                 onLoginSuccess = {
-                    val targetRoute = if (pendingOpenDialer || !pendingDialNumber.isNullOrBlank()) {
-                        Screen.Dialer.createRoute(pendingDialNumber)
-                    } else {
-                        Screen.Main.route
-                    }
-
-                    navController.navigate(targetRoute) {
+                    navController.navigate(Screen.Main.route) {
                         popUpTo(Screen.Login.route) { inclusive = true }
-                    }
-
-                    if (pendingOpenDialer || !pendingDialNumber.isNullOrBlank()) {
-                        onDialIntentConsumed()
                     }
                 }
             )
@@ -229,9 +196,6 @@ fun AppNavigation(
                 },
                 onNavigateToPermissionTest = {
                     navController.navigate(Screen.PermissionTest.route)
-                },
-                onNavigateToDialer = {
-                    navController.navigate(Screen.Dialer.route)
                 },
                 onLogout = {
                     stopAutoDialAndLogout()
@@ -322,42 +286,6 @@ fun AppNavigation(
         composable(Screen.PermissionTest.route) {
             com.callcenter.app.ui.screens.settings.PermissionTestScreen(
                 onNavigateBack = { navController.popBackStack() }
-            )
-        }
-
-        // 手动拨号页面
-        composable(
-            route = Screen.Dialer.route,
-            arguments = listOf(
-                navArgument("phoneNumber") {
-                    type = NavType.StringType
-                    nullable = true
-                    defaultValue = null
-                }
-            )
-        ) { backStackEntry ->
-            DialerScreen(
-                initialPhoneNumber = backStackEntry.arguments?.getString("phoneNumber") ?: "",
-                onNavigateBack = { navController.popBackStack() },
-                onNavigateToContacts = {
-                    navController.navigate(Screen.ContactList.route)
-                }
-            )
-        }
-
-        // 通讯录列表页面
-        composable(Screen.ContactList.route) {
-            val context = LocalContext.current
-            val callHelper = CallHelper(context)
-            ContactListScreen(
-                onNavigateBack = { navController.popBackStack() },
-                onContactClick = { phone ->
-                    // 直接拨打选中的号码
-                    callHelper.makeCall(phone)
-                },
-                onAddContact = {
-                    navController.navigate(Screen.AddContact.route)
-                }
             )
         }
 

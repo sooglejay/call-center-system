@@ -43,8 +43,6 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var callRecordRepository: CallRecordRepository
 
-    private var pendingDialNumber by mutableStateOf<String?>(null)
-    private var pendingOpenDialer by mutableStateOf(false)
     private val mainHandler = Handler(Looper.getMainLooper())
 
     // 权限申请回调
@@ -65,8 +63,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        pendingDialNumber = extractDialNumber(intent)
-        pendingOpenDialer = shouldOpenDialer(intent)
 
         // 检查并申请通话/拨号相关权限
         checkAndRequestCallPermissions()
@@ -105,14 +101,7 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-                    AppNavigation(
-                        pendingOpenDialer = pendingOpenDialer,
-                        pendingDialNumber = pendingDialNumber,
-                        onDialIntentConsumed = {
-                            pendingDialNumber = null
-                            pendingOpenDialer = false
-                        }
-                    )
+                    AppNavigation()
                 }
             }
         }
@@ -121,8 +110,6 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        pendingDialNumber = extractDialNumber(intent)
-        pendingOpenDialer = shouldOpenDialer(intent)
     }
 
     override fun onResume() {
@@ -177,28 +164,6 @@ class MainActivity : ComponentActivity() {
         if (permissionsToRequest.isNotEmpty()) {
             permissionLauncher.launch(permissionsToRequest.toTypedArray())
         }
-    }
-
-    private fun extractDialNumber(intent: Intent?): String? {
-        if (intent == null) return null
-
-        val isDialIntent = intent.action == Intent.ACTION_DIAL ||
-            intent.action == Intent.ACTION_VIEW ||
-            intent.action == Intent.ACTION_CALL_BUTTON
-
-        if (!isDialIntent) return null
-
-        val number = intent.data?.schemeSpecificPart?.trim().orEmpty()
-        return number.takeIf { it.isNotBlank() }
-    }
-
-    private fun shouldOpenDialer(intent: Intent?): Boolean {
-        if (intent == null) return false
-
-        return intent.getBooleanExtra(DialerEntryActivity.EXTRA_OPEN_DIALER, false) ||
-            intent.action == Intent.ACTION_DIAL ||
-            intent.action == Intent.ACTION_VIEW ||
-            intent.action == Intent.ACTION_CALL_BUTTON
     }
 
     private suspend fun tryUploadPendingRecordings() {

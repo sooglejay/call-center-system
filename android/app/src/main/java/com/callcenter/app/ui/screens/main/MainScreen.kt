@@ -72,7 +72,6 @@ fun MainScreen(
     onNavigateToAgentTaskExecution: (Int) -> Unit,
     onNavigateToHelp: () -> Unit,
     onNavigateToPermissionTest: () -> Unit,
-    onNavigateToDialer: () -> Unit,
     onLogout: () -> Unit,
     onSwitchAccount: () -> Unit,
     authViewModel: AuthViewModel = hiltViewModel(),
@@ -256,7 +255,6 @@ fun MainScreen(
                     onNavigateToAgents = onNavigateToAgents,
                     onNavigateToTasks = onNavigateToTasks,
                     onNavigateToTaskDetail = onNavigateToTaskDetail,
-                    onNavigateToDialer = onNavigateToDialer,
                     dashboardViewModel = dashboardViewModel,
                     taskListViewModel = taskListViewModel
                 )
@@ -285,7 +283,6 @@ fun MainScreen(
                     padding = padding,
                     onNavigateToMyStats = onNavigateToMyStats,
                     onNavigateToAgentTaskExecution = onNavigateToAgentTaskExecution,
-                    onNavigateToDialer = onNavigateToDialer,
                     authViewModel = authViewModel,
                     taskListViewModel = taskListViewModel,
                     myStatsViewModel = myStatsViewModel,
@@ -514,7 +511,6 @@ private fun AdminHomeTab(
     onNavigateToAgents: () -> Unit,
     onNavigateToTasks: () -> Unit,
     onNavigateToTaskDetail: (Int) -> Unit,
-    onNavigateToDialer: () -> Unit,
     dashboardViewModel: DashboardViewModel,
     taskListViewModel: TaskListViewModel
 ) {
@@ -662,13 +658,6 @@ private fun AdminHomeTab(
                 .padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            QuickActionButton(
-                modifier = Modifier.weight(1f),
-                title = "手动拨号",
-                icon = Icons.Default.Phone,
-                containerColor = Color(0xFF4CAF50).copy(alpha = 0.1f),
-                onClick = onNavigateToDialer
-            )
             QuickActionButton(
                 modifier = Modifier.weight(1f),
                 title = "数据统计",
@@ -1186,7 +1175,6 @@ private fun AgentWorkTab(
     padding: PaddingValues,
     onNavigateToMyStats: () -> Unit,
     onNavigateToAgentTaskExecution: (Int) -> Unit,
-    onNavigateToDialer: () -> Unit,
     authViewModel: AuthViewModel,
     taskListViewModel: TaskListViewModel,
     myStatsViewModel: MyStatsViewModel,
@@ -1683,13 +1671,6 @@ private fun AgentWorkTab(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    QuickActionButton(
-                        modifier = Modifier.weight(1f),
-                        title = "手动拨号",
-                        icon = Icons.Default.Phone,
-                        containerColor = Color(0xFF4CAF50).copy(alpha = 0.1f),
-                        onClick = onNavigateToDialer
-                    )
                     QuickActionButton(
                         modifier = Modifier.weight(1f),
                         title = "我的统计",
