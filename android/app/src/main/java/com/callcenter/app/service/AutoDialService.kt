@@ -722,12 +722,12 @@ class AutoDialService : Service() {
                 currentIndex++
                 saveProgress()
                 
-                // 等待间隔时间后继续下一个
+                // 如果还有下一个客户需要拨打
                 if (currentIndex < customerQueue.size && _isRunning.value) {
+                    // 先等待间隔时间
+                    delay(intervalSeconds * 1000L)
+                    // 在拨打之前必须等待 App 回到前台
                     waitUntilCanDial()
-                    if (_isRunning.value) {
-                        delay(intervalSeconds * 1000L)
-                    }
                 }
                 continue
             }
@@ -763,38 +763,33 @@ class AutoDialService : Service() {
             if (currentDialRound < dialsPerCustomer) {
                 // 同一客户还有下一轮拨打
                 currentDialRound++
-                // 等待间隔时间后继续拨打同一客户
-                if (_isRunning.value) {
-                    waitUntilCanDial()
-                    if (_isRunning.value) {
-                        delay(intervalSeconds * 1000L)
-                    }
-                }
             } else {
                 // 当前客户所有轮次完成，流转到下一个客户
                 currentDialRound = 1
                 currentIndex++
+            }
 
-                // 如果不是最后一个客户，等待间隔时间
-                if (currentIndex < customerQueue.size && _isRunning.value) {
-                    waitUntilCanDial()
-                    if (_isRunning.value) {
-                        delay(intervalSeconds * 1000L)
-                    }
-                }
+            // 如果还有下一个客户需要拨打
+            if (currentIndex < customerQueue.size && _isRunning.value) {
+                // 先等待间隔时间
+                delay(intervalSeconds * 1000L)
+                
+                // 关键：在拨打之前必须等待 App 回到前台
+                // 这样即使用户在等待期间切换到后台，也会等待用户回来
+                waitUntilCanDial()
             }
         }
 
-            // 所有客户拨打完成
-            if (_isRunning.value) {
-                // 清除进度
-                progressManager.clearProgress()
-                // 通知任务完成
-                completeTask()
-                delay(3000)
-            }
-            stopAutoDial()
-            stopSelf()
+        // 所有客户拨打完成
+        if (_isRunning.value) {
+            // 清除进度
+            progressManager.clearProgress()
+            // 通知任务完成
+            completeTask()
+            delay(3000)
+        }
+        stopAutoDial()
+        stopSelf()
     }
 
     private suspend fun saveProgress() {
@@ -923,6 +918,7 @@ class AutoDialService : Service() {
         var offHookStartTime: Long = 0
         val MIN_CALL_DURATION = 3000 // 最小通话持续时间 3 秒
         val MAX_CALL_DURATION = 600000 // 最大通话持续时间 10 分钟（防止无限等待）
+        val MIN_CONFIRM_IDLE_TIME = 3000 // 确认通话结束的最小等待时间（避免语音信箱误判）
 
         // 更新初始状态为拨号中
         _currentCallState.value = com.callcenter.app.util.root.RootCallState.DIALING
@@ -937,6 +933,8 @@ class AutoDialService : Service() {
 
             // 等待电话接通
             Log.d(TAG, "等待电话接通...")
+            var idleConfirmStartTime: Long = 0 // 开始确认 IDLE 状态的时间
+            
             while (_isRunning.value) {
                 val state = telephonyManager.callState
 
@@ -946,6 +944,7 @@ class AutoDialService : Service() {
                         if (!callConnected) {
                             callConnected = true
                             offHookStartTime = System.currentTimeMillis()
+                            idleConfirmStartTime = 0 // 重置确认时间
                             Log.d(TAG, "电话已接通/进入通话状态")
                             // 更新状态为已接通
                             _currentCallState.value = com.callcenter.app.util.root.RootCallState.ACTIVE
@@ -973,49 +972,52 @@ class AutoDialService : Service() {
                                 Log.e(TAG, "免提开启最终失败")
                                 FloatingCustomerService.addCallStateHistory("免提开启失败", _currentCustomer.value?.phone, _currentCustomer.value?.name)
                             }
+                        } else {
+                            // 已经接通过，重置确认时间（状态从 IDLE 变回 OFFHOOK，说明之前是误判）
+                            if (idleConfirmStartTime > 0) {
+                                Log.d(TAG, "状态从 IDLE 变回 OFFHOOK，重置确认计时")
+                                idleConfirmStartTime = 0
+                            }
                         }
                     }
                     TelephonyManager.CALL_STATE_IDLE -> {
                         if (callConnected) {
-                            // 之前已接通，现在挂断了
-                            // 确保通话持续时间超过最小值（避免误判运营商语音播报为有效通话）
+                            // 之前已接通，现在变成 IDLE
+                            // 开始或继续确认流程
+                            if (idleConfirmStartTime == 0L) {
+                                idleConfirmStartTime = System.currentTimeMillis()
+                                Log.d(TAG, "检测到 IDLE 状态，开始确认流程...")
+                            }
+                            
+                            val idleDuration = System.currentTimeMillis() - idleConfirmStartTime
                             val callDuration = System.currentTimeMillis() - offHookStartTime
-                            if (callDuration >= MIN_CALL_DURATION) {
-                                Log.d(TAG, "通话已挂断，持续时间: ${callDuration}ms")
-                                // 更新状态为已挂断
+                            
+                            // 必须满足两个条件才能确认通话结束：
+                            // 1. IDLE 状态持续时间超过最小确认时间
+                            // 2. 通话总时长超过最小通话时间（或确认时间足够长）
+                            if (idleDuration >= MIN_CONFIRM_IDLE_TIME) {
+                                // 确认通话结束
+                                Log.d(TAG, "通话已确认结束，总持续时间: ${callDuration}ms，IDLE确认时间: ${idleDuration}ms")
                                 _currentCallState.value = com.callcenter.app.util.root.RootCallState.IDLE
                                 FloatingCustomerService.addCallStateHistory("已挂断", _currentCustomer.value?.phone, _currentCustomer.value?.name, callDuration)
-                                // 关闭免提，恢复听筒
                                 callHelper.disableSpeakerphone()
-                                // 对于非 root 设备，根据通话时长判断是否接通
-                                lastCallWasConnected = true
-                                lastResolvedCallResult = "已接听"
+                                lastCallWasConnected = callDuration >= MIN_CALL_DURATION
+                                lastResolvedCallResult = if (lastCallWasConnected) "已接听" else "响铃未接"
                                 return true
-                            } else {
-                                // 通话时间太短，可能是运营商语音播报号码有误
-                                // 等待一下确认状态稳定
-                                Log.d(TAG, "通话时间太短(${callDuration}ms)，等待确认...")
-                                delay(1000)
-                                if (telephonyManager.callState == TelephonyManager.CALL_STATE_IDLE) {
-                                    Log.d(TAG, "确认通话已结束")
-                                    _currentCallState.value = com.callcenter.app.util.root.RootCallState.IDLE
-                                    FloatingCustomerService.addCallStateHistory("已挂断", _currentCustomer.value?.phone, _currentCustomer.value?.name, callDuration)
-                                    // 对于非 root 设备，通话时间短可能是未接通或拒接
-                                    lastCallWasConnected = false
-                                    lastResolvedCallResult = "响铃未接"
-                                    return true
-                                }
                             }
                         } else {
                             // 电话未接通就被挂断了（如无法连接到移动网络）
-                            // 等待一小段时间确保状态稳定
-                            delay(500)
-                            // 再次检查，如果仍然是IDLE，说明确实已结束
-                            if (telephonyManager.callState == TelephonyManager.CALL_STATE_IDLE) {
-                                Log.d(TAG, "电话未接通即结束")
+                            // 开始确认流程
+                            if (idleConfirmStartTime == 0L) {
+                                idleConfirmStartTime = System.currentTimeMillis()
+                                Log.d(TAG, "未接通状态，开始确认流程...")
+                            }
+                            
+                            val idleDuration = System.currentTimeMillis() - idleConfirmStartTime
+                            if (idleDuration >= MIN_CONFIRM_IDLE_TIME) {
+                                Log.d(TAG, "确认电话未接通即结束")
                                 _currentCallState.value = com.callcenter.app.util.root.RootCallState.IDLE
                                 FloatingCustomerService.addCallStateHistory("未接通", _currentCustomer.value?.phone, _currentCustomer.value?.name)
-                                // 对于非 root 设备，未接通
                                 lastCallWasConnected = false
                                 lastResolvedCallResult = "响铃未接"
                                 return true
