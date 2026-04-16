@@ -25,7 +25,6 @@ fun CustomerDetailScreen(
     customerId: Int,
     onNavigateBack: () -> Unit,
     onNavigateToCallHistory: () -> Unit,
-    onCallCustomer: (String) -> Unit,
     viewModel: CustomerDetailViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -59,17 +58,6 @@ fun CustomerDetailScreen(
                     }
                 }
             )
-        },
-        floatingActionButton = {
-            customer?.let { c ->
-                if (c.status == "pending" || c.status == "no_answer") {
-                    ExtendedFloatingActionButton(
-                        onClick = { onCallCustomer(c.phone ?: "") },
-                        icon = { Icon(Icons.Default.Phone, null) },
-                        text = { Text("拨打电话") }
-                    )
-                }
-            }
         }
     ) { padding ->
         Box(

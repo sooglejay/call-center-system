@@ -76,7 +76,6 @@ class AutoDialViewModel @Inject constructor(
     init {
         // 立即同步服务的当前状态（用于处理返回App时的情况）
         _isRunning.value = AutoDialService.isRunning.value
-        _isAutoDialMode.value = AutoDialService.isAutoDialMode.value
         _currentCustomer.value = AutoDialService.currentCustomer.value
         _dialedCount.value = AutoDialService.dialedCount.value
         _totalCount.value = AutoDialService.totalCount.value
@@ -85,11 +84,6 @@ class AutoDialViewModel @Inject constructor(
         viewModelScope.launch {
             AutoDialService.isRunning.collect { running ->
                 _isRunning.value = running
-            }
-        }
-        viewModelScope.launch {
-            AutoDialService.isAutoDialMode.collect { isAutoMode ->
-                _isAutoDialMode.value = isAutoMode
             }
         }
         viewModelScope.launch {

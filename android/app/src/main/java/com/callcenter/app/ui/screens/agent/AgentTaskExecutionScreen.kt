@@ -78,7 +78,6 @@ fun AgentTaskExecutionScreen(
 
     // 自动拨号状态
     val autoDialRunning by autoDialViewModel.isRunning.collectAsState()
-    val autoDialMode by autoDialViewModel.isAutoDialMode.collectAsState()
     val currentDialCustomer by autoDialViewModel.currentCustomer.collectAsState()
     val dialedCount by autoDialViewModel.dialedCount.collectAsState()
     val totalCount by autoDialViewModel.totalCount.collectAsState()
@@ -208,7 +207,7 @@ fun AgentTaskExecutionScreen(
                     currentCustomer = currentDialCustomer,
                     dialedCount = dialedCount,
                     totalCount = totalCount,
-                    isAutoMode = autoDialMode,
+                    isAutoMode = true,
                     onStop = { autoDialViewModel.stopAutoDial() },
                     onCallStatusMarked = { status ->
                         // 发送通话状态标记到AutoDialService
@@ -254,21 +253,6 @@ fun AgentTaskExecutionScreen(
                                 )
                             }
                         }
-                    },
-                    onAutoModeChanged = { isAutoMode ->
-                        // 发送切换自动/手动模式到AutoDialService
-                        val intent = android.content.Intent(context, com.callcenter.app.service.AutoDialService::class.java).apply {
-                            action = com.callcenter.app.service.AutoDialService.ACTION_SET_AUTO_MODE
-                            putExtra(com.callcenter.app.service.AutoDialService.EXTRA_AUTO_MODE, isAutoMode)
-                        }
-                        context.startService(intent)
-                    },
-                    onDialNext = {
-                        // 发送拨打下一个命令到AutoDialService
-                        val intent = android.content.Intent(context, com.callcenter.app.service.AutoDialService::class.java).apply {
-                            action = com.callcenter.app.service.AutoDialService.ACTION_DIAL_NEXT
-                        }
-                        context.startService(intent)
                     },
                     callStateHistory = com.callcenter.app.service.FloatingCustomerService.callStateHistory.collectAsState().value
                 )
@@ -2103,8 +2087,6 @@ private fun TaskAutoDialCustomerPanel(
     isAutoMode: Boolean,
     onStop: () -> Unit,
     onCallStatusMarked: ((String) -> Unit)? = null,
-    onAutoModeChanged: ((Boolean) -> Unit)? = null,
-    onDialNext: (() -> Unit)? = null,
     callStateHistory: List<com.callcenter.app.service.CallStateHistoryItem> = emptyList()
 ) {
     // 当前选中的通话状态
@@ -2167,7 +2149,6 @@ private fun TaskAutoDialCustomerPanel(
                             checked = localAutoMode,
                             onCheckedChange = { checked ->
                                 localAutoMode = checked
-                                onAutoModeChanged?.invoke(checked)
                             },
                             modifier = Modifier.scale(0.7f)
                         )
@@ -2252,83 +2233,56 @@ private fun TaskAutoDialCustomerPanel(
                     }
                 }
 
-                // 拨打下一个按钮和通话状态历史记录
-                if (onDialNext != null) {
+                // 通话状态历史记录
+                if (callStateHistory.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    TextButton(
+                        onClick = { showHistory = !showHistory }
                     ) {
-                        // 拨打下一个按钮
-                        Button(
-                            onClick = onDialNext,
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary
-                            )
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("拨打下一个")
-                        }
-
-                        // 通话状态历史记录按钮
-                        if (callStateHistory.isNotEmpty()) {
-                            Spacer(modifier = Modifier.width(8.dp))
-                            TextButton(
-                                onClick = { showHistory = !showHistory }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.History,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("记录(${callStateHistory.size})")
-                            }
-                        }
+                        Icon(
+                            imageVector = Icons.Default.History,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("通话记录(${callStateHistory.size})")
                     }
+                }
 
-                    // 通话状态历史记录列表
-                    if (showHistory && callStateHistory.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                            )
+                // 通话状态历史记录列表
+                if (showHistory && callStateHistory.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(8.dp)
                         ) {
-                            Column(
-                                modifier = Modifier.padding(8.dp)
-                            ) {
-                                Text(
-                                    text = "通话状态记录",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                callStateHistory.takeLast(5).forEach { item ->
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Text(
-                                            text = "${item.getFormattedTime()} ${item.customerName ?: ""}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        Text(
-                                            text = item.state,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
+                            Text(
+                                text = "通话状态记录",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            callStateHistory.takeLast(5).forEach { item ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "${item.getFormattedTime()} ${item.customerName ?: ""}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = item.state,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
                                 }
                             }
                         }

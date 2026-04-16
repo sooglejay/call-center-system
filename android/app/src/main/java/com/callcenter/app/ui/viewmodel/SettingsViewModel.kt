@@ -235,15 +235,9 @@ class SettingsViewModel @Inject constructor(
             try {
                 // 关键字过滤
                 val keywords = listOf(
-                    "AutoSpeakerInCall",
                     "CallStateMonitor",
                     "CallHelper",
-                    "AudioManager",
-                    "AudioSystem",
-                    "setSpeakerphoneOn",
-                    "setCommunicationDevice",
-                    "setForceUse",
-                    "setAudioRoute",
+                    "AutoDial",
                     "CallAudioState"
                 )
 

@@ -533,7 +533,7 @@ private fun DebugSettingsGroup(
     SettingsGroup(title = "调试") {
         ListItem(
             headlineContent = { Text("收集 logcat 日志") },
-            supportingContent = { Text("收集扩音相关的日志（默认最多 10000 条）") },
+            supportingContent = { Text("收集通话相关的日志（默认最多 10000 条）") },
             leadingContent = {
                 Icon(Icons.Default.Description, null, tint = MaterialTheme.colorScheme.primary)
             },
@@ -549,7 +549,7 @@ private fun DebugSettingsGroup(
 
         ListItem(
             headlineContent = { Text("下载日志") },
-            supportingContent = { Text("导出扩音相关的日志到文件") },
+            supportingContent = { Text("导出通话相关的日志到文件") },
             leadingContent = {
                 Icon(Icons.Default.Download, null, tint = MaterialTheme.colorScheme.primary)
             },

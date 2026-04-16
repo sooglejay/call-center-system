@@ -1,7 +1,6 @@
 package com.callcenter.app.ui.navigation
 
 import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
@@ -24,7 +23,6 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.callcenter.app.service.AutoDialService
 import com.callcenter.app.ui.screens.admin.AgentDetailScreen
-import com.callcenter.app.util.CallHelper
 import com.callcenter.app.ui.screens.admin.AgentListScreen
 import com.callcenter.app.ui.screens.admin.CreateTaskScreen
 import com.callcenter.app.ui.screens.admin.DashboardScreen
@@ -40,7 +38,6 @@ import com.callcenter.app.ui.screens.agent.AgentCreateRetryTaskScreen
 import com.callcenter.app.ui.screens.agent.AgentTaskListScreen
 import com.callcenter.app.ui.screens.stats.MyStatsScreen
 import com.callcenter.app.ui.screens.help.HelpScreen
-import com.callcenter.app.ui.screens.contact.AddEditContactScreen
 import com.callcenter.app.ui.viewmodel.AuthViewModel
 
 /**
@@ -66,12 +63,6 @@ sealed class Screen(val route: String) {
     object AutoDialSettings : Screen("auto_dial_settings")
     object PermissionTest : Screen("permission_test")
 
-    // 通讯录
-    object AddContact : Screen("contacts/add")
-    object EditContact : Screen("contacts/edit/{contactId}") {
-        fun createRoute(contactId: Int) = "contacts/edit/$contactId"
-    }
-    
     // 客服个人
     object MyStats : Screen("my_stats")
     object Help : Screen("help")
@@ -102,10 +93,7 @@ sealed class Screen(val route: String) {
 @Composable
 fun AppNavigation(
     navController: NavHostController = rememberNavController(),
-    authViewModel: AuthViewModel = hiltViewModel(),
-    pendingOpenDialer: Boolean = false,
-    pendingDialNumber: String? = null,
-    onDialIntentConsumed: () -> Unit = {}
+    authViewModel: AuthViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val isLoggedIn by authViewModel.isLoggedIn.collectAsState()
@@ -224,18 +212,12 @@ fun AppNavigation(
             route = Screen.CustomerDetail.route,
             arguments = listOf(navArgument("customerId") { type = NavType.IntType })
         ) { backStackEntry ->
-            val context = LocalContext.current
-            val callHelper = CallHelper(context)
             val customerId = backStackEntry.arguments?.getInt("customerId") ?: 0
             CustomerDetailScreen(
                 customerId = customerId,
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToCallHistory = {
                     navController.navigate(Screen.CallHistory.createRoute(customerId))
-                },
-                onCallCustomer = { phone ->
-                    // 拨打电话
-                    callHelper.makeCall(phone)
                 }
             )
         }
@@ -285,25 +267,6 @@ fun AppNavigation(
 
         composable(Screen.PermissionTest.route) {
             com.callcenter.app.ui.screens.settings.PermissionTestScreen(
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
-
-        // 添加联系人页面
-        composable(Screen.AddContact.route) {
-            AddEditContactScreen(
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
-
-        // 编辑联系人页面
-        composable(
-            route = Screen.EditContact.route,
-            arguments = listOf(navArgument("contactId") { type = NavType.IntType })
-        ) { backStackEntry ->
-            val contactId = backStackEntry.arguments?.getInt("contactId") ?: 0
-            // TODO: 加载联系人数据并传入
-            AddEditContactScreen(
                 onNavigateBack = { navController.popBackStack() }
             )
         }

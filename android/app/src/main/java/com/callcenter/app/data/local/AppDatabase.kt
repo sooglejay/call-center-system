@@ -4,7 +4,6 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import com.callcenter.app.data.local.dao.CallRecordDao
-import com.callcenter.app.data.local.dao.ContactDao
 import com.callcenter.app.data.local.dao.CustomerDao
 import com.callcenter.app.data.local.dao.TaskDao
 import com.callcenter.app.data.local.dao.UserDao
@@ -16,10 +15,9 @@ import com.callcenter.app.data.local.entity.*
         CallRecordEntity::class,
         AutoDialConfigEntity::class,
         TaskEntity::class,
-        UserEntity::class,
-        ContactEntity::class
+        UserEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -28,5 +26,4 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun callRecordDao(): CallRecordDao
     abstract fun taskDao(): TaskDao
     abstract fun userDao(): UserDao
-    abstract fun contactDao(): ContactDao
 }

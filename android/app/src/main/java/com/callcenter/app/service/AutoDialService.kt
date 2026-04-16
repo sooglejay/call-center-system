@@ -23,7 +23,6 @@ import com.callcenter.app.data.repository.TaskRepository
 import com.callcenter.app.ui.viewmodel.AutoDialScopeType
 import com.callcenter.app.util.AppLifecycleManager
 import com.callcenter.app.util.CallHelper
-import com.callcenter.app.util.CallSpeakerHelper
 import com.callcenter.app.util.FloatingWindowManager
 import com.callcenter.app.util.UserNotifier
 import com.callcenter.app.util.root.RootCallState
@@ -59,8 +58,6 @@ class AutoDialService : Service() {
         const val ACTION_CALL_STATUS_NO_ANSWER = "com.callcenter.app.action.CALL_STATUS_NO_ANSWER"
         const val ACTION_CALL_STATUS_IVR = "com.callcenter.app.action.CALL_STATUS_IVR"
         const val ACTION_CALL_STATUS_OTHER = "com.callcenter.app.action.CALL_STATUS_OTHER"
-        const val ACTION_DIAL_NEXT = "com.callcenter.app.action.DIAL_NEXT"  // 手动拨打下一个
-        const val ACTION_SET_AUTO_MODE = "com.callcenter.app.action.SET_AUTO_MODE"  // 设置自动/手动模式
 
         const val EXTRA_INTERVAL = "interval_seconds"
         const val EXTRA_TIMEOUT = "timeout_seconds"
@@ -73,7 +70,6 @@ class AutoDialService : Service() {
         const val EXTRA_START_INDEX = "start_index"
         const val EXTRA_DIALED_COUNT = "dialed_count"
         const val EXTRA_START_DIAL_ROUND = "start_dial_round"  // 恢复进度时的当前轮次
-        const val EXTRA_AUTO_MODE = "auto_mode"  // 自动/手动模式
 
         // 状态流
         private val _isRunning = MutableStateFlow(false)
@@ -98,10 +94,6 @@ class AutoDialService : Service() {
         private val _taskCompleted = MutableStateFlow<Int?>(null)
         val taskCompleted: StateFlow<Int?> = _taskCompleted
 
-        // 是否自动拨号模式
-        private val _isAutoDialMode = MutableStateFlow(false)
-        val isAutoDialMode: StateFlow<Boolean> = _isAutoDialMode
-
         // 当前通话状态流（用于悬浮窗监听）
         private val _currentCallState = MutableStateFlow<com.callcenter.app.util.root.RootCallState?>(null)
         val currentCallState: StateFlow<com.callcenter.app.util.root.RootCallState?> = _currentCallState
@@ -112,14 +104,6 @@ class AutoDialService : Service() {
 
         private const val NOTIFICATION_ID = 1001
         private const val TAG = "AutoDialService"
-        
-        /**
-         * 设置自动拨号模式
-         * 供外部组件（如 FloatingCustomerService）调用
-         */
-        fun setAutoDialMode(isAutoMode: Boolean) {
-            _isAutoDialMode.value = isAutoMode
-        }
     }
 
     @Inject
@@ -153,12 +137,6 @@ class AutoDialService : Service() {
     private var currentIndex: Int = 0
     private var scopeType: AutoDialScopeType = AutoDialScopeType.ALL_PENDING
 
-    // 手动拨号等待协程
-    private var manualDialWaitJob: Job? = null
-    
-    // 防止重复拨打标志
-    private var isWaitingForNextDial: Boolean = false
-
     // 自动拨号挂起状态（当不在前台或通话中时挂起）
     private var isAutoDialSuspended: Boolean = false
     private var suspendCheckJob: Job? = null
@@ -174,9 +152,6 @@ class AutoDialService : Service() {
         getSystemService(android.content.Context.TELEPHONY_SERVICE) as TelephonyManager
     }
 
-    // 通话自动免提助手
-    private lateinit var callSpeakerHelper: CallSpeakerHelper
-
     // 是否已自动标记当前通话状态
     private var hasAutoMarkedCurrentCall: Boolean = false
 
@@ -188,104 +163,13 @@ class AutoDialService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        
-        // 初始化通话自动免提助手
-        callSpeakerHelper = CallSpeakerHelper(this)
-        
+
         // 初始化 Root 通话状态检测器
         rootCallStateDetector = RootCallStateDetector()
         setupCallStateListener()
-        
+
         // 启动前台状态监控
         startForegroundMonitoring()
-        
-        // 设置悬浮窗手动拨号回调
-        FloatingCustomerService.manualDialCallback = object : ManualDialCallback {
-            override fun onDialNext() {
-                // 手动点击拨打下一个
-                serviceScope.launch {
-                    Log.d(TAG, "[manualDialCallback.onDialNext] 用户点击拨打下一个按钮")
-                    Log.d(TAG, "[manualDialCallback.onDialNext] 当前状态: _isRunning=$_isRunning.value, _isAutoDialMode=$_isAutoDialMode.value, manualDialWaitJob=$manualDialWaitJob")
-                    
-                    // 检查当前通话状态
-                    val callState = getCallState()
-                    Log.d(TAG, "[manualDialCallback.onDialNext] 当前通话状态: $callState")
-                    
-                    if (callState != TelephonyManager.CALL_STATE_IDLE) {
-                        // 当前正在通话中，先挂断当前电话
-                        Log.w(TAG, "[manualDialCallback.onDialNext] 当前正在通话中，先挂断当前电话")
-                        hangupCurrentCall()
-                        
-                        // 等待通话挂断（最多等待3秒）
-                        var waitCount = 0
-                        while (getCallState() != TelephonyManager.CALL_STATE_IDLE && waitCount < 30) {
-                            delay(100)
-                            waitCount++
-                        }
-                        
-                        if (getCallState() != TelephonyManager.CALL_STATE_IDLE) {
-                            Log.e(TAG, "[manualDialCallback.onDialNext] 无法挂断当前电话，取消拨打下一个")
-                            UserNotifier.showError("无法挂断当前电话，已取消拨打下一个")
-                            return@launch
-                        }
-                        
-                        Log.d(TAG, "[manualDialCallback.onDialNext] 当前电话已挂断")
-                    }
-                    
-                    // 推进到下一个客户（设置轮次为最大值，让 processQueue 自动推进）
-                    val currentCustomer = _currentCustomer.value
-                    Log.d(TAG, "[manualDialCallback.onDialNext] 当前客户: $currentCustomer, currentDialRound=$currentDialRound, dialsPerCustomer=$dialsPerCustomer")
-                    if (currentCustomer != null) {
-                        currentDialRound = dialsPerCustomer
-                        Log.d(TAG, "[manualDialCallback.onDialNext] 设置 currentDialRound = $dialsPerCustomer")
-                    }
-                    
-                    // 继续拨打（取消等待）
-                    Log.d(TAG, "[manualDialCallback.onDialNext] 调用 resumeManualDial()")
-                    resumeManualDial()
-                    Log.d(TAG, "[manualDialCallback.onDialNext] 执行完成")
-                }
-            }
-
-            override fun onAutoDialModeChanged(isAutoMode: Boolean) {
-                // 切换自动/手动模式
-                _isAutoDialMode.value = isAutoMode
-                Log.d(TAG, "自动拨号模式切换为: $isAutoMode")
-
-                // 如果从手动切换到自动，且当前正在等待手动拨号，则继续
-                // 但要确保当前不在通话中且没有在等待拨打下一个
-                if (isAutoMode && manualDialWaitJob?.isActive == true) {
-                    // 检查是否已经在等待拨打下一个，防止重复触发
-                    if (isWaitingForNextDial) {
-                        Log.w(TAG, "已经在等待拨打下一个，切换到自动模式但不会重复触发")
-                        return
-                    }
-                    
-                    // 检查当前通话状态
-                    val callState = getCallState()
-                    if (callState == TelephonyManager.CALL_STATE_IDLE) {
-                        // 当前没有在通话中，可以安全地继续
-                        serviceScope.launch {
-                            resumeManualDial()
-                        }
-                    } else {
-                        Log.w(TAG, "当前正在通话中，切换到自动模式但不会自动拨打下一个")
-                    }
-                }
-            }
-
-            override fun onStopDial() {
-                // 停止拨号
-                Log.d(TAG, "用户点击停止拨号按钮")
-                stopAutoDial()
-            }
-        }
-    }
-
-    private fun resumeManualDial() {
-        Log.d(TAG, "resumeManualDial: manualDialWaitJob=${manualDialWaitJob}, isActive=${manualDialWaitJob?.isActive}")
-        manualDialWaitJob?.cancel()
-        Log.d(TAG, "resumeManualDial: 已取消 manualDialWaitJob")
     }
 
     /**
@@ -475,8 +359,8 @@ class AutoDialService : Service() {
                 val isCallIdle = currentCallState == TelephonyManager.CALL_STATE_IDLE
                 
                 // 判断是否应该挂起自动拨号
-                // 条件：自动模式 + (不在前台 或 通话中)
-                val shouldSuspend = _isAutoDialMode.value && (!isInForeground || !isCallIdle)
+                // 条件：不在前台 或 通话中
+                val shouldSuspend = !isInForeground || !isCallIdle
                 
                 if (shouldSuspend && !isAutoDialSuspended) {
                     // 需要挂起
@@ -488,11 +372,6 @@ class AutoDialService : Service() {
                     isAutoDialSuspended = false
                     Log.d(TAG, "自动拨号已恢复: 前台=$isInForeground, 通话空闲=$isCallIdle")
                     updateFloatingWindowStatus("自动拨号中")
-                    
-                    // 如果正在等待，继续拨打
-                    if (manualDialWaitJob?.isActive == true) {
-                        resumeManualDial()
-                    }
                 }
                 
                 delay(1000) // 每秒检查一次
@@ -610,14 +489,6 @@ class AutoDialService : Service() {
                 currentIndex = intent.getIntExtra(EXTRA_START_INDEX, 0)
                 _dialedCount.value = intent.getIntExtra(EXTRA_DIALED_COUNT, 0)
 
-                // 默认自动拨号模式
-                _isAutoDialMode.value = true
-                FloatingCustomerService.setAutoDialMode(true)
-
-                // 启动通话自动免提助手
-                callSpeakerHelper.start()
-                Log.d(TAG, "通话自动免提助手已启动")
-
                 // 保存初始进度
                 serviceScope.launch {
                     saveProgress()
@@ -626,9 +497,6 @@ class AutoDialService : Service() {
                 startAutoDial()
             }
             ACTION_STOP -> {
-                // 停止通话自动免提助手
-                callSpeakerHelper.stop()
-                Log.d(TAG, "通话自动免提助手已停止")
                 
                 // 清除进度
                 serviceScope.launch {
@@ -654,71 +522,6 @@ class AutoDialService : Service() {
             ACTION_CALL_STATUS_IVR, ACTION_CALL_STATUS_OTHER -> {
                 // 处理通话状态确认
                 handleCallStatusAction(intent.action)
-            }
-            ACTION_DIAL_NEXT -> {
-                // 手动拨打下一个 - 与 manualDialCallback.onDialNext() 逻辑一致
-                serviceScope.launch {
-                    Log.d(TAG, "[ACTION_DIAL_NEXT] 收到 Intent，开始执行")
-                    Log.d(TAG, "[ACTION_DIAL_NEXT] 当前状态: _isRunning=$_isRunning.value, _isAutoDialMode=$_isAutoDialMode.value, manualDialWaitJob=$manualDialWaitJob")
-                    
-                    // 检查当前通话状态
-                    val callState = getCallState()
-                    Log.d(TAG, "[ACTION_DIAL_NEXT] 当前通话状态: $callState")
-                    
-                    if (callState != TelephonyManager.CALL_STATE_IDLE) {
-                        // 当前正在通话中，先挂断当前电话
-                        Log.w(TAG, "[ACTION_DIAL_NEXT] 当前正在通话中，先挂断当前电话")
-                        hangupCurrentCall()
-                        
-                        // 等待通话挂断（最多等待3秒）
-                        var waitCount = 0
-                        while (getCallState() != TelephonyManager.CALL_STATE_IDLE && waitCount < 30) {
-                            delay(100)
-                            waitCount++
-                        }
-                        
-                        if (getCallState() != TelephonyManager.CALL_STATE_IDLE) {
-                            Log.e(TAG, "[ACTION_DIAL_NEXT] 无法挂断当前电话，取消拨打下一个")
-                            UserNotifier.showError("无法挂断当前电话，已取消拨打下一个")
-                            return@launch
-                        }
-                        
-                        Log.d(TAG, "[ACTION_DIAL_NEXT] 当前电话已挂断")
-                    }
-                    
-                    // 推进到下一个客户（设置轮次为最大值，让 processQueue 自动推进）
-                    val currentCustomer = _currentCustomer.value
-                    Log.d(TAG, "[ACTION_DIAL_NEXT] 当前客户: $currentCustomer, currentDialRound=$currentDialRound, dialsPerCustomer=$dialsPerCustomer")
-                    if (currentCustomer != null) {
-                        currentDialRound = dialsPerCustomer
-                        Log.d(TAG, "[ACTION_DIAL_NEXT] 设置 currentDialRound = $dialsPerCustomer")
-                    }
-                    
-                    // 继续拨打（取消等待）
-                    Log.d(TAG, "[ACTION_DIAL_NEXT] 调用 resumeManualDial()")
-                    resumeManualDial()
-                    Log.d(TAG, "[ACTION_DIAL_NEXT] 执行完成")
-                }
-            }
-            ACTION_SET_AUTO_MODE -> {
-                // 设置自动/手动模式
-                val isAutoMode = intent.getBooleanExtra(EXTRA_AUTO_MODE, true)
-                _isAutoDialMode.value = isAutoMode
-                Log.d(TAG, "通过Intent切换自动拨号模式为: $isAutoMode")
-                
-                // 同步到 FloatingCustomerService（使用内部方法避免循环）
-                FloatingCustomerService.updateAutoDialModeFromService(isAutoMode)
-                Log.d(TAG, "已同步自动拨号模式到 FloatingCustomerService: $isAutoMode")
-                
-                // 如果从手动切换到自动，且当前正在等待手动拨号，则继续
-                if (isAutoMode && manualDialWaitJob?.isActive == true && !isWaitingForNextDial) {
-                    val callState = getCallState()
-                    if (callState == TelephonyManager.CALL_STATE_IDLE) {
-                        serviceScope.launch {
-                            resumeManualDial()
-                        }
-                    }
-                }
             }
         }
         return START_STICKY
@@ -810,12 +613,9 @@ class AutoDialService : Service() {
         _dialedCount.value = 0
         job?.cancel()
         job = null
-        manualDialWaitJob?.cancel()
-        manualDialWaitJob = null
         customerQueue.clear()
         currentIndex = 0
         isPaused = false
-        isWaitingForNextDial = false  // 清除等待标志
 
         // 隐藏悬浮窗
         hideFloatingWindow()
@@ -890,20 +690,6 @@ class AutoDialService : Service() {
             // 保存进度（每拨打一个客户前保存）
             saveProgress()
 
-            // 手动模式下，等待用户点击"下一个"才开始拨打
-            if (!_isAutoDialMode.value) {
-                Log.d(TAG, "[processQueue] 手动模式：等待用户点击下一个开始拨打 ${customer.name}")
-                isWaitingForNextDial = true
-                waitForManualDial()
-                isWaitingForNextDial = false
-                Log.d(TAG, "[processQueue] 手动模式：等待结束，继续执行")
-                // 用户点击后，检查是否还在运行状态
-                if (!_isRunning.value) {
-                    Log.d(TAG, "[processQueue] 服务已停止，退出循环")
-                    break
-                }
-            }
-
             // 拨打电话
             var callFailed = false
             var failReason = ""
@@ -927,17 +713,9 @@ class AutoDialService : Service() {
                 
                 // 等待间隔时间后继续下一个
                 if (currentIndex < customerQueue.size && _isRunning.value) {
-                    // 手动模式下等待用户点击
-                    if (!_isAutoDialMode.value) {
-                        isWaitingForNextDial = true
-                        waitForManualDial()
-                        isWaitingForNextDial = false
-                    } else {
-                        // 自动模式下，先检查是否可以拨打
-                        waitUntilCanDial()
-                        if (_isRunning.value) {
-                            delay(intervalSeconds * 1000L)
-                        }
+                    waitUntilCanDial()
+                    if (_isRunning.value) {
+                        delay(intervalSeconds * 1000L)
                     }
                 }
                 continue
@@ -976,19 +754,9 @@ class AutoDialService : Service() {
                 currentDialRound++
                 // 等待间隔时间后继续拨打同一客户
                 if (_isRunning.value) {
-                    // 手动模式下等待用户点击
-                    if (!_isAutoDialMode.value) {
-                        Log.d(TAG, "[processQueue] 同一客户下一轮：等待用户点击下一个")
-                        isWaitingForNextDial = true
-                        waitForManualDial()
-                        isWaitingForNextDial = false
-                        Log.d(TAG, "[processQueue] 同一客户下一轮：等待结束")
-                    } else {
-                        // 自动模式下，先检查是否可以拨打
-                        waitUntilCanDial()
-                        if (_isRunning.value) {
-                            delay(intervalSeconds * 1000L)
-                        }
+                    waitUntilCanDial()
+                    if (_isRunning.value) {
+                        delay(intervalSeconds * 1000L)
                     }
                 }
             } else {
@@ -998,19 +766,9 @@ class AutoDialService : Service() {
 
                 // 如果不是最后一个客户，等待间隔时间
                 if (currentIndex < customerQueue.size && _isRunning.value) {
-                    // 手动模式下等待用户点击
-                    if (!_isAutoDialMode.value) {
-                        Log.d(TAG, "[processQueue] 下一个客户：等待用户点击下一个")
-                        isWaitingForNextDial = true
-                        waitForManualDial()
-                        isWaitingForNextDial = false
-                        Log.d(TAG, "[processQueue] 下一个客户：等待结束")
-                    } else {
-                        // 自动模式下，先检查是否可以拨打
-                        waitUntilCanDial()
-                        if (_isRunning.value) {
-                            delay(intervalSeconds * 1000L)
-                        }
+                    waitUntilCanDial()
+                    if (_isRunning.value) {
+                        delay(intervalSeconds * 1000L)
                     }
                 }
             }
@@ -1026,43 +784,6 @@ class AutoDialService : Service() {
             }
             stopAutoDial()
             stopSelf()
-    }
-
-    /**
-     * 等待手动拨号（手动模式下使用）
-     */
-    private suspend fun waitForManualDial() {
-        Log.d(TAG, "waitForManualDial: 开始等待用户点击拨打下一个...")
-        
-        // 更新悬浮窗显示"等待中"状态
-        updateFloatingWindow()
-        
-        try {
-            // 创建一个可取消的等待任务
-            manualDialWaitJob = serviceScope.launch {
-                Log.d(TAG, "waitForManualDial: 启动等待循环，_isRunning=$_isRunning.value, _isAutoDialMode=$_isAutoDialMode.value")
-                // 无限等待，直到用户点击或切换到自动模式
-                while (_isRunning.value && !_isAutoDialMode.value) {
-                    delay(500)
-                }
-                Log.d(TAG, "waitForManualDial: 等待循环结束，_isRunning=$_isRunning.value, _isAutoDialMode=$_isAutoDialMode.value")
-            }
-            
-            // 等待任务完成（用户点击或切换到自动模式）
-            Log.d(TAG, "waitForManualDial: 调用 manualDialWaitJob.join()")
-            manualDialWaitJob?.join()
-            Log.d(TAG, "waitForManualDial: manualDialWaitJob.join() 返回")
-        } catch (e: CancellationException) {
-            // 正常取消，不需要处理
-            Log.d(TAG, "waitForManualDial: 等待被取消 (CancellationException)")
-        } finally {
-            // 确保无论正常结束还是取消，都清除等待标志
-            isWaitingForNextDial = false
-            manualDialWaitJob = null
-            Log.d(TAG, "waitForManualDial: finally 块执行，清理完成")
-        }
-        
-        Log.d(TAG, "waitForManualDial: 继续拨打下一个")
     }
 
     private suspend fun saveProgress() {
@@ -1218,17 +939,6 @@ class AutoDialService : Service() {
                             // 更新状态为已接通
                             _currentCallState.value = com.callcenter.app.util.root.RootCallState.ACTIVE
                             FloatingCustomerService.addCallStateHistory("通话已接通", _currentCustomer.value?.phone, _currentCustomer.value?.name)
-                            
-                            // 自动打开扬声器（免提），与 CallSpeakerHelper 配合
-                            android.util.Log.d(TAG, "尝试打开扬声器...")
-                            try {
-                                callHelper.forceEnableSpeaker()
-                                android.util.Log.d(TAG, "扬声器已自动打开")
-                                FloatingCustomerService.addCallStateHistory("扬声器已开启", _currentCustomer.value?.phone, _currentCustomer.value?.name)
-                            } catch (e: Exception) {
-                                android.util.Log.w(TAG, "扬声器打开失败: ${e.message}")
-                                FloatingCustomerService.addCallStateHistory("扬声器打开失败", _currentCustomer.value?.phone, _currentCustomer.value?.name)
-                            }
                         }
                     }
                     TelephonyManager.CALL_STATE_IDLE -> {
@@ -1307,21 +1017,10 @@ class AutoDialService : Service() {
             Log.e(TAG, "SecurityException: ${e.message}")
             UserNotifier.showError("缺少读取通话状态权限，状态识别将降级")
             // 没有权限读取通话状态，使用超时机制作为后备
-            // 但在手动模式下，应该等待用户确认而不是自动超时
-            if (!_isAutoDialMode.value) {
-                Log.w(TAG, "无通话状态权限且为手动模式，等待用户手动点击下一个")
-                // 在手动模式下，无限等待直到用户点击
-                while (_isRunning.value && !_isAutoDialMode.value) {
-                    delay(1000)
-                }
-                _currentCallState.value = com.callcenter.app.util.root.RootCallState.IDLE
-                return _isRunning.value
-            } else {
-                Log.w(TAG, "无通话状态权限，使用${timeoutSeconds}秒超时")
-                delay(timeoutSeconds * 1000L)
-                _currentCallState.value = com.callcenter.app.util.root.RootCallState.IDLE
-                return _isRunning.value
-            }
+            Log.w(TAG, "无通话状态权限，使用${timeoutSeconds}秒超时")
+            delay(timeoutSeconds * 1000L)
+            _currentCallState.value = com.callcenter.app.util.root.RootCallState.IDLE
+            return _isRunning.value
         }
 
         // 服务被停止
@@ -1337,7 +1036,7 @@ class AutoDialService : Service() {
             this,
             NOTIFICATION_ID,
             notification,
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
         )
     }
 
@@ -1378,17 +1077,10 @@ class AutoDialService : Service() {
         super.onDestroy()
         stopAutoDial()
         
-        // 停止通话自动免提助手
-        if (::callSpeakerHelper.isInitialized) {
-            callSpeakerHelper.stop()
-        }
-        
         serviceScope.cancel()
         lastCallWasConnected = false
         lastResolvedCallResult = null
         hasAutoMarkedCurrentCall = false
-        // 清理回调
-        FloatingCustomerService.manualDialCallback = null
         // 释放 RootCallStateDetector 资源
         if (::rootCallStateDetector.isInitialized) {
             rootCallStateDetector.release()

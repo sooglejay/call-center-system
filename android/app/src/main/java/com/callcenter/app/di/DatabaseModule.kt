@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.room.Room
 import com.callcenter.app.data.local.AppDatabase
 import com.callcenter.app.data.local.dao.CallRecordDao
-import com.callcenter.app.data.local.dao.ContactDao
 import com.callcenter.app.data.local.dao.CustomerDao
 import com.callcenter.app.data.local.dao.TaskDao
 import com.callcenter.app.data.local.dao.UserDao
@@ -51,10 +50,5 @@ object DatabaseModule {
     @Provides
     fun provideUserDao(database: AppDatabase): UserDao {
         return database.userDao()
-    }
-
-    @Provides
-    fun provideContactDao(database: AppDatabase): ContactDao {
-        return database.contactDao()
     }
 }

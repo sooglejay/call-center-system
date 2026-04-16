@@ -22,11 +22,6 @@ data class CallSettings(
     val retryCount: Int = 0,
 
     /**
-     * 拨号后自动打开免提
-     */
-    val autoSpeaker: Boolean = false,
-
-    /**
      * 拨号后自动录音
      */
     val autoRecordCall: Boolean = false,

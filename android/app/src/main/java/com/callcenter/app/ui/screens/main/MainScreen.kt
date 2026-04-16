@@ -162,28 +162,7 @@ fun MainScreen(
         }
     }
 
-    // 自动拨号权限请求
-    val callPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (!isGranted) {
-            Toast.makeText(context, "需要电话权限才能自动拨打电话", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    fun checkAndRequestCallPermission(): Boolean {
-        return when {
-            ContextCompat.checkSelfPermission(
-                context, Manifest.permission.CALL_PHONE
-            ) == PackageManager.PERMISSION_GRANTED -> true
-            else -> {
-                callPermissionLauncher.launch(Manifest.permission.CALL_PHONE)
-                false
-            }
-        }
-    }
-
-    // 在 MainScreen 级别加载任务数据，确保工作台能显示任务
+    // 悬浮窗权限提示对话框
     // 使用 isLoading 标记避免重复加载
     var isInitialLoadDone by rememberSaveable { mutableStateOf(false) }
     

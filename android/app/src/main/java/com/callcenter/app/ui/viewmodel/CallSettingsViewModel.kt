@@ -55,15 +55,6 @@ class CallSettingsViewModel @Inject constructor(
     }
 
     /**
-     * 保存自动免提设置
-     */
-    fun saveAutoSpeaker(enabled: Boolean) {
-        viewModelScope.launch {
-            callSettingsRepository.saveAutoSpeaker(enabled)
-        }
-    }
-
-    /**
      * 保存自动录音设置
      */
     fun saveAutoRecordCall(enabled: Boolean) {

@@ -54,7 +54,6 @@ fun PermissionTestScreen(
     // 权限状态
     var rootStatus by remember { mutableStateOf(PermissionStatus.UNKNOWN) }
     var phoneStatus by remember { mutableStateOf(PermissionStatus.UNKNOWN) }
-    var contactsStatus by remember { mutableStateOf(PermissionStatus.UNKNOWN) }
     var callLogStatus by remember { mutableStateOf(PermissionStatus.UNKNOWN) }
     var recordAudioStatus by remember { mutableStateOf(PermissionStatus.UNKNOWN) }
     var callStateStatus by remember { mutableStateOf(PermissionStatus.UNKNOWN) }
@@ -85,12 +84,6 @@ fun PermissionTestScreen(
         // 检测电话权限
         phoneStatus = if (ContextCompat.checkSelfPermission(
                 context, Manifest.permission.CALL_PHONE
-            ) == PackageManager.PERMISSION_GRANTED
-        ) PermissionStatus.GRANTED else PermissionStatus.DENIED
-
-        // 检测通讯录权限
-        contactsStatus = if (ContextCompat.checkSelfPermission(
-                context, Manifest.permission.READ_CONTACTS
             ) == PackageManager.PERMISSION_GRANTED
         ) PermissionStatus.GRANTED else PermissionStatus.DENIED
 
@@ -273,15 +266,6 @@ fun PermissionTestScreen(
                 icon = Icons.Default.Phone,
                 details = "允许应用拨打电话",
                 onClick = { requestPermission(Manifest.permission.CALL_PHONE) }
-            )
-
-            // 通讯录权限
-            PermissionCard(
-                title = "通讯录读取权限",
-                status = contactsStatus,
-                icon = Icons.Default.Contacts,
-                details = "允许读取联系人信息",
-                onClick = { requestPermission(Manifest.permission.READ_CONTACTS) }
             )
 
             // 通话记录权限

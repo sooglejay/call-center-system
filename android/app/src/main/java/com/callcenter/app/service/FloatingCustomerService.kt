@@ -27,7 +27,6 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.*
@@ -35,9 +34,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -55,7 +54,6 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.callcenter.app.CallCenterApp
 import com.callcenter.app.MainActivity
 import com.callcenter.app.R
-import com.callcenter.app.data.local.preferences.AutoDialSettingsManager
 import com.callcenter.app.data.model.Customer
 import com.callcenter.app.ui.theme.CallCenterTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -100,15 +98,6 @@ interface CallStatusCallback {
 }
 
 /**
- * 手动拨号回调接口
- */
-interface ManualDialCallback {
-    fun onDialNext()
-    fun onAutoDialModeChanged(isAutoMode: Boolean)
-    fun onStopDial()
-}
-
-/**
  * 悬浮窗客户信息服务
  * 在自动拨号时显示可拖拽的悬浮客户信息面板
  */
@@ -142,34 +131,9 @@ class FloatingCustomerService : Service(), LifecycleOwner, SavedStateRegistryOwn
         // 通话状态标记回调
         var callStatusCallback: CallStatusCallback? = null
 
-        // 手动拨号回调
-        var manualDialCallback: ManualDialCallback? = null
-
-        // 是否自动拨号模式（默认手动模式，更安全）
-        private val _isAutoDialMode = MutableStateFlow(false)
-        val isAutoDialMode: StateFlow<Boolean> = _isAutoDialMode
-
-        // 内部方法供 AutoDialService 调用，避免循环
-        internal fun updateAutoDialModeFromService(isAuto: Boolean) {
-            _isAutoDialMode.value = isAuto
-        }
-
         // 是否折叠状态
         private val _isCollapsed = MutableStateFlow(false)
         val isCollapsed: StateFlow<Boolean> = _isCollapsed
-
-        fun setAutoDialMode(isAuto: Boolean) {
-            _isAutoDialMode.value = isAuto
-            // 同步到 AutoDialService
-            AutoDialService.setAutoDialMode(isAuto)
-            // 保存到本地
-            val context = CallCenterApp.instance?.applicationContext
-            context?.let {
-                kotlinx.coroutines.GlobalScope.launch {
-                    AutoDialSettingsManager(it).setAutoDialMode(isAuto)
-                }
-            }
-        }
 
         fun setCollapsed(isCollapsed: Boolean) {
             _isCollapsed.value = isCollapsed
@@ -211,7 +175,6 @@ class FloatingCustomerService : Service(), LifecycleOwner, SavedStateRegistryOwn
         }
     }
 
-    private lateinit var settingsManager: AutoDialSettingsManager
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private val lifecycleRegistry = LifecycleRegistry(this)
@@ -249,17 +212,6 @@ class FloatingCustomerService : Service(), LifecycleOwner, SavedStateRegistryOwn
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-
-        // 初始化设置管理器并加载保存的设置
-        settingsManager = AutoDialSettingsManager(this)
-        serviceScope.launch {
-            // 优先从 AutoDialService 同步状态，如果不一致则更新
-            AutoDialService.isAutoDialMode.collect { isAutoMode ->
-                _isAutoDialMode.value = isAutoMode
-                // 同步保存到本地设置
-                settingsManager.setAutoDialMode(isAutoMode)
-            }
-        }
     }
 
     override fun onBind(intent: Intent?): IBinder = LocalBinder()
@@ -621,7 +573,6 @@ private fun FloatingCustomerPanel(
     onCallStatusMarked: (String, (() -> Unit)?) -> Unit
 ) {
     // 使用 remember 来保持状态，避免重组时丢失
-    var isAutoMode by remember { mutableStateOf(FloatingCustomerService.isAutoDialMode.value) }
     // 当前选中的通话状态
     var selectedCallStatus by remember { mutableStateOf<String?>(null) }
     // 正在更新中的状态（用于显示loading）
@@ -632,13 +583,6 @@ private fun FloatingCustomerPanel(
     var currentCallState by remember { mutableStateOf<RootCallState?>(null) }
     // 通话状态历史记录
     val callStateHistory by FloatingCustomerService.callStateHistory.collectAsState()
-
-    // 监听自动拨号模式变化
-    LaunchedEffect(Unit) {
-        FloatingCustomerService.isAutoDialMode.collect { mode ->
-            isAutoMode = mode
-        }
-    }
 
     // 监听通话状态变化，自动标记和记录历史
     LaunchedEffect(isCalling, customer) {
@@ -665,7 +609,6 @@ private fun FloatingCustomerPanel(
     if (isCollapsed) {
         // 折叠状态：显示圆形 Floating Button
         CollapsedFloatingButton(
-            isAutoMode = isAutoMode,
             isCalling = isCalling,
             onToggleCollapse = onToggleCollapse
         )
@@ -676,7 +619,7 @@ private fun FloatingCustomerPanel(
             dialedCount = dialedCount,
             totalCount = totalCount,
             isCalling = isCalling,
-            isAutoMode = isAutoMode,
+            isAutoMode = false,
             selectedCallStatus = selectedCallStatus,
             updatingStatus = updatingStatus,
             showHistory = showHistory,
@@ -698,7 +641,6 @@ private fun FloatingCustomerPanel(
  */
 @Composable
 private fun CollapsedFloatingButton(
-    isAutoMode: Boolean,
     isCalling: Boolean,
     onToggleCollapse: () -> Unit
 ) {
@@ -707,8 +649,7 @@ private fun CollapsedFloatingButton(
         shape = CircleShape,
         color = when {
             isCalling -> Color(0xFF4CAF50)
-            isAutoMode -> MaterialTheme.colorScheme.primary
-            else -> Color(0xFFFFA726)
+            else -> MaterialTheme.colorScheme.primary
         },
         modifier = Modifier.size(56.dp),
         shadowElevation = 4.dp
@@ -754,11 +695,11 @@ private fun ExpandedFloatingPanel(
     val phoneLine = customer?.phone?.takeIf { it.isNotBlank() } ?: "暂无电话号码"
     val emailLine = customer?.email?.takeIf { it.isNotBlank() } ?: "暂无邮箱地址"
 
+    val context = LocalContext.current
     Card(
         modifier = Modifier
             .width(320.dp)
             .wrapContentHeight(),
-        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)
         ),
@@ -790,27 +731,12 @@ private fun ExpandedFloatingPanel(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
-                        // 标题行：模式文案 + Switch
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = if (isAutoMode) "自动拨号" else "手动拨号",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            // 自动/手动切换开关（放在文案后面，不显示文字）
-                            Switch(
-                                checked = isAutoMode,
-                                onCheckedChange = { checked ->
-                                    FloatingCustomerService.setAutoDialMode(checked)
-                                    FloatingCustomerService.manualDialCallback?.onAutoDialModeChanged(checked)
-                                },
-                                modifier = Modifier.scale(0.7f)
-                            )
-                        }
+                        Text(
+                            text = "自动拨号",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
                         Text(
                             text = "$dialedCount / $totalCount",
                             style = MaterialTheme.typography.labelSmall,
@@ -852,8 +778,11 @@ private fun ExpandedFloatingPanel(
                     ) {
                         IconButton(
                             onClick = {
-                                // 停止拨号并关闭悬浮窗
-                                FloatingCustomerService.manualDialCallback?.onStopDial()
+                                // 停止拨号服务
+                                val intent = Intent(context, AutoDialService::class.java).apply {
+                                    action = AutoDialService.ACTION_STOP
+                                }
+                                context.startService(intent)
                                 onClose()
                             },
                             modifier = Modifier.size(32.dp)
@@ -973,45 +902,6 @@ private fun ExpandedFloatingPanel(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                    }
-
-                    // 右侧：拨打下一个按钮（常驻显示）
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Surface(
-                        onClick = {
-                            android.util.Log.d("FloatingCustomerPanel", "下一个按钮被点击，直接调用 onDialNext")
-                            // 直接调用 onDialNext，与任务执行页面逻辑一致
-                            FloatingCustomerService.manualDialCallback?.let { callback ->
-                                android.util.Log.d("FloatingCustomerPanel", "调用 onDialNext 回调")
-                                callback.onDialNext()
-                            } ?: run {
-                                android.util.Log.e("FloatingCustomerPanel", "manualDialCallback 为 null，无法拨打下一个")
-                            }
-                        },
-                        shape = RoundedCornerShape(10.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.width(48.dp)
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center,
-                            modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "下一个",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
                     }
                 }
 
@@ -1570,38 +1460,6 @@ private fun StatusButton(
                 maxLines = 1
             )
         }
-    }
-}
-
-/**
- * 拨打下一个按钮组件
- */
-@Composable
-private fun NextDialButton(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Button(
-        onClick = onClick,
-        modifier = modifier
-            .fillMaxWidth()
-            .height(40.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.primary
-        ),
-        shape = RoundedCornerShape(10.dp)
-    ) {
-        Icon(
-            imageVector = Icons.Default.Phone,
-            contentDescription = null,
-            modifier = Modifier.size(18.dp)
-        )
-        Spacer(modifier = Modifier.width(6.dp))
-        Text(
-            "拨打下一个",
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold
-        )
     }
 }
 

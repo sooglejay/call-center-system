@@ -14,21 +14,19 @@
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <uses-permission android:name="android.permission.WRITE_CALL_LOG" />
-    
-    <!-- 开机启动 -->
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- 音频设置权限（自动免提功能）-->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     
     <!-- 前台服务 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
-    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
-    
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
     <!-- 通知 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- 悬浮窗权限 -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <!-- 存储权限 - 用于下载APK -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
@@ -38,9 +36,6 @@
 
     <!-- 安装应用权限 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-
-    <!-- 修改音频设置权限 -->
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
     <!-- Root 权限相关（用于执行 shell 命令）-->
     <uses-permission android:name="android.permission.WRITE_SETTINGS"
@@ -76,7 +71,7 @@
             android:name=".service.AutoDialService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="phoneCall" />
+            android:foregroundServiceType="specialUse" />
 
         <!-- 悬浮窗客户信息服务 -->
         <service
@@ -84,13 +79,6 @@
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="specialUse" />
-
-        <!-- 通话状态监听服务 -->
-        <service
-            android:name=".service.CallStateMonitorService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="phoneCall" />
 
         <!-- 日志收集服务 -->
         <service

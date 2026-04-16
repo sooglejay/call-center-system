@@ -37,13 +37,6 @@ class CallSettingsRepository @Inject constructor(
     }
 
     /**
-     * 保存自动免提设置
-     */
-    suspend fun saveAutoSpeaker(enabled: Boolean) {
-        callSettingsManager.saveAutoSpeaker(enabled)
-    }
-
-    /**
      * 保存自动录音设置
      */
     suspend fun saveAutoRecordCall(enabled: Boolean) {

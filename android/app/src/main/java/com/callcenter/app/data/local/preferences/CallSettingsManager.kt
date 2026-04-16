@@ -23,7 +23,6 @@ class CallSettingsManager(private val context: Context) {
         private val AUTO_DIAL_INTERVAL = intPreferencesKey("auto_dial_interval")
         private val CALL_TIMEOUT = intPreferencesKey("call_timeout")
         private val RETRY_COUNT = intPreferencesKey("retry_count")
-        private val AUTO_SPEAKER = booleanPreferencesKey("auto_speaker")
         private val AUTO_RECORD_CALL = booleanPreferencesKey("auto_record_call")
         private val AUTO_ADD_NOTE = booleanPreferencesKey("auto_add_note")
         private val DEFAULT_NOTE_TEMPLATE = stringPreferencesKey("default_note_template")
@@ -39,7 +38,6 @@ class CallSettingsManager(private val context: Context) {
             autoDialInterval = prefs[AUTO_DIAL_INTERVAL] ?: 10,
             callTimeout = prefs[CALL_TIMEOUT] ?: 30,
             retryCount = prefs[RETRY_COUNT] ?: 0,
-            autoSpeaker = prefs[AUTO_SPEAKER] ?: false,
             autoRecordCall = prefs[AUTO_RECORD_CALL] ?: false,
             autoAddNote = prefs[AUTO_ADD_NOTE] ?: false,
             defaultNoteTemplate = prefs[DEFAULT_NOTE_TEMPLATE] ?: "",
@@ -72,15 +70,6 @@ class CallSettingsManager(private val context: Context) {
     suspend fun saveRetryCount(count: Int) {
         context.callSettingsDataStore.edit { prefs ->
             prefs[RETRY_COUNT] = count
-        }
-    }
-
-    /**
-     * 保存自动免提设置
-     */
-    suspend fun saveAutoSpeaker(enabled: Boolean) {
-        context.callSettingsDataStore.edit { prefs ->
-            prefs[AUTO_SPEAKER] = enabled
         }
     }
 
@@ -137,7 +126,6 @@ class CallSettingsManager(private val context: Context) {
             prefs[AUTO_DIAL_INTERVAL] = settings.autoDialInterval
             prefs[CALL_TIMEOUT] = settings.callTimeout
             prefs[RETRY_COUNT] = settings.retryCount
-            prefs[AUTO_SPEAKER] = settings.autoSpeaker
             prefs[AUTO_RECORD_CALL] = settings.autoRecordCall
             prefs[AUTO_ADD_NOTE] = settings.autoAddNote
             prefs[DEFAULT_NOTE_TEMPLATE] = settings.defaultNoteTemplate

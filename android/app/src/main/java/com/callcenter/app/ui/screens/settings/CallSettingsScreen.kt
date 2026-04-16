@@ -30,7 +30,6 @@ fun CallSettingsScreen(
     var autoDialInterval by remember { mutableStateOf(settings.autoDialInterval) }
     var callTimeout by remember { mutableStateOf(settings.callTimeout) }
     var retryCount by remember { mutableStateOf(settings.retryCount) }
-    var autoSpeaker by remember { mutableStateOf(settings.autoSpeaker) }
     var autoRecordCall by remember { mutableStateOf(settings.autoRecordCall) }
     var autoAddNote by remember { mutableStateOf(settings.autoAddNote) }
     var defaultNoteTemplate by remember { mutableStateOf(settings.defaultNoteTemplate) }
@@ -40,7 +39,6 @@ fun CallSettingsScreen(
         autoDialInterval = settings.autoDialInterval
         callTimeout = settings.callTimeout
         retryCount = settings.retryCount
-        autoSpeaker = settings.autoSpeaker
         autoRecordCall = settings.autoRecordCall
         autoAddNote = settings.autoAddNote
         defaultNoteTemplate = settings.defaultNoteTemplate
@@ -63,7 +61,6 @@ fun CallSettingsScreen(
                                     autoDialInterval = autoDialInterval,
                                     callTimeout = callTimeout,
                                     retryCount = retryCount,
-                                    autoSpeaker = autoSpeaker,
                                     autoRecordCall = autoRecordCall,
                                     autoAddNote = autoAddNote,
                                     defaultNoteTemplate = defaultNoteTemplate
@@ -171,20 +168,6 @@ fun CallSettingsScreen(
 
             // 通话辅助设置
             SettingsSection(title = "通话辅助") {
-                // 自动免提
-                SettingItem(
-                    icon = Icons.Default.VolumeUp,
-                    title = "自动免提",
-                    subtitle = "通话接通后自动打开免提"
-                ) {
-                    Switch(
-                        checked = autoSpeaker,
-                        onCheckedChange = { autoSpeaker = it }
-                    )
-                }
-
-                Divider(modifier = Modifier.padding(vertical = 8.dp))
-
                 // 自动添加备注
                 SettingItem(
                     icon = Icons.Default.FiberManualRecord,

@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Logcat 日志收集服务
  *
  * 功能：
- * - 收集跟扩音相关的日志
+ * - 收集通话相关的日志
  * - 使用 LRU 缓存，最多存储 10000 条
  * - 支持启动/停止
  * - 支持导出日志到文件
@@ -68,17 +68,12 @@ class LogCollectorService : android.app.Service() {
         }
     }
 
-    // 关键字过滤：只收集与扩音相关的日志
+    // 关键字过滤：只收集与通话相关的日志
     private val LOG_KEYWORDS = listOf(
-        "AutoSpeakerInCall",
         "CallStateMonitor",
         "CallHelper",
-        "AudioManager",
-        "AudioSystem",
-        "setSpeakerphoneOn",
-        "setCommunicationDevice",
-        "setForceUse",
-        "setAudioRoute",
+        "AutoDial",
+        "CallSpeaker",
         "CallAudioState"
     )
 

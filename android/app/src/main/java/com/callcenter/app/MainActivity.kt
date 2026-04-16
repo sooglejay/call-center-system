@@ -54,7 +54,7 @@ class MainActivity : ComponentActivity() {
             // 有权限被拒绝
             Toast.makeText(
                 this,
-                "部分通话权限被拒绝，可能影响自动拨号功能",
+                "部分通话权限被拒绝",
                 Toast.LENGTH_LONG
             ).show()
         }
@@ -64,7 +64,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // 检查并申请通话/拨号相关权限
+        // 检查并申请通话相关权限
         checkAndRequestCallPermissions()
         // 权限检查完成后检查悬浮窗权限
         checkFloatingWindowPermission()
