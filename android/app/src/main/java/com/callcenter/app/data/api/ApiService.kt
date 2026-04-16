@@ -341,6 +341,17 @@ interface ApiService {
         @Path("customerId") customerId: Int
     ): Response<ApiResponse<Unit>>
 
+    /**
+     * 分页获取任务客户列表
+     */
+    @GET("tasks/{taskId}/customers")
+    suspend fun getTaskCustomers(
+        @Path("taskId") taskId: Int,
+        @Query("page") page: Int = 1,
+        @Query("pageSize") pageSize: Int = 100,
+        @Query("status") status: String? = null
+    ): Response<TaskCustomerListResponse>
+
     // ==================== 统计数据 ====================
     
     /**

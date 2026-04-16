@@ -7,6 +7,7 @@ import {
   deleteTask, 
   getMyTasks,
   getTaskById,
+  getTaskCustomers,
   addCustomersToTask,
   removeCustomerFromTask,
   updateTaskCustomerStatus,
@@ -33,6 +34,7 @@ router.post('/my/create', createTaskForSelf);
 
 // 通用路由（需要登录）
 router.get('/:id', authMiddleware, getTaskById);
+router.get('/:id/customers', authMiddleware, getTaskCustomers);
 router.put('/:id/customers/:customerId/status', authMiddleware, updateTaskCustomerStatus);
 router.put('/:id/customers/:customerId/info', authMiddleware, updateTaskCustomerInfo);
 router.delete('/:id/task-customers/:customerId', authMiddleware, removeTaskCustomer);

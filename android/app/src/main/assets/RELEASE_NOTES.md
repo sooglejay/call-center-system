@@ -1,3 +1,16 @@
+## v1.9.24 (2026-04-16) - 2026-04-15 删除默认拨号应用与手动拨号代码
+
+- 本次完成：移除为支持“配置 App 为默认拨号应用”和“App 内手动拨号”而引入的相关 Android 代码。
+- 删除范围：`DialerEntryActivity`、`AutoSpeakerInCallService`、Manifest 中对应的 activity/service 注册、`MainActivity` 的拨号 intent 接管状态、`AppNavigation`/`MainScreen` 中手动拨号与通讯录入口。
+- 保留逻辑：当前自动拨号主链路与新的 `CallSpeakerHelper` / `CallStateMonitorService` 不受影响，仍用于自动外呼场景。
+- 验证结果：已执行 `./gradlew :app:compileDebugKotlin`，编译通过。
+
+### 构建信息
+- **Commit ID**: `0fed85dd`
+- **Commit Message**: release: v1.9.23
+
+---
+
 ## v1.9.23 (2026-04-16) - 2026-04-15 删除默认拨号应用与手动拨号代码
 
 - 本次完成：移除为支持“配置 App 为默认拨号应用”和“App 内手动拨号”而引入的相关 Android 代码。

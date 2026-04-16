@@ -272,6 +272,17 @@ data class PageParams(
 )
 
 /**
+ * 任务客户列表响应（分页）
+ */
+data class TaskCustomerListResponse(
+    val data: List<TaskCustomer>,
+    val total: Int,
+    val page: Int,
+    val page_size: Int,
+    val total_pages: Int
+)
+
+/**
  * 更新客户状态请求
  */
 data class UpdateCustomerStatusRequest(

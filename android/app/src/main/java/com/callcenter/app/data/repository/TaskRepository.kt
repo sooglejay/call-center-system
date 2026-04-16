@@ -290,4 +290,66 @@ class TaskRepository @Inject constructor(
             Result.failure(e)
         }
     }
+
+    /**
+     * 分页获取任务客户列表
+     * @param taskId 任务ID
+     * @param page 页码（从1开始）
+     * @param pageSize 每页数量
+     * @param status 状态过滤（可选）
+     * @return 分页结果，包含客户列表和分页信息
+     */
+    suspend fun getTaskCustomers(
+        taskId: Int,
+        page: Int = 1,
+        pageSize: Int = 100,
+        status: String? = null
+    ): Result<TaskCustomerListResponse> {
+        return try {
+            val response = apiService.getTaskCustomers(taskId, page, pageSize, status)
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!)
+            } else {
+                val errorMsg = response.errorBody()?.string() ?: "获取任务客户失败"
+                Result.failure(Exception(errorMsg))
+            }
+        } catch (e: Exception) {
+            Log.e("TaskRepository", "获取任务客户异常: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * 获取任务的所有待拨打客户（自动分页加载）
+     * @param taskId 任务ID
+     * @param pageSize 每页数量
+     * @return 所有待拨打客户列表
+     */
+    suspend fun getAllPendingTaskCustomers(
+        taskId: Int,
+        pageSize: Int = 100
+    ): Result<List<TaskCustomer>> {
+        val allCustomers = mutableListOf<TaskCustomer>()
+        var page = 1
+        var hasMore = true
+
+        while (hasMore) {
+            val result = getTaskCustomers(taskId, page, pageSize, "pending")
+            result.fold(
+                onSuccess = { response ->
+                    allCustomers.addAll(response.data)
+                    hasMore = page < response.total_pages
+                    page++
+                    Log.d("TaskRepository", "加载任务客户: page=$page, 已加载=${allCustomers.size}, 总数=${response.total}")
+                },
+                onFailure = { e ->
+                    Log.e("TaskRepository", "加载任务客户失败: ${e.message}")
+                    return Result.failure(e)
+                }
+            )
+        }
+
+        Log.d("TaskRepository", "任务 $taskId 所有待拨打客户加载完成: ${allCustomers.size} 个")
+        return Result.success(allCustomers)
+    }
 }

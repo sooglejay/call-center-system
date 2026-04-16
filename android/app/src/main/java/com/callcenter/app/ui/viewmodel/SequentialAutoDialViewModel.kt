@@ -90,13 +90,18 @@ class SequentialAutoDialViewModel @Inject constructor(
 
             _currentTask.value = task
 
-            // 加载任务详情获取客户列表
-            val result = taskRepository.getTask(task.id)
+            // 使用分页加载任务的所有待拨打客户
+            val result = taskRepository.getAllPendingTaskCustomers(task.id)
             result.fold(
-                onSuccess = { taskDetail ->
-                    val pendingCustomers = taskDetail.customers?.filter { 
-                        it.callStatus == "pending" 
-                    }?.map { tc ->
+                onSuccess = { pendingTaskCustomers ->
+                    if (pendingTaskCustomers.isEmpty()) {
+                        // 当前任务没有待拨打客户，移动到下一个任务
+                        moveToNextTask(intervalSeconds, timeoutSeconds)
+                        return@fold
+                    }
+
+                    // 转换为 Customer 对象
+                    currentTaskCustomers = pendingTaskCustomers.map { tc ->
                         Customer(
                             id = tc.id ?: tc.taskCustomerId,  // 使用 taskCustomerId 作为备选
                             name = tc.name,
@@ -104,23 +109,15 @@ class SequentialAutoDialViewModel @Inject constructor(
                             email = tc.email,
                             company = tc.company
                         )
-                    } ?: emptyList()
-
-                    if (pendingCustomers.isEmpty()) {
-                        // 当前任务没有待拨打客户，移动到下一个任务
-                        moveToNextTask(intervalSeconds, timeoutSeconds)
-                        return@fold
                     }
-
-                    currentTaskCustomers = pendingCustomers
-                    _totalCustomersInTask.value = pendingCustomers.size
+                    _totalCustomersInTask.value = pendingTaskCustomers.size
                     _currentCustomerIndex.value = 0
 
                     // 开始自动拨号
                     startAutoDialForCurrentTask(intervalSeconds, timeoutSeconds)
                 },
                 onFailure = { exception ->
-                    _error.value = "加载任务详情失败: ${exception.message}"
+                    _error.value = "加载任务客户失败: ${exception.message}"
                     moveToNextTask(intervalSeconds, timeoutSeconds)
                 }
             )

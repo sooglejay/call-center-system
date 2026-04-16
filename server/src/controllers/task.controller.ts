@@ -587,3 +587,79 @@ export const removeTaskCustomer = async (req: Request, res: Response) => {
     res.status(500).json({ error: '服务器错误' });
   }
 };
+
+// 分页获取任务客户列表
+export const getTaskCustomers = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { page = 1, pageSize = 100, status } = req.query;
+    const pageNum = parseInt(page as string);
+    const sizeNum = parseInt(pageSize as string);
+    const offset = (pageNum - 1) * sizeNum;
+    
+    // 检查任务是否存在
+    const taskResult = await query('SELECT id FROM tasks WHERE id = $1', [id]);
+    if (taskResult.rows.length === 0) {
+      return res.status(404).json({ error: '任务不存在' });
+    }
+    
+    // 构建WHERE条件
+    const whereConditions: string[] = ['tc.task_id = $1'];
+    const params: any[] = [id];
+    
+    if (status) {
+      whereConditions.push(`tc.status = $${params.length + 1}`);
+      params.push(status);
+    }
+    
+    const whereClause = whereConditions.join(' AND ');
+    
+    // 获取总数
+    const countResult = await query(
+      `SELECT COUNT(*) as total FROM task_customers tc WHERE ${whereClause}`,
+      params
+    );
+    const total = parseInt(countResult.rows[0].total);
+    
+    // 获取分页数据
+    const customersResult = await query(`
+      SELECT tc.id as task_customer_id, tc.status as call_status, tc.call_result, tc.called_at,
+             c.id, c.name, c.phone, c.email, c.company, COALESCE(NULLIF(TRIM(c.tag), ''), '${DEFAULT_CUSTOMER_TAG}') as tag, c.status as customer_status,
+             ca.id as call_id, ca.call_duration, ca.is_connected, ca.created_at as call_time, ca.recording_url
+      FROM task_customers tc
+      LEFT JOIN customers c ON tc.customer_id = c.id
+      LEFT JOIN calls ca ON tc.call_id = ca.id
+      WHERE ${whereClause}
+      ORDER BY tc.created_at ASC
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+    `, [...params, sizeNum, offset]);
+    
+    res.json({
+      data: customersResult.rows.map((c: any) => ({
+        task_customer_id: c.task_customer_id,
+        id: c.id,
+        name: c.name,
+        phone: c.phone,
+        email: c.email,
+        company: c.company,
+        tag: c.tag,
+        customer_status: c.customer_status,
+        call_status: c.call_status || 'pending',
+        call_result: c.call_result,
+        called_at: c.called_at,
+        call_id: c.call_id,
+        call_duration: c.call_duration,
+        is_connected: c.is_connected === 1,
+        call_time: c.call_time,
+        recording_url: c.recording_url
+      })),
+      total,
+      page: pageNum,
+      page_size: sizeNum,
+      total_pages: Math.ceil(total / sizeNum)
+    });
+  } catch (error) {
+    console.error('获取任务客户列表错误:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+};

@@ -175,8 +175,15 @@ class AutoDialService : Service() {
     /**
      * 设置通话状态监听器
      * 根据 Root 设备检测到的通话状态自动标记通话结果
+     * 非 Root 设备会跳过，使用 TelephonyManager 的基础状态
      */
     private fun setupCallStateListener() {
+        // 检查是否有 Root 权限
+        if (!com.callcenter.app.util.root.RootUtils.hasRootPermission()) {
+            Log.d(TAG, "无 Root 权限，跳过精确通话状态检测，使用 TelephonyManager 基础状态")
+            return
+        }
+
         rootCallStateDetector.addListener(object : RootPhoneStateListener {
             override fun onActive(number: String?, setupTime: Long) {
                 Log.d(TAG, "[CallStateListener] 通话已接通: $number, 接通耗时: ${setupTime}ms")
@@ -347,6 +354,9 @@ class AutoDialService : Service() {
     /**
      * 启动前台状态监控
      * 监控应用是否在前台以及通话状态
+     * 
+     * 挂起条件：不在前台 且 通话空闲（即准备拨下一个电话时）
+     * 不挂起的情况：正在通话中（即使不在前台也继续）
      */
     private fun startForegroundMonitoring() {
         suspendCheckJob = serviceScope.launch {
@@ -359,14 +369,15 @@ class AutoDialService : Service() {
                 val isCallIdle = currentCallState == TelephonyManager.CALL_STATE_IDLE
                 
                 // 判断是否应该挂起自动拨号
-                // 条件：不在前台 或 通话中
-                val shouldSuspend = !isInForeground || !isCallIdle
+                // 条件：不在前台 且 通话空闲（准备拨下一个电话）
+                // 注意：正在通话中时不应挂起，即使不在前台
+                val shouldSuspend = !isInForeground && isCallIdle
                 
                 if (shouldSuspend && !isAutoDialSuspended) {
                     // 需要挂起
                     isAutoDialSuspended = true
                     Log.w(TAG, "自动拨号已挂起: 前台=$isInForeground, 通话空闲=$isCallIdle")
-                    updateFloatingWindowStatus("已挂起 - 请回到应用或等待通话结束")
+                    updateFloatingWindowStatus("已挂起 - 请回到应用")
                 } else if (!shouldSuspend && isAutoDialSuspended) {
                     // 解除挂起
                     isAutoDialSuspended = false
@@ -939,6 +950,29 @@ class AutoDialService : Service() {
                             // 更新状态为已接通
                             _currentCallState.value = com.callcenter.app.util.root.RootCallState.ACTIVE
                             FloatingCustomerService.addCallStateHistory("通话已接通", _currentCustomer.value?.phone, _currentCustomer.value?.name)
+
+                            // 延迟后开启免提，确保音频系统已准备好
+                            serviceScope.launch {
+                                delay(800) // 延迟 800ms 等待音频路由建立
+                                repeat(3) { retryCount ->
+                                    try {
+                                        val success = callHelper.enableSpeakerphone()
+                                        if (success) {
+                                            Log.d(TAG, "免提已自动开启 (重试 $retryCount)")
+                                            FloatingCustomerService.addCallStateHistory("免提已开启", _currentCustomer.value?.phone, _currentCustomer.value?.name)
+                                            return@launch
+                                        } else {
+                                            Log.w(TAG, "免提开启失败，重试 $retryCount")
+                                            delay(500)
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.w(TAG, "免提开启异常: ${e.message}，重试 $retryCount")
+                                        delay(500)
+                                    }
+                                }
+                                Log.e(TAG, "免提开启最终失败")
+                                FloatingCustomerService.addCallStateHistory("免提开启失败", _currentCustomer.value?.phone, _currentCustomer.value?.name)
+                            }
                         }
                     }
                     TelephonyManager.CALL_STATE_IDLE -> {
@@ -951,6 +985,8 @@ class AutoDialService : Service() {
                                 // 更新状态为已挂断
                                 _currentCallState.value = com.callcenter.app.util.root.RootCallState.IDLE
                                 FloatingCustomerService.addCallStateHistory("已挂断", _currentCustomer.value?.phone, _currentCustomer.value?.name, callDuration)
+                                // 关闭免提，恢复听筒
+                                callHelper.disableSpeakerphone()
                                 // 对于非 root 设备，根据通话时长判断是否接通
                                 lastCallWasConnected = true
                                 lastResolvedCallResult = "已接听"
