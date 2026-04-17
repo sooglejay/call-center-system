@@ -1129,6 +1129,7 @@ export default function CustomerManagement() {
                 showSizeChanger: true,
                 showQuickJumper: true,
                 showTotal: (total) => `共 ${total} 条`,
+                pageSizeOptions: ['10', '20', '50', '100', '500', '1000'],
                 onChange: (page, size) => {
                   setCurrentPage(page);
                   if (size) setPageSize(size);
