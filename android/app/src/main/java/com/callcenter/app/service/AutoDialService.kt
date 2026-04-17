@@ -70,6 +70,7 @@ class AutoDialService : Service() {
         const val EXTRA_START_INDEX = "start_index"
         const val EXTRA_DIALED_COUNT = "dialed_count"
         const val EXTRA_START_DIAL_ROUND = "start_dial_round"  // 恢复进度时的当前轮次
+        const val EXTRA_LOAD_FROM_TASK = "load_from_task"  // 是否从任务加载客户（避免 Intent 大数据）
 
         // 状态流
         private val _isRunning = MutableStateFlow(false)
@@ -104,6 +105,14 @@ class AutoDialService : Service() {
 
         private const val NOTIFICATION_ID = 1001
         private const val TAG = "AutoDialService"
+
+        // 通话状态检测常量
+        private const val MIN_CALL_DURATION = 3000L      // 最小通话持续时间 3 秒
+        private const val MAX_CALL_DURATION = 600000L    // 最大通话持续时间 10 分钟
+        private const val MIN_CONFIRM_IDLE_TIME = 3000L  // 确认通话结束的最小等待时间
+        private const val SPEAKER_ENABLE_DELAY = 800L    // 免提开启延迟
+        private const val SPEAKER_RETRY_COUNT = 3        // 免提开启重试次数
+        private const val SPEAKER_RETRY_DELAY = 500L     // 免提重试间隔
     }
 
     @Inject
@@ -486,26 +495,38 @@ class AutoDialService : Service() {
                 _taskId.value = intent.getIntExtra(EXTRA_TASK_ID, -1).takeIf { it != -1 }
                 taskTitle = intent.getStringExtra(EXTRA_TASK_TITLE)
 
-                // 获取客户列表
-                @Suppress("UNCHECKED_CAST")
-                val customers = intent.getSerializableExtra(EXTRA_CUSTOMERS) as? ArrayList<Customer>
-                if (customers != null) {
-                    customerQueue.clear()
-                    customerQueue.addAll(customers)
-                    // 设置总客户数
-                    _totalCount.value = customers.size
+                // 获取客户列表 - 支持两种模式
+                val loadFromTask = intent.getBooleanExtra(EXTRA_LOAD_FROM_TASK, false)
+                
+                if (loadFromTask && _taskId.value != null) {
+                    // 模式1：从任务分页加载客户（避免 Intent 大数据限制）
+                    Log.d(TAG, "从任务分页加载客户，taskId=${_taskId.value}")
+                    serviceScope.launch {
+                        loadCustomersFromTask(_taskId.value!!, intent)
+                    }
+                } else {
+                    // 模式2：从 Intent 获取客户列表（兼容旧逻辑，适用于少量客户）
+                    @Suppress("UNCHECKED_CAST")
+                    val customers = intent.getSerializableExtra(EXTRA_CUSTOMERS) as? ArrayList<Customer>
+                    if (customers != null) {
+                        customerQueue.clear()
+                        customerQueue.addAll(customers)
+                        _totalCount.value = customers.size
+                        
+                        // 获取起始索引
+                        currentIndex = intent.getIntExtra(EXTRA_START_INDEX, 0)
+                        _dialedCount.value = intent.getIntExtra(EXTRA_DIALED_COUNT, 0)
+                        
+                        // 保存初始进度并启动
+                        serviceScope.launch {
+                            saveProgress()
+                            startAutoDial()
+                        }
+                    } else {
+                        Log.e(TAG, "客户列表为空且未指定从任务加载")
+                        stopSelf()
+                    }
                 }
-
-                // 获取起始索引（用于恢复进度）
-                currentIndex = intent.getIntExtra(EXTRA_START_INDEX, 0)
-                _dialedCount.value = intent.getIntExtra(EXTRA_DIALED_COUNT, 0)
-
-                // 保存初始进度
-                serviceScope.launch {
-                    saveProgress()
-                }
-
-                startAutoDial()
             }
             ACTION_STOP -> {
                 
@@ -597,6 +618,67 @@ class AutoDialService : Service() {
             }
         } else {
             Log.w(TAG, "无法标记通话状态: customer=$customer, taskId=$taskId")
+        }
+    }
+
+    /**
+     * 从任务分页加载客户列表
+     * 解决 Intent 数据大小限制问题（1000+ 客户会超过 1MB 限制）
+     */
+    private suspend fun loadCustomersFromTask(taskId: Int, intent: Intent) {
+        try {
+            // 更新状态为加载中
+            updateFloatingWindowStatus("正在加载客户列表...")
+            
+            // 分页加载所有待拨打客户
+            val result = taskRepository.getAllPendingTaskCustomers(taskId)
+            result.fold(
+                onSuccess = { taskCustomers ->
+                    if (taskCustomers.isEmpty()) {
+                        Log.w(TAG, "任务 $taskId 没有待拨打的客户")
+                        UserNotifier.showError("没有待拨打的客户")
+                        stopSelf()
+                        return
+                    }
+
+                    // 转换为 Customer 对象
+                    customerQueue.clear()
+                    taskCustomers.forEach { tc ->
+                        customerQueue.add(
+                            Customer(
+                                id = tc.id ?: tc.taskCustomerId,
+                                name = tc.name,
+                                phone = tc.phone,
+                                email = tc.email,
+                                company = tc.company,
+                                status = tc.callStatus,
+                                sourceType = "task",
+                                taskId = taskId,
+                                taskTitle = taskTitle
+                            )
+                        )
+                    }
+                    
+                    _totalCount.value = customerQueue.size
+                    currentIndex = intent.getIntExtra(EXTRA_START_INDEX, 0)
+                    _dialedCount.value = intent.getIntExtra(EXTRA_DIALED_COUNT, 0)
+                    
+                    Log.d(TAG, "从任务加载客户完成: taskId=$taskId, 客户数=${customerQueue.size}")
+                    
+                    // 保存初始进度
+                    saveProgress()
+                    startAutoDial()
+                },
+                onFailure = { e ->
+                    Log.e(TAG, "加载任务客户失败: ${e.message}", e)
+                    UserNotifier.showError("加载客户列表失败: ${e.message}")
+                    stopSelf()
+                }
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "加载任务客户异常: ${e.message}", e)
+            UserNotifier.showError("加载客户列表异常: ${e.message}")
+            stopSelf()
         }
     }
 

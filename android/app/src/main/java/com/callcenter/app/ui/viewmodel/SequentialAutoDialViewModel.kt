@@ -1,9 +1,9 @@
 package com.callcenter.app.ui.viewmodel
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.callcenter.app.data.model.Customer
 import com.callcenter.app.data.model.Task
 import com.callcenter.app.data.repository.TaskRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -49,8 +49,6 @@ class SequentialAutoDialViewModel @Inject constructor(
 
     // 任务列表
     private var tasks: List<Task> = emptyList()
-    // 当前任务的待拨打客户列表
-    private var currentTaskCustomers: List<Customer> = emptyList()
 
     /**
      * 开始顺序执行所有任务
@@ -78,6 +76,7 @@ class SequentialAutoDialViewModel @Inject constructor(
 
     /**
      * 执行当前任务
+     * 只检查任务是否有待拨打客户，实际客户加载由 Service 完成
      */
     private fun executeCurrentTask(intervalSeconds: Int, timeoutSeconds: Int) {
         viewModelScope.launch {
@@ -90,55 +89,40 @@ class SequentialAutoDialViewModel @Inject constructor(
 
             _currentTask.value = task
 
-            // 使用分页加载任务的所有待拨打客户
-            val result = taskRepository.getAllPendingTaskCustomers(task.id)
-            result.fold(
-                onSuccess = { pendingTaskCustomers ->
-                    if (pendingTaskCustomers.isEmpty()) {
-                        // 当前任务没有待拨打客户，移动到下一个任务
-                        moveToNextTask(intervalSeconds, timeoutSeconds)
-                        return@fold
-                    }
+            // 检查任务是否有待拨打客户
+            val pendingCount = task.customerCount - task.completedCount
+            if (pendingCount <= 0) {
+                // 当前任务没有待拨打客户，移动到下一个任务
+                Log.d("SequentialAutoDialViewModel", "任务 ${task.id} 没有待拨打客户，跳过")
+                moveToNextTask(intervalSeconds, timeoutSeconds)
+                return@launch
+            }
 
-                    // 转换为 Customer 对象
-                    currentTaskCustomers = pendingTaskCustomers.map { tc ->
-                        Customer(
-                            id = tc.id ?: tc.taskCustomerId,  // 使用 taskCustomerId 作为备选
-                            name = tc.name,
-                            phone = tc.phone,
-                            email = tc.email,
-                            company = tc.company
-                        )
-                    }
-                    _totalCustomersInTask.value = pendingTaskCustomers.size
-                    _currentCustomerIndex.value = 0
+            _totalCustomersInTask.value = pendingCount
+            _currentCustomerIndex.value = 0
 
-                    // 开始自动拨号
-                    startAutoDialForCurrentTask(intervalSeconds, timeoutSeconds)
-                },
-                onFailure = { exception ->
-                    _error.value = "加载任务客户失败: ${exception.message}"
-                    moveToNextTask(intervalSeconds, timeoutSeconds)
-                }
-            )
+            // 开始自动拨号（Service 会自己加载客户）
+            startAutoDialForCurrentTask(intervalSeconds, timeoutSeconds)
         }
     }
 
     /**
      * 为当前任务启动自动拨号
+     * 使用任务加载模式，避免 Intent 大数据限制
      */
     private fun startAutoDialForCurrentTask(intervalSeconds: Int, timeoutSeconds: Int) {
-        // 这里需要与 AutoDialViewModel 协作
-        // 由于自动拨号服务是单例的，我们需要通过它来执行
+        val taskId = currentTask.value?.id ?: return
         val context = getApplication<Application>().applicationContext
         val intent = android.content.Intent(context, com.callcenter.app.service.AutoDialService::class.java).apply {
             action = com.callcenter.app.service.AutoDialService.ACTION_START
             putExtra(com.callcenter.app.service.AutoDialService.EXTRA_INTERVAL, intervalSeconds)
             putExtra(com.callcenter.app.service.AutoDialService.EXTRA_TIMEOUT, timeoutSeconds)
-            putExtra(com.callcenter.app.service.AutoDialService.EXTRA_CUSTOMERS, ArrayList(currentTaskCustomers))
             putExtra(com.callcenter.app.service.AutoDialService.EXTRA_SCOPE_TYPE, AutoDialScopeType.SPECIFIC_TASK.name)
-            putExtra(com.callcenter.app.service.AutoDialService.EXTRA_TASK_ID, currentTask.value?.id ?: -1)
+            putExtra(com.callcenter.app.service.AutoDialService.EXTRA_TASK_ID, taskId)
+            // 使用任务加载模式，避免 Intent 大数据限制
+            putExtra(com.callcenter.app.service.AutoDialService.EXTRA_LOAD_FROM_TASK, true)
         }
+        Log.d("SequentialAutoDialViewModel", "启动任务自动拨号，taskId=$taskId")
         context.startService(intent)
     }
 
@@ -177,7 +161,6 @@ class SequentialAutoDialViewModel @Inject constructor(
         _currentTaskIndex.value = 0
         _totalTasks.value = 0
         _currentTask.value = null
-        currentTaskCustomers = emptyList()
         tasks = emptyList()
 
         // 停止自动拨号服务

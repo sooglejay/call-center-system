@@ -33,6 +33,14 @@
 ### 7. Root 检测器降级处理
 - 非 Root 设备跳过精确通话状态检测，使用 TelephonyManager 基础状态
 
+### 8. 修复大量客户时 Intent 数据超限问题
+- **问题**：Intent 数据大小限制约 1MB，1000+ 客户序列化后超限导致启动失败
+- **修复**：
+  - 新增 `EXTRA_LOAD_FROM_TASK` 标志，支持任务加载模式
+  - 任务加载模式：只传 taskId，在 Service 中分页加载客户
+  - 直接传递模式：客户数 ≤ 100 时仍通过 Intent 传递（兼容旧逻辑）
+- **涉及文件**：`AutoDialService.kt`、`AutoDialViewModel.kt`、`SequentialAutoDialViewModel.kt`
+
 - 验证结果：已执行 `./gradlew :app:compileDebugKotlin`，编译通过。
 
 ## 2026-04-15 删除默认拨号应用与手动拨号代码

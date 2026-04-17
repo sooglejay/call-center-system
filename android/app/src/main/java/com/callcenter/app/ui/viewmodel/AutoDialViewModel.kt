@@ -2,6 +2,7 @@ package com.callcenter.app.ui.viewmodel
 
 import android.app.Application
 import android.content.Intent
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.callcenter.app.data.model.Customer
@@ -133,7 +134,7 @@ class AutoDialViewModel @Inject constructor(
 
     /**
      * 开始自动拨号
-     * @param customers 要拨打的客户列表
+     * @param customers 要拨打的客户列表（可为空，当 loadFromTask=true 时）
      * @param config 拨号配置
      * @param startIndex 起始索引（用于恢复进度）
      * @param dialedCount 已拨打数量（用于恢复进度）
@@ -146,10 +147,6 @@ class AutoDialViewModel @Inject constructor(
         dialedCount: Int = 0,
         startDialRound: Int = 1
     ) {
-        if (customers.isEmpty()) return
-
-        _totalCount.value = customers.size
-        _dialedCount.value = dialedCount
         _intervalSeconds.value = config.intervalSeconds
         _timeoutSeconds.value = config.timeoutSeconds
         _currentConfig.value = config
@@ -160,7 +157,6 @@ class AutoDialViewModel @Inject constructor(
             putExtra(AutoDialService.EXTRA_INTERVAL, config.intervalSeconds)
             putExtra(AutoDialService.EXTRA_TIMEOUT, config.timeoutSeconds)
             putExtra(AutoDialService.EXTRA_DIALS_PER_CUSTOMER, config.dialsPerCustomer)
-            putExtra(AutoDialService.EXTRA_CUSTOMERS, ArrayList(customers))
             putExtra(AutoDialService.EXTRA_SCOPE_TYPE, config.scopeType.name)
             putExtra(AutoDialService.EXTRA_TASK_ID, config.taskId ?: -1)
             putExtra(AutoDialService.EXTRA_TASK_TITLE, config.taskTitle)
@@ -168,6 +164,29 @@ class AutoDialViewModel @Inject constructor(
             putExtra(AutoDialService.EXTRA_DIALED_COUNT, dialedCount)
             putExtra(AutoDialService.EXTRA_START_DIAL_ROUND, startDialRound)
         }
+
+        // 判断是否使用任务加载模式（避免 Intent 大数据限制）
+        // 条件：有 taskId 且客户数量超过阈值（100），或者客户列表为空但有 taskId
+        val LOAD_THRESHOLD = 100
+        val useTaskLoadMode = config.taskId != null && (customers.isEmpty() || customers.size > LOAD_THRESHOLD)
+        
+        if (useTaskLoadMode) {
+            // 模式1：从任务分页加载客户
+            intent.putExtra(AutoDialService.EXTRA_LOAD_FROM_TASK, true)
+            _totalCount.value = customers.size // 可能不准确，Service 会更新
+            Log.d("AutoDialViewModel", "使用任务加载模式，taskId=${config.taskId}")
+        } else {
+            // 模式2：直接传递客户列表（适用于少量客户）
+            if (customers.isEmpty()) {
+                Log.e("AutoDialViewModel", "客户列表为空且无 taskId")
+                return
+            }
+            intent.putExtra(AutoDialService.EXTRA_CUSTOMERS, ArrayList(customers))
+            _totalCount.value = customers.size
+            Log.d("AutoDialViewModel", "使用直接传递模式，客户数=${customers.size}")
+        }
+        
+        _dialedCount.value = dialedCount
         context.startService(intent)
     }
 
