@@ -1,5 +1,6 @@
 package com.callcenter.app.ui.screens.settings
 
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -22,8 +23,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.callcenter.app.BuildConfig
+import com.callcenter.app.service.AutoSpeakerInCallService
 import com.callcenter.app.ui.components.UpdateDialog
 import com.callcenter.app.ui.viewmodel.SettingsViewModel
+import com.callcenter.app.util.DefaultDialerHelper
 import com.callcenter.app.util.UpdateState
 import com.callcenter.app.util.VersionInfoUtil
 
@@ -57,6 +60,9 @@ fun SettingsScreen(
     val isExporting by viewModel.isExportingLogs.collectAsState()
     val logStatus by viewModel.logCollectorStatus.collectAsState()
     var exportResult by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
+    
+    // 默认拨号应用状态
+    var isDefaultDialer by remember { mutableStateOf(DefaultDialerHelper.isDefaultDialer(context)) }
 
     // 读取 release notes
     val releaseNotes = remember { VersionInfoUtil.readReleaseNotes(context) }
@@ -79,6 +85,19 @@ fun SettingsScreen(
             viewModel.exportLogsToUri(context, uri) { success, message ->
                 exportResult = Pair(success, message)
             }
+        }
+    }
+
+    // 默认拨号应用请求 launcher
+    val defaultDialerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { _ ->
+        // 检查是否成功设置为默认拨号应用
+        isDefaultDialer = DefaultDialerHelper.isDefaultDialer(context)
+        if (isDefaultDialer) {
+            Toast.makeText(context, "已设置为默认拨号应用，请重启应用以启用自动扩音功能", Toast.LENGTH_LONG).show()
+        } else {
+            Toast.makeText(context, "未设置为默认拨号应用，自动扩音功能可能不稳定", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -129,6 +148,28 @@ fun SettingsScreen(
             }
 
             SettingsGroup(title = "通话设置") {
+                // 默认拨号应用设置（自动扩音功能必需）
+                SettingsItem(
+                    icon = Icons.Default.PhoneInTalk,
+                    title = "默认拨号应用",
+                    subtitle = when {
+                        !isDefaultDialer -> "未设置（点击开启自动扩音）"
+                        AutoSpeakerInCallService.isServiceActive -> "已设置且服务已激活 ✓"
+                        else -> "已设置，请重启应用以激活服务"
+                    },
+                    onClick = {
+                        if (!isDefaultDialer) {
+                            DefaultDialerHelper.requestDefaultDialer(
+                                activity = context as Activity,
+                                launcher = defaultDialerLauncher
+                            )
+                        } else if (!AutoSpeakerInCallService.isServiceActive) {
+                            Toast.makeText(context, "请重启应用以激活自动扩音服务", Toast.LENGTH_LONG).show()
+                        } else {
+                            Toast.makeText(context, "自动扩音功能已启用", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
                 SettingsItem(
                     icon = Icons.Default.Phone,
                     title = "自动拨号间隔",

@@ -14,7 +14,10 @@
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <uses-permission android:name="android.permission.WRITE_CALL_LOG" />
-
+    
+    <!-- InCallService 所需权限（自动扩音功能）-->
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
+    
     <!-- 音频设置权限（自动免提功能）-->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     
@@ -85,6 +88,41 @@
             android:name=".service.LogCollectorService"
             android:enabled="true"
             android:exported="false" />
+
+        <!-- 自动扬声器 InCallService -->
+        <!-- 必须成为默认拨号应用才能生效 -->
+        <service
+            android:name=".service.AutoSpeakerInCallService"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.BIND_INCALL_SERVICE">
+            <intent-filter>
+                <action android:name="android.telecom.InCallService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.telecom.IN_CALL_SERVICE_UI"
+                android:value="false" />
+        </service>
+
+        <!-- 拨号入口 Activity -->
+        <!-- 只处理 ACTION_DIAL（查看/编辑号码），不处理 ACTION_CALL（直接拨号）-->
+        <!-- 这样可以避免循环调用问题 -->
+        <activity
+            android:name=".ui.dialer.DialerActivity"
+            android:enabled="true"
+            android:exported="true"
+            android:theme="@style/Theme.CallCenterApp">
+            <!-- ACTION_DIAL: 从其他应用点击电话号码 -->
+            <intent-filter>
+                <action android:name="android.intent.action.DIAL" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.DIAL" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="tel" />
+            </intent-filter>
+        </activity>
 
         <!-- FileProvider - 用于安装APK -->
         <provider

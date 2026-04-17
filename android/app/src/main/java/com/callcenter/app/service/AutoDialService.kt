@@ -110,9 +110,6 @@ class AutoDialService : Service() {
         private const val MIN_CALL_DURATION = 3000L      // 最小通话持续时间 3 秒
         private const val MAX_CALL_DURATION = 600000L    // 最大通话持续时间 10 分钟
         private const val MIN_CONFIRM_IDLE_TIME = 3000L  // 确认通话结束的最小等待时间
-        private const val SPEAKER_ENABLE_DELAY = 800L    // 免提开启延迟
-        private const val SPEAKER_RETRY_COUNT = 3        // 免提开启重试次数
-        private const val SPEAKER_RETRY_DELAY = 500L     // 免提重试间隔
         
         // 通话结果判断阈值
         private const val VOICE_MAIL_THRESHOLD = 15000L  // 语音信箱判断阈值：15秒
@@ -408,33 +405,35 @@ class AutoDialService : Service() {
 
     /**
      * 自动开启免提
-     * 延迟后开启，确保音频系统已准备好
-     * 包含重试机制
+     * 优先使用 InCallService，如果未激活则使用 AudioManager
      */
-    private fun enableSpeakerphoneWithRetry() {
-        serviceScope.launch {
-            delay(SPEAKER_ENABLE_DELAY)
-            repeat(SPEAKER_RETRY_COUNT) { retryCount ->
-                try {
-                    val success = callHelper.enableSpeakerphone()
-                    if (success) {
-                        Log.d(TAG, "免提已自动开启 (重试 $retryCount)")
-                        FloatingCustomerService.addCallStateHistory(
-                            "免提已开启",
-                            _currentCustomer.value?.phone,
-                            _currentCustomer.value?.name
-                        )
-                        return@launch
-                    } else {
-                        Log.w(TAG, "免提开启失败，重试 $retryCount")
-                        delay(SPEAKER_RETRY_DELAY)
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "免提开启异常: ${e.message}，重试 $retryCount")
-                    delay(SPEAKER_RETRY_DELAY)
-                }
-            }
-            Log.e(TAG, "免提开启最终失败")
+    private suspend fun enableSpeakerphoneWithRetry() {
+        Log.d(TAG, "开始自动开启免提...")
+        
+        // 检查 InCallService 是否激活
+        if (AutoSpeakerInCallService.isServiceActive) {
+            Log.d(TAG, "InCallService 已激活，扬声器将由 InCallService 自动控制")
+            FloatingCustomerService.addCallStateHistory(
+                "InCallService 控制免提",
+                _currentCustomer.value?.phone,
+                _currentCustomer.value?.name
+            )
+            return
+        }
+        
+        Log.w(TAG, "InCallService 未激活，使用 AudioManager 方式（可能不稳定）")
+        
+        val success = callHelper.enableSpeakerphoneAsync()
+        
+        if (success) {
+            Log.d(TAG, "免提已自动开启")
+            FloatingCustomerService.addCallStateHistory(
+                "免提已开启",
+                _currentCustomer.value?.phone,
+                _currentCustomer.value?.name
+            )
+        } else {
+            Log.e(TAG, "免提开启失败")
             FloatingCustomerService.addCallStateHistory(
                 "免提开启失败",
                 _currentCustomer.value?.phone,
@@ -1069,7 +1068,8 @@ class AutoDialService : Service() {
                             // 注意：此时还不知道是用户接听还是语音信箱，等通话结束后根据时长判断
                             FloatingCustomerService.addCallStateHistory("已进入通话", _currentCustomer.value?.phone, _currentCustomer.value?.name)
 
-                            // 自动开启免提
+                            // 延迟后自动开启免提（等待音频系统准备好）
+                            delay(500)  // 延迟 500ms
                             enableSpeakerphoneWithRetry()
                         } else {
                             // 状态从 IDLE 变回 OFFHOOK，重置确认计时
