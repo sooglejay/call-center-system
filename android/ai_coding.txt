@@ -59,6 +59,43 @@
   | 响铃未接 | 从未进入 OFFHOOK |
 - **历史记录优化**：进入 OFFHOOK 时记录"已进入通话"，通话结束后根据时长判断最终结果
 
+### 11. 恢复完整扬声器启用策略（6层防护 + 17次重试）
+- **问题**：之前简化后的实现缺少反射调用，导致非 Root 设备扬声器启用不稳定
+- **修复**：恢复完整的多阶段启用策略
+- **6层防护策略**：
+  | Phase | 方法 | 说明 |
+  |---|---|---|
+  | Phase 1 | `MODE_IN_CALL` | 设置音频模式 |
+  | Phase 2 | `isSpeakerphoneOn = true` | AudioManager API |
+  | Phase 3 | 音量拉满 | 通话音量最大 |
+  | Phase 4 | `AudioSystem.setForceUse` 反射 | **关键！非Root也能用** |
+  | Phase 5 | `setCommunicationDevice` | Android 12+ 新API |
+  | Phase 6 | Root 命令 | 可选，Root设备增强 |
+- **17次重试机制**：间隔 50ms、100ms、150ms... 直到 850ms
+- **非 Root 兼容**：Phase 1-5 都不需要 Root 权限
+
+### 12. 恢复 InCallService 实现稳定自动扩音
+- **核心原理**：`InCallService.setAudioRoute()` 是电信框架级API，优先级最高
+- **为什么之前不稳定**：
+  1. 只在 `onCallAdded` 设置一次，系统后续重置无法修复
+  2. 没有持续监控机制
+  3. 没有处理 `onCallAudioStateChanged` 回调
+- **新实现的关键设计**：
+  | 时机 | 操作 |
+  |---|---|
+  | `onCallAdded` | 立即设置扬声器（最早时机）|
+  | `onCallAudioStateChanged` | 检测路由被重置，立即修复 |
+  | `Call.STATE_DIALING` | 拨号中，再次设置 |
+  | `Call.STATE_ACTIVE` | 通话接通，启动持续监控 |
+  | 持续监控 | 每 500ms 检查扬声器状态，被关闭则重新设置 |
+- **必要条件**：应用必须设置为默认拨号应用
+- **新增文件**：
+  - `AutoSpeakerInCallService.kt` - InCallService 实现
+  - `DefaultDialerHelper.kt` - 默认拨号应用请求工具
+  - `DialerActivity.kt` - 拨号入口（成为默认拨号应用的必要条件）
+- **设置页面**：添加"默认拨号应用"设置项
+- **小米手机兼容**：添加 `DialerActivity` 处理 `ACTION_DIAL`，确保能出现在默认拨号应用列表中
+
 - 验证结果：已执行 `./gradlew :app:compileDebugKotlin`，编译通过。
 
 ## 2026-04-15 删除默认拨号应用与手动拨号代码
