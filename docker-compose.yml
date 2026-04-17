@@ -11,6 +11,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
+      - ./uploads:/app/uploads
     environment:
       - NODE_ENV=production
       - PORT=8081
