@@ -193,6 +193,7 @@ class AutoDialService : Service() {
             return
         }
 
+        // 启动 Root 通话状态检测
         rootCallStateDetector.addListener(object : RootPhoneStateListener {
             override fun onActive(number: String?, setupTime: Long) {
                 Log.d(TAG, "[CallStateListener] 通话已接通: $number, 接通耗时: ${setupTime}ms")
@@ -396,6 +397,43 @@ class AutoDialService : Service() {
                 
                 delay(1000) // 每秒检查一次
             }
+        }
+    }
+
+    /**
+     * 自动开启免提
+     * 延迟后开启，确保音频系统已准备好
+     * 包含重试机制
+     */
+    private fun enableSpeakerphoneWithRetry() {
+        serviceScope.launch {
+            delay(SPEAKER_ENABLE_DELAY)
+            repeat(SPEAKER_RETRY_COUNT) { retryCount ->
+                try {
+                    val success = callHelper.enableSpeakerphone()
+                    if (success) {
+                        Log.d(TAG, "免提已自动开启 (重试 $retryCount)")
+                        FloatingCustomerService.addCallStateHistory(
+                            "免提已开启",
+                            _currentCustomer.value?.phone,
+                            _currentCustomer.value?.name
+                        )
+                        return@launch
+                    } else {
+                        Log.w(TAG, "免提开启失败，重试 $retryCount")
+                        delay(SPEAKER_RETRY_DELAY)
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "免提开启异常: ${e.message}，重试 $retryCount")
+                    delay(SPEAKER_RETRY_DELAY)
+                }
+            }
+            Log.e(TAG, "免提开启最终失败")
+            FloatingCustomerService.addCallStateHistory(
+                "免提开启失败",
+                _currentCustomer.value?.phone,
+                _currentCustomer.value?.name
+            )
         }
     }
 
@@ -995,12 +1033,8 @@ class AutoDialService : Service() {
      * @return 是否正常结束（true=通话已挂断，false=服务被停止）
      */
     private suspend fun waitForCallEndOrTimeout(): Boolean {
-        var elapsedTime = 0
         var callConnected = false
         var offHookStartTime: Long = 0
-        val MIN_CALL_DURATION = 3000 // 最小通话持续时间 3 秒
-        val MAX_CALL_DURATION = 600000 // 最大通话持续时间 10 分钟（防止无限等待）
-        val MIN_CONFIRM_IDLE_TIME = 3000 // 确认通话结束的最小等待时间（避免语音信箱误判）
 
         // 更新初始状态为拨号中
         _currentCallState.value = com.callcenter.app.util.root.RootCallState.DIALING
@@ -1009,13 +1043,10 @@ class AutoDialService : Service() {
         // 添加拨号中历史记录
         FloatingCustomerService.addCallStateHistory("拨号中", _currentCustomer.value?.phone, _currentCustomer.value?.name)
 
-        // 尝试使用 TelephonyManager，如果没有权限则使用简单的延时
         try {
-            val telephonyManager = getSystemService(TELEPHONY_SERVICE) as TelephonyManager
-
             // 等待电话接通
             Log.d(TAG, "等待电话接通...")
-            var idleConfirmStartTime: Long = 0 // 开始确认 IDLE 状态的时间
+            var idleConfirmStartTime: Long = 0
             
             while (_isRunning.value) {
                 val state = telephonyManager.callState
@@ -1026,36 +1057,15 @@ class AutoDialService : Service() {
                         if (!callConnected) {
                             callConnected = true
                             offHookStartTime = System.currentTimeMillis()
-                            idleConfirmStartTime = 0 // 重置确认时间
+                            idleConfirmStartTime = 0
                             Log.d(TAG, "电话已接通/进入通话状态")
-                            // 更新状态为已接通
                             _currentCallState.value = com.callcenter.app.util.root.RootCallState.ACTIVE
                             FloatingCustomerService.addCallStateHistory("通话已接通", _currentCustomer.value?.phone, _currentCustomer.value?.name)
 
-                            // 延迟后开启免提，确保音频系统已准备好
-                            serviceScope.launch {
-                                delay(800) // 延迟 800ms 等待音频路由建立
-                                repeat(3) { retryCount ->
-                                    try {
-                                        val success = callHelper.enableSpeakerphone()
-                                        if (success) {
-                                            Log.d(TAG, "免提已自动开启 (重试 $retryCount)")
-                                            FloatingCustomerService.addCallStateHistory("免提已开启", _currentCustomer.value?.phone, _currentCustomer.value?.name)
-                                            return@launch
-                                        } else {
-                                            Log.w(TAG, "免提开启失败，重试 $retryCount")
-                                            delay(500)
-                                        }
-                                    } catch (e: Exception) {
-                                        Log.w(TAG, "免提开启异常: ${e.message}，重试 $retryCount")
-                                        delay(500)
-                                    }
-                                }
-                                Log.e(TAG, "免提开启最终失败")
-                                FloatingCustomerService.addCallStateHistory("免提开启失败", _currentCustomer.value?.phone, _currentCustomer.value?.name)
-                            }
+                            // 自动开启免提
+                            enableSpeakerphoneWithRetry()
                         } else {
-                            // 已经接通过，重置确认时间（状态从 IDLE 变回 OFFHOOK，说明之前是误判）
+                            // 状态从 IDLE 变回 OFFHOOK，重置确认计时
                             if (idleConfirmStartTime > 0) {
                                 Log.d(TAG, "状态从 IDLE 变回 OFFHOOK，重置确认计时")
                                 idleConfirmStartTime = 0
@@ -1108,9 +1118,7 @@ class AutoDialService : Service() {
                     }
                     TelephonyManager.CALL_STATE_RINGING -> {
                         // 响铃中，继续等待
-                        if (elapsedTime % 5000 == 0) { // 每5秒打印一次日志
-                            Log.d(TAG, "电话响铃中...")
-                        }
+                        Log.d(TAG, "电话响铃中...")
                         // 更新状态为响铃中（只在第一次检测到响铃时更新）
                         if (_currentCallState.value != com.callcenter.app.util.root.RootCallState.ALERTING) {
                             _currentCallState.value = com.callcenter.app.util.root.RootCallState.ALERTING
@@ -1131,7 +1139,6 @@ class AutoDialService : Service() {
                 }
 
                 delay(500)
-                elapsedTime += 500
             }
         } catch (e: SecurityException) {
             Log.e(TAG, "SecurityException: ${e.message}")

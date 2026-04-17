@@ -41,6 +41,13 @@
   - 直接传递模式：客户数 ≤ 100 时仍通过 Intent 传递（兼容旧逻辑）
 - **涉及文件**：`AutoDialService.kt`、`AutoDialViewModel.kt`、`SequentialAutoDialViewModel.kt`
 
+### 9. 代码优化 - 提取常量和免提方法
+- 将通话状态检测常量提取到 `companion object`：
+  - `MIN_CALL_DURATION`、`MAX_CALL_DURATION`、`MIN_CONFIRM_IDLE_TIME`
+  - `SPEAKER_ENABLE_DELAY`、`SPEAKER_RETRY_COUNT`、`SPEAKER_RETRY_DELAY`
+- 提取免提开启逻辑为独立方法 `enableSpeakerphoneWithRetry()`
+- 移除未使用的 `elapsedTime` 变量
+
 - 验证结果：已执行 `./gradlew :app:compileDebugKotlin`，编译通过。
 
 ## 2026-04-15 删除默认拨号应用与手动拨号代码
