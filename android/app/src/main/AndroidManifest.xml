@@ -90,7 +90,7 @@
             android:exported="false" />
 
         <!-- 自动扬声器 InCallService -->
-        <!-- 必须成为默认拨号应用才能生效 -->
+        <!-- IN_CALL_SERVICE_UI = true 才能出现在默认电话应用列表中 -->
         <service
             android:name=".service.AutoSpeakerInCallService"
             android:enabled="true"
@@ -101,7 +101,22 @@
             </intent-filter>
             <meta-data
                 android:name="android.telecom.IN_CALL_SERVICE_UI"
-                android:value="false" />
+                android:value="true" />
+        </service>
+
+        <!-- 自动扬声器无障碍服务 -->
+        <!-- 适用于无法成为默认拨号应用的设备（如 MIUI）-->
+        <service
+            android:name=".service.AutoSpeakerAccessibilityService"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
         </service>
 
         <!-- 拨号入口 Activity -->

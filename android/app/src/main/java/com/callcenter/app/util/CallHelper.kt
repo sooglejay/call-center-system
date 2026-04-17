@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.telecom.TelecomManager
 import android.util.Log
+import com.callcenter.app.util.DebugLogger
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
 import javax.inject.Inject
@@ -50,23 +51,27 @@ class CallHelper @Inject constructor(
             val uri = Uri.parse("tel:$phoneNumber")
 
             Log.d(TAG, "makeCall: $phoneNumber")
+            DebugLogger.log("[CallHelper] makeCall: $phoneNumber")
 
             // 检查拨号权限
             if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
                 context.checkSelfPermission(android.Manifest.permission.CALL_PHONE)
             ) {
                 Log.e(TAG, "缺少拨号权限 (CALL_PHONE)")
+                DebugLogger.log("[CallHelper] ✗ 缺少拨号权限")
                 throw SecurityException("缺少拨号权限")
             }
 
             // 检查是否是默认拨号应用
             val isDefaultDialer = telecomManager.defaultDialerPackage == context.packageName
             Log.d(TAG, "isDefaultDialer: $isDefaultDialer")
+            DebugLogger.log("[CallHelper] isDefaultDialer: $isDefaultDialer")
 
             if (isDefaultDialer) {
                 // 是默认拨号应用：使用 TelecomManager.placeCall()
                 // 这会触发系统的电话服务，使用 SIM 卡拨号
                 Log.d(TAG, "使用 TelecomManager.placeCall() 拨号")
+                DebugLogger.log("[CallHelper] 使用 TelecomManager.placeCall() 拨号")
                 
                 // 获取 SIM 卡 PhoneAccount
                 val phoneAccounts = telecomManager.callCapablePhoneAccounts
@@ -74,17 +79,20 @@ class CallHelper @Inject constructor(
                 
                 if (simAccount != null) {
                     Log.d(TAG, "使用 SIM PhoneAccount: $simAccount")
+                    DebugLogger.log("[CallHelper] 使用 SIM PhoneAccount: $simAccount")
                     val extras = Bundle()
                     extras.putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, simAccount)
                     telecomManager.placeCall(uri, extras)
                 } else {
                     // 没有指定 PhoneAccount，让系统选择
                     Log.d(TAG, "未指定 PhoneAccount，让系统选择")
+                    DebugLogger.log("[CallHelper] 未指定 PhoneAccount，让系统选择")
                     telecomManager.placeCall(uri, null)
                 }
             } else {
                 // 不是默认拨号应用：使用 Intent.ACTION_CALL
                 Log.d(TAG, "使用 Intent.ACTION_CALL 拨号")
+                DebugLogger.log("[CallHelper] 使用 Intent.ACTION_CALL 拨号")
                 val intent = Intent(Intent.ACTION_CALL).apply {
                     data = uri
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -93,15 +101,19 @@ class CallHelper @Inject constructor(
             }
 
             Log.d(TAG, "拨号成功")
+            DebugLogger.log("[CallHelper] ✓ 拨号请求已发送")
 
         } catch (e: SecurityException) {
             Log.e(TAG, "缺少拨号权限: ${e.message}")
+            DebugLogger.log("[CallHelper] ✗ 缺少拨号权限: ${e.message}")
             throw e
         } catch (e: android.content.ActivityNotFoundException) {
             Log.e(TAG, "未找到拨号应用: ${e.message}")
+            DebugLogger.log("[CallHelper] ✗ 未找到拨号应用: ${e.message}")
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "拨号失败: ${e.message}")
+            DebugLogger.log("[CallHelper] ✗ 拨号失败: ${e.message}")
             throw e
         }
     }

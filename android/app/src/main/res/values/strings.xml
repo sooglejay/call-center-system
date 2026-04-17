@@ -72,4 +72,7 @@
     <string name="notification_channel_call_desc">自动拨号状态通知</string>
     <string name="notification_auto_dial_running">自动拨号进行中</string>
     <string name="notification_auto_dial_paused">自动拨号已暂停</string>
+    
+    <!-- 无障碍服务 -->
+    <string name="accessibility_service_description">智能呼叫中心无障碍服务\n\n用于在通话时自动开启扬声器/免提功能。\n\n请开启此服务以使用自动扩音功能。</string>
 </resources>

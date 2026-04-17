@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 import com.callcenter.app.util.AppLifecycleManager
+import com.callcenter.app.util.DebugLogger
 import com.callcenter.app.data.local.preferences.CallSettingsManager
 import com.callcenter.app.service.LogCollectorService
 import javax.inject.Inject
@@ -35,6 +36,9 @@ class CallCenterApp : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+
+        // 初始化调试日志
+        DebugLogger.init(this)
 
         // 初始化应用生命周期管理器
         AppLifecycleManager.init(this)

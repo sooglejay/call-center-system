@@ -23,6 +23,7 @@ import com.callcenter.app.data.repository.TaskRepository
 import com.callcenter.app.ui.viewmodel.AutoDialScopeType
 import com.callcenter.app.util.AppLifecycleManager
 import com.callcenter.app.util.CallHelper
+import com.callcenter.app.util.DebugLogger
 import com.callcenter.app.util.FloatingWindowManager
 import com.callcenter.app.util.UserNotifier
 import com.callcenter.app.util.root.RootCallState
@@ -405,14 +406,16 @@ class AutoDialService : Service() {
 
     /**
      * 自动开启免提
-     * 优先使用 InCallService，如果未激活则使用 AudioManager
+     * 优先使用 InCallService，其次使用无障碍服务，最后使用 AudioManager
      */
     private suspend fun enableSpeakerphoneWithRetry() {
         Log.d(TAG, "开始自动开启免提...")
+        DebugLogger.log("[AutoDialService] 开始自动开启免提...")
         
         // 检查 InCallService 是否激活
         if (AutoSpeakerInCallService.isServiceActive) {
             Log.d(TAG, "InCallService 已激活，扬声器将由 InCallService 自动控制")
+            DebugLogger.log("[AutoDialService] ✓ InCallService 已激活，将由 InCallService 控制扬声器")
             FloatingCustomerService.addCallStateHistory(
                 "InCallService 控制免提",
                 _currentCustomer.value?.phone,
@@ -421,12 +424,26 @@ class AutoDialService : Service() {
             return
         }
         
-        Log.w(TAG, "InCallService 未激活，使用 AudioManager 方式（可能不稳定）")
+        // 检查无障碍服务是否激活
+        if (AutoSpeakerAccessibilityService.isServiceEnabled) {
+            Log.d(TAG, "无障碍服务已激活，扬声器将由无障碍服务自动控制")
+            DebugLogger.log("[AutoDialService] ✓ 无障碍服务已激活，将由无障碍服务控制扬声器")
+            FloatingCustomerService.addCallStateHistory(
+                "无障碍服务控制免提",
+                _currentCustomer.value?.phone,
+                _currentCustomer.value?.name
+            )
+            return
+        }
+        
+        Log.w(TAG, "InCallService 和无障碍服务都未激活，使用 AudioManager 方式（可能不稳定）")
+        DebugLogger.log("[AutoDialService] ⚠️ InCallService 和无障碍服务都未激活！使用 AudioManager 方式")
         
         val success = callHelper.enableSpeakerphoneAsync()
         
         if (success) {
             Log.d(TAG, "免提已自动开启")
+            DebugLogger.log("[AutoDialService] ✓ AudioManager 方式开启扬声器成功")
             FloatingCustomerService.addCallStateHistory(
                 "免提已开启",
                 _currentCustomer.value?.phone,
@@ -434,6 +451,7 @@ class AutoDialService : Service() {
             )
         } else {
             Log.e(TAG, "免提开启失败")
+            DebugLogger.log("[AutoDialService] ✗ AudioManager 方式开启扬声器失败")
             FloatingCustomerService.addCallStateHistory(
                 "免提开启失败",
                 _currentCustomer.value?.phone,
