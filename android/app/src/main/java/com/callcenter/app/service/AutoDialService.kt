@@ -113,6 +113,12 @@ class AutoDialService : Service() {
         private const val SPEAKER_ENABLE_DELAY = 800L    // 免提开启延迟
         private const val SPEAKER_RETRY_COUNT = 3        // 免提开启重试次数
         private const val SPEAKER_RETRY_DELAY = 500L     // 免提重试间隔
+        
+        // 通话结果判断阈值
+        private const val VOICE_MAIL_THRESHOLD = 15000L  // 语音信箱判断阈值：15秒
+        // OFFHOOK 持续时间 < 15秒 → 语音信箱
+        // OFFHOOK 持续时间 >= 15秒 → 用户接听
+        // 从未进入 OFFHOOK → 响铃未接
     }
 
     @Inject
@@ -1060,7 +1066,8 @@ class AutoDialService : Service() {
                             idleConfirmStartTime = 0
                             Log.d(TAG, "电话已接通/进入通话状态")
                             _currentCallState.value = com.callcenter.app.util.root.RootCallState.ACTIVE
-                            FloatingCustomerService.addCallStateHistory("通话已接通", _currentCustomer.value?.phone, _currentCustomer.value?.name)
+                            // 注意：此时还不知道是用户接听还是语音信箱，等通话结束后根据时长判断
+                            FloatingCustomerService.addCallStateHistory("已进入通话", _currentCustomer.value?.phone, _currentCustomer.value?.name)
 
                             // 自动开启免提
                             enableSpeakerphoneWithRetry()
@@ -1091,10 +1098,35 @@ class AutoDialService : Service() {
                                 // 确认通话结束
                                 Log.d(TAG, "通话已确认结束，总持续时间: ${callDuration}ms，IDLE确认时间: ${idleDuration}ms")
                                 _currentCallState.value = com.callcenter.app.util.root.RootCallState.IDLE
-                                FloatingCustomerService.addCallStateHistory("已挂断", _currentCustomer.value?.phone, _currentCustomer.value?.name, callDuration)
                                 callHelper.disableSpeakerphone()
-                                lastCallWasConnected = callDuration >= MIN_CALL_DURATION
-                                lastResolvedCallResult = if (lastCallWasConnected) "已接听" else "响铃未接"
+                                
+                                // 根据 OFFHOOK 持续时间判断通话结果
+                                // 1. 从未进入 OFFHOOK → 响铃未接
+                                // 2. OFFHOOK < 15秒 → 语音信箱
+                                // 3. OFFHOOK >= 15秒 → 用户接听
+                                when {
+                                    !callConnected -> {
+                                        // 从未进入 OFFHOOK，响铃未接
+                                        Log.d(TAG, "判断结果: 响铃未接（从未进入 OFFHOOK）")
+                                        FloatingCustomerService.addCallStateHistory("未接通", _currentCustomer.value?.phone, _currentCustomer.value?.name)
+                                        lastCallWasConnected = false
+                                        lastResolvedCallResult = "响铃未接"
+                                    }
+                                    callDuration < VOICE_MAIL_THRESHOLD -> {
+                                        // OFFHOOK 时间较短，判断为语音信箱
+                                        Log.d(TAG, "判断结果: 语音信箱（OFFHOOK 持续 ${callDuration}ms < ${VOICE_MAIL_THRESHOLD}ms）")
+                                        FloatingCustomerService.addCallStateHistory("语音信箱", _currentCustomer.value?.phone, _currentCustomer.value?.name, callDuration)
+                                        lastCallWasConnected = false
+                                        lastResolvedCallResult = "语音信箱"
+                                    }
+                                    else -> {
+                                        // OFFHOOK 时间较长，判断为用户接听
+                                        Log.d(TAG, "判断结果: 用户接听（OFFHOOK 持续 ${callDuration}ms >= ${VOICE_MAIL_THRESHOLD}ms）")
+                                        FloatingCustomerService.addCallStateHistory("已挂断", _currentCustomer.value?.phone, _currentCustomer.value?.name, callDuration)
+                                        lastCallWasConnected = true
+                                        lastResolvedCallResult = "已接听"
+                                    }
+                                }
                                 return true
                             }
                         } else {
