@@ -3316,8 +3316,8 @@ fun AutoDialDialog(
                     Slider(
                         value = intervalSeconds.toFloat(),
                         onValueChange = { intervalSeconds = it.toInt() },
-                        valueRange = 5f..60f,
-                        steps = 11
+                        valueRange = 1f..60f,
+                        steps = 12
                     )
                     Text("$intervalSeconds 秒", style = MaterialTheme.typography.bodySmall)
 
