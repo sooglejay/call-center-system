@@ -105,6 +105,9 @@ export default function TaskManagement() {
   const [customerTotal, setCustomerTotal] = useState(0);
   const [customerSearch, setCustomerSearch] = useState('');
 
+  // 任务多选状态
+  const [selectedTaskIds, setSelectedTaskIds] = useState<number[]>([]);
+
   useEffect(() => {
     fetchTasks();
     fetchAgents();
@@ -442,6 +445,49 @@ export default function TaskManagement() {
     return statusMap[status] || '待拨打';
   };
 
+  // 批量删除任务
+  const handleBatchDelete = async () => {
+    if (selectedTaskIds.length === 0) {
+      message.warning('请先选择要删除的任务');
+      return;
+    }
+
+    Modal.confirm({
+      title: '确认批量删除',
+      content: `确定要删除选中的 ${selectedTaskIds.length} 个任务吗？此操作不可恢复。`,
+      okText: '确定删除',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          // 逐个删除任务
+          let successCount = 0;
+          let failCount = 0;
+          
+          for (const taskId of selectedTaskIds) {
+            try {
+              await taskApi.deleteTask(taskId);
+              successCount++;
+            } catch {
+              failCount++;
+            }
+          }
+          
+          if (failCount === 0) {
+            message.success(`成功删除 ${successCount} 个任务`);
+          } else {
+            message.warning(`成功删除 ${successCount} 个任务，失败 ${failCount} 个`);
+          }
+          
+          setSelectedTaskIds([]);
+          fetchTasks();
+        } catch (error: any) {
+          message.error(error.response?.data?.error || '批量删除失败');
+        }
+      }
+    });
+  };
+
   // 打开快速创建任务弹窗
   const handleQuickCreateTask = () => {
     if (!filteredCustomers || filteredCustomers.length === 0) {
@@ -743,9 +789,20 @@ export default function TaskManagement() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
         <h2><ScheduleOutlined style={{ marginRight: 8 }} />任务管理</h2>
-        <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-          创建任务
-        </Button>
+        <Space>
+          {selectedTaskIds.length > 0 && (
+            <Button 
+              danger 
+              icon={<DeleteOutlined />} 
+              onClick={handleBatchDelete}
+            >
+              删除选中 ({selectedTaskIds.length})
+            </Button>
+          )}
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+            创建任务
+          </Button>
+        </Space>
       </div>
 
       {tasks.length === 0 && !loading ? (
@@ -774,6 +831,15 @@ export default function TaskManagement() {
           dataSource={tasks} 
           rowKey="id" 
           loading={loading}
+          rowSelection={{
+            selectedRowKeys: selectedTaskIds,
+            onChange: (keys) => setSelectedTaskIds(keys as number[]),
+            selections: [
+              Table.SELECTION_ALL,
+              Table.SELECTION_INVERT,
+              Table.SELECTION_NONE,
+            ]
+          }}
           pagination={{
             current: currentPage,
             pageSize: pageSize,
