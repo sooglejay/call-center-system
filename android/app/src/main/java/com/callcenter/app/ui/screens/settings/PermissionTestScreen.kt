@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.callcenter.app.ui.viewmodel.PermissionTestViewModel
+import com.callcenter.app.ui.viewmodel.SettingsViewModel
 import com.callcenter.app.util.VersionInfoUtil
 import com.callcenter.app.util.root.RootCallState
 import com.callcenter.app.util.root.RootCallStateDetector
@@ -46,7 +47,9 @@ import kotlinx.coroutines.launch
 @Composable
 fun PermissionTestScreen(
     onNavigateBack: () -> Unit,
-    viewModel: PermissionTestViewModel = hiltViewModel()
+    onNavigateToFeatureToggles: () -> Unit = {},
+    viewModel: PermissionTestViewModel = hiltViewModel(),
+    settingsViewModel: SettingsViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -199,7 +202,12 @@ fun PermissionTestScreen(
         if (callStateStatus == PermissionStatus.GRANTED || rootStatus == PermissionStatus.GRANTED) {
             startCallMonitoring()
         }
+        // 检查 Vosk 模型状态
+        settingsViewModel.checkVoskModelState(context)
     }
+
+    // 获取 Vosk 模型状态
+    val voskModelState by settingsViewModel.voskModelState.collectAsState()
 
     // 清理
     DisposableEffect(Unit) {
@@ -320,6 +328,268 @@ fun PermissionTestScreen(
             ) {
                 Icon(Icons.Default.Refresh, null, modifier = Modifier.padding(end = 8.dp))
                 Text("重新检测权限")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // ==================== 功能开关 ====================
+            Text(
+                text = "功能设置",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+
+            // 功能开关入口
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onNavigateToFeatureToggles)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.ToggleOn,
+                        null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(32.dp)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "功能开关",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Surface(
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    text = "NEW",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                        Text(
+                            text = "管理实验性功能和新特性开关",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // ==================== 语音识别模型 ====================
+            Text(
+                text = "语音识别模型",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+
+            // 语音识别模型标题卡片
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (voskModelState.hasAnyModel)
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                    else
+                        MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.RecordVoiceOver,
+                            null,
+                            tint = if (voskModelState.hasAnyModel)
+                                MaterialTheme.colorScheme.primary
+                            else
+                                MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "离线语音识别",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                if (voskModelState.allModelsReady) {
+                                    Surface(
+                                        color = Color(0xFF4CAF50),
+                                        shape = RoundedCornerShape(4.dp)
+                                    ) {
+                                        Text(
+                                            text = "全部就绪",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color.White,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            Text(
+                                text = "总大小: ${if (voskModelState.totalSize.isNotEmpty()) voskModelState.totalSize else "0 KB"}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (!voskModelState.allModelsReady && voskModelState.models.isNotEmpty()) {
+                                Text(
+                                    text = "支持中英文双语识别",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        if (voskModelState.isDownloadingAll) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else if (!voskModelState.allModelsReady && voskModelState.models.isNotEmpty()) {
+                            TextButton(onClick = { settingsViewModel.downloadAllVoskModels(context) }) {
+                                Text("下载全部")
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 显示每个模型的状态
+            voskModelState.models.forEach { modelStatus ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            enabled = !modelStatus.isDownloading && !voskModelState.isDownloadingAll,
+                            onClick = {
+                                if (modelStatus.isReady) {
+                                    settingsViewModel.deleteVoskModel(context, modelStatus.name)
+                                } else {
+                                    settingsViewModel.downloadVoskModel(context, modelStatus.name)
+                                }
+                            }
+                        ),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 56.dp, top = 12.dp, end = 16.dp, bottom = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = modelStatus.displayName,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Surface(
+                                    color = if (modelStatus.isReady)
+                                        Color(0xFF4CAF50)
+                                    else
+                                        MaterialTheme.colorScheme.secondaryContainer,
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = if (modelStatus.isReady) "已下载" else "未下载",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (modelStatus.isReady)
+                                            Color.White
+                                        else
+                                            MaterialTheme.colorScheme.onSecondaryContainer,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            when {
+                                modelStatus.isDownloading -> {
+                                    Text(
+                                        text = when (modelStatus.downloadProgress) {
+                                            -1 -> "正在解压模型..."
+                                            else -> "下载中... ${modelStatus.downloadProgress}%"
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    if (modelStatus.downloadProgress >= 0) {
+                                        LinearProgressIndicator(
+                                            progress = modelStatus.downloadProgress / 100f,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(top = 4.dp)
+                                        )
+                                    }
+                                }
+                                modelStatus.error != null -> {
+                                    Text(
+                                        text = "错误: ${modelStatus.error}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                                modelStatus.isReady -> {
+                                    Text(
+                                        text = "大小: ${modelStatus.size} | 点击删除",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                else -> {
+                                    Text(
+                                        text = "离线语音识别模型（约50MB）| 点击下载",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                        when {
+                            modelStatus.isDownloading -> {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            }
+                            modelStatus.isReady -> {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            else -> {
+                                Icon(
+                                    Icons.Default.Download,
+                                    null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             // 设备信息

@@ -26,6 +26,7 @@ import com.callcenter.app.BuildConfig
 import com.callcenter.app.service.AutoSpeakerInCallService
 import com.callcenter.app.ui.components.UpdateDialog
 import com.callcenter.app.ui.viewmodel.SettingsViewModel
+import com.callcenter.app.util.DebugLogger
 import com.callcenter.app.util.DefaultDialerHelper
 import com.callcenter.app.util.UpdateState
 import com.callcenter.app.util.VersionInfoUtil
@@ -85,6 +86,23 @@ fun SettingsScreen(
         if (uri != null) {
             viewModel.exportLogsToUri(context, uri) { success, message ->
                 exportResult = Pair(success, message)
+            }
+        }
+    }
+
+    // 调试日志导出 launcher
+    val debugLogDownloadLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                    val logContent = DebugLogger.getLogContent(maxLines = 2000)
+                    outputStream.write(logContent.toByteArray())
+                }
+                Toast.makeText(context, "调试日志已导出", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "导出失败: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -225,7 +243,6 @@ fun SettingsScreen(
                 collectLogcatEnabled = collectLogcatEnabled,
                 isExporting = isExporting,
                 logStatus = logStatus,
-                voskModelState = viewModel.voskModelState.collectAsState().value,
                 onToggleLogCollection = { enabled ->
                     collectLogcatEnabled = enabled
                     viewModel.updateCollectLogcat(enabled)
@@ -241,13 +258,13 @@ fun SettingsScreen(
                     val fileName = "callcenter_log_${System.currentTimeMillis()}.txt"
                     logDownloadLauncher.launch(fileName)
                 },
+                onExportDebugLogs = {
+                    val fileName = "callcenter_debug_${System.currentTimeMillis()}.txt"
+                    debugLogDownloadLauncher.launch(fileName)
+                },
                 onOpenAdvancedConfig = {
                     showLogConfigDialog = true
-                },
-                onNavigateToFeatureToggles = onNavigateToFeatureToggles,
-                onDownloadVoskModel = { viewModel.downloadVoskModel(context) },
-                onDeleteVoskModel = { viewModel.deleteVoskModel(context) },
-                onCheckVoskModelState = { viewModel.checkVoskModelState(context) }
+                }
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -575,47 +592,12 @@ private fun DebugSettingsGroup(
     collectLogcatEnabled: Boolean,
     isExporting: Boolean,
     logStatus: SettingsViewModel.LogCollectorStatus,
-    voskModelState: SettingsViewModel.VoskModelState = SettingsViewModel.VoskModelState(),
     onToggleLogCollection: (Boolean) -> Unit,
     onExportLogs: () -> Unit,
-    onOpenAdvancedConfig: () -> Unit,
-    onNavigateToFeatureToggles: () -> Unit = {},
-    onDownloadVoskModel: () -> Unit = {},
-    onDeleteVoskModel: () -> Unit = {},
-    onCheckVoskModelState: () -> Unit = {}
+    onExportDebugLogs: () -> Unit = {},
+    onOpenAdvancedConfig: () -> Unit
 ) {
     SettingsGroup(title = "调试") {
-        // 功能开关入口
-        ListItem(
-            headlineContent = { 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("功能开关")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Surface(
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = MaterialTheme.shapes.small
-                    ) {
-                        Text(
-                            text = "NEW",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                }
-            },
-            supportingContent = { Text("管理实验性功能和新特性开关") },
-            leadingContent = {
-                Icon(Icons.Default.ToggleOn, null, tint = MaterialTheme.colorScheme.primary)
-            },
-            trailingContent = {
-                Icon(Icons.Default.ChevronRight, null)
-            },
-            modifier = Modifier.clickable(onClick = onNavigateToFeatureToggles)
-        )
-
-        Divider()
-
         ListItem(
             headlineContent = { Text("收集 logcat 日志") },
             supportingContent = { Text("收集通话相关的日志（默认最多 10000 条）") },
@@ -653,6 +635,37 @@ private fun DebugSettingsGroup(
 
         Divider()
 
+        // 导出调试日志（用于排查通话状态检测问题）
+        ListItem(
+            headlineContent = { 
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("导出调试日志")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Text(
+                            text = "DEBUG",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            },
+            supportingContent = { Text("导出通话状态检测的详细日志（用于排查问题）") },
+            leadingContent = {
+                Icon(Icons.Default.BugReport, null, tint = MaterialTheme.colorScheme.error)
+            },
+            trailingContent = {
+                Icon(Icons.Default.ChevronRight, null)
+            },
+            modifier = Modifier.clickable(onClick = onExportDebugLogs)
+        )
+
+        Divider()
+
         ListItem(
             headlineContent = { Text("高级配置") },
             supportingContent = {
@@ -674,113 +687,6 @@ private fun DebugSettingsGroup(
                 Icon(Icons.Default.ChevronRight, null)
             },
             modifier = Modifier.clickable(onClick = onOpenAdvancedConfig)
-        )
-
-        Divider()
-
-        // Vosk 语音识别模型
-        ListItem(
-            headlineContent = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("语音识别模型")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Surface(
-                        color = if (voskModelState.isModelReady)
-                            MaterialTheme.colorScheme.primaryContainer
-                        else
-                            MaterialTheme.colorScheme.secondaryContainer,
-                        shape = MaterialTheme.shapes.small
-                    ) {
-                        Text(
-                            text = if (voskModelState.isModelReady) "已下载" else "未下载",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (voskModelState.isModelReady)
-                                MaterialTheme.colorScheme.onPrimaryContainer
-                            else
-                                MaterialTheme.colorScheme.onSecondaryContainer,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                }
-            },
-            supportingContent = {
-                Column {
-                    when {
-                        voskModelState.isDownloading -> {
-                            Text(
-                                text = when (voskModelState.downloadProgress) {
-                                    -1 -> "正在解压模型..."
-                                    else -> "下载中... ${voskModelState.downloadProgress}%"
-                                },
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                            if (voskModelState.downloadProgress >= 0) {
-                                LinearProgressIndicator(
-                                    progress = voskModelState.downloadProgress / 100f,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 4.dp)
-                                )
-                            }
-                        }
-                        voskModelState.error != null -> {
-                            Text(
-                                text = "错误: ${voskModelState.error}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
-                        voskModelState.isModelReady -> {
-                            Text(
-                                text = "大小: ${voskModelState.modelSize} | 点击删除",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                        else -> {
-                            Text(
-                                text = "离线语音识别模型（约50MB）| 点击下载",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    }
-                }
-            },
-            leadingContent = {
-                Icon(
-                    Icons.Default.RecordVoiceOver,
-                    null,
-                    tint = if (voskModelState.isModelReady)
-                        MaterialTheme.colorScheme.primary
-                    else
-                        MaterialTheme.colorScheme.outline
-                )
-            },
-            trailingContent = {
-                when {
-                    voskModelState.isDownloading -> {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            strokeWidth = 2.dp
-                        )
-                    }
-                    voskModelState.isModelReady -> {
-                        Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error)
-                    }
-                    else -> {
-                        Icon(Icons.Default.Download, null)
-                    }
-                }
-            },
-            modifier = Modifier.clickable(
-                enabled = !voskModelState.isDownloading,
-                onClick = {
-                    if (voskModelState.isModelReady) {
-                        onDeleteVoskModel()
-                    } else {
-                        onDownloadVoskModel()
-                    }
-                }
-            )
         )
     }
 }

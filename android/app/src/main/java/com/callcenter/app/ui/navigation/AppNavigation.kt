@@ -312,7 +312,8 @@ fun AppNavigation(
 
         composable(Screen.PermissionTest.route) {
             com.callcenter.app.ui.screens.settings.PermissionTestScreen(
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToFeatureToggles = { navController.navigate(Screen.FeatureToggles.route) }
             )
         }
 

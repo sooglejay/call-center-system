@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Table, Button, Modal, Form, Input, Select, DatePicker, message, Tag, Tabs, Badge, Checkbox, Space, Divider, Typography, Empty, Alert, Progress, Card, Descriptions, Tooltip, Statistic, Row, Col } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, TeamOutlined, ScheduleOutlined, InfoCircleOutlined, EyeOutlined, PhoneOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined, MessageOutlined, MinusCircleOutlined } from '@ant-design/icons';
+import { Table, Button, Modal, Form, Input, Select, DatePicker, message, Tag, Tabs, Badge, Checkbox, Space, Divider, Typography, Empty, Alert, Progress, Card, Descriptions, Tooltip, Statistic, Row, Col, Dropdown } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, TeamOutlined, ScheduleOutlined, InfoCircleOutlined, EyeOutlined, PhoneOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined, MessageOutlined, MinusCircleOutlined, DownloadOutlined, FileExcelOutlined, FileTextOutlined } from '@ant-design/icons';
 import { taskApi, userApi, customerApi } from '../../services/api';
 import type { Task, User, Customer } from '../../services/api';
 import dayjs from 'dayjs';
@@ -73,6 +73,7 @@ export default function TaskManagement() {
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [quickCreateModalVisible, setQuickCreateModalVisible] = useState(false);
   const [editingTask, setEditingTask] = useState<TaskDetail | null>(null);
   const [selectedTask, setSelectedTask] = useState<TaskDetail | null>(null);
   const [agents, setAgents] = useState<User[]>([]);
@@ -84,6 +85,7 @@ export default function TaskManagement() {
   const [unassignedOnly, setUnassignedOnly] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [form] = Form.useForm();
+  const [quickCreateForm] = Form.useForm();
   
   // 任务详情中客户列表的通话状态筛选
   const [customerCallStatusFilter, setCustomerCallStatusFilter] = useState<string>('all');
@@ -283,6 +285,228 @@ export default function TaskManagement() {
         ? prev.filter(l => l !== letter)
         : [...prev, letter]
     );
+  };
+
+  // 导出客户数据为 CSV
+  const exportToCSV = (customers: any[], taskTitle: string) => {
+    if (!customers || customers.length === 0) {
+      message.warning('没有可导出的数据');
+      return;
+    }
+
+    // 定义列头
+    const headers = [
+      '客户姓名',
+      '电话',
+      '标签',
+      '公司',
+      '拨打状态',
+      '通话结果',
+      '通话时长(秒)',
+      '拨打时间',
+      '录音链接'
+    ];
+
+    // 转换数据
+    const rows = customers.map(customer => [
+      customer.name || '',
+      customer.phone || '',
+      customer.tag || '未打标客户',
+      customer.company || '',
+      getCallStatusText(customer.call_status, customer.call_result),
+      customer.call_result || '',
+      customer.call_duration?.toString() || '',
+      customer.called_at ? dayjs(customer.called_at).format('YYYY-MM-DD HH:mm:ss') : '',
+      customer.recording_url || ''
+    ]);
+
+    // 构建 CSV 内容
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    // 添加 BOM 以支持中文
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${taskTitle}_客户数据_${dayjs().format('YYYY-MM-DD_HHmmss')}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+
+    message.success(`已导出 ${customers.length} 条客户数据`);
+  };
+
+  // 导出客户数据为 Excel（简单的 HTML 表格格式，兼容 Excel）
+  const exportToExcel = (customers: any[], taskTitle: string) => {
+    if (!customers || customers.length === 0) {
+      message.warning('没有可导出的数据');
+      return;
+    }
+
+    // 构建 HTML 表格
+    const html = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          table { border-collapse: collapse; width: 100%; }
+          th, td { border: 1px solid #000; padding: 8px; text-align: left; }
+          th { background-color: #4472C4; color: white; font-weight: bold; }
+          tr:nth-child(even) { background-color: #D9E1F2; }
+        </style>
+      </head>
+      <body>
+        <table>
+          <thead>
+            <tr>
+              <th>客户姓名</th>
+              <th>电话</th>
+              <th>标签</th>
+              <th>公司</th>
+              <th>拨打状态</th>
+              <th>通话结果</th>
+              <th>通话时长(秒)</th>
+              <th>拨打时间</th>
+              <th>录音链接</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${customers.map(customer => `
+              <tr>
+                <td>${customer.name || ''}</td>
+                <td>${customer.phone || ''}</td>
+                <td>${customer.tag || '未打标客户'}</td>
+                <td>${customer.company || ''}</td>
+                <td>${getCallStatusText(customer.call_status, customer.call_result)}</td>
+                <td>${customer.call_result || ''}</td>
+                <td>${customer.call_duration || ''}</td>
+                <td>${customer.called_at ? dayjs(customer.called_at).format('YYYY-MM-DD HH:mm:ss') : ''}</td>
+                <td>${customer.recording_url || ''}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `;
+
+    const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${taskTitle}_客户数据_${dayjs().format('YYYY-MM-DD_HHmmss')}.xls`;
+    link.click();
+    URL.revokeObjectURL(url);
+
+    message.success(`已导出 ${customers.length} 条客户数据`);
+  };
+
+  // 获取拨打状态文本
+  const getCallStatusText = (status: string, callResult?: string): string => {
+    if (callResult) {
+      const resultMap: Record<string, string> = {
+        '已接听': '已接听',
+        'connected': '已接听',
+        '语音信箱': '语音信箱',
+        'voicemail': '语音信箱',
+        '响铃未接': '响铃未接',
+        'unanswered': '响铃未接',
+        '对方拒接': '对方拒接',
+        'rejected': '对方拒接',
+        '对方忙线': '对方忙线',
+        'busy': '对方忙线',
+        '关机/停机': '关机/停机',
+        'power_off': '关机/停机',
+        '无人接听': '无人接听',
+        'no_answer': '无人接听',
+        'IVR语音': 'IVR语音',
+        'ivr': 'IVR语音',
+        '其他': '其他',
+        'other': '其他'
+      };
+      if (resultMap[callResult]) {
+        return resultMap[callResult];
+      }
+    }
+
+    const statusMap: Record<string, string> = {
+      'pending': '待拨打',
+      'called': '已拨打',
+      'connected': '已接听',
+      'completed': '已完成',
+      'failed': '拨打失败'
+    };
+    return statusMap[status] || '待拨打';
+  };
+
+  // 打开快速创建任务弹窗
+  const handleQuickCreateTask = () => {
+    if (!filteredCustomers || filteredCustomers.length === 0) {
+      message.warning('没有可用的客户数据');
+      return;
+    }
+    
+    // 根据筛选状态生成默认任务名
+    const filterLabelMap: Record<string, string> = {
+      'all': '全部',
+      'pending': '待拨打',
+      'connected': '已接听',
+      'voicemail': '语音信箱',
+      'unanswered': '响铃未接',
+      'rejected': '对方拒接',
+      'busy': '对方忙线',
+      'power_off': '关机停机',
+      'no_answer': '无人接听',
+      'ivr': 'IVR语音',
+      'failed': '拨打失败',
+      'completed': '已完成',
+      'called': '已拨打',
+      'other': '其他'
+    };
+    
+    const filterLabel = filterLabelMap[customerCallStatusFilter] || '筛选';
+    const defaultTitle = `${filterLabel}重拨任务`;
+    
+    quickCreateForm.setFieldsValue({
+      title: defaultTitle,
+      priority: 'normal'
+    });
+    
+    setQuickCreateModalVisible(true);
+  };
+
+  // 快速创建任务提交
+  const handleQuickCreateSubmit = async (values: any) => {
+    try {
+      // 获取筛选后的客户 ID 列表
+      const customerIds = filteredCustomers
+        .map(c => c.id)
+        .filter((id): id is number => id !== undefined && id !== null);
+
+      if (customerIds.length === 0) {
+        message.error('没有有效的客户数据');
+        return;
+      }
+
+      await taskApi.createTask({
+        title: values.title,
+        description: values.description || `从「${selectedTask?.title || '原任务'}」的${customerCallStatusFilter === 'all' ? '全部' : customerCallStatusFilter}客户创建`,
+        assigned_to: values.assigned_to,
+        customer_ids: customerIds,
+        priority: values.priority || 'normal',
+        due_date: values.due_date?.format('YYYY-MM-DD')
+      });
+      
+      message.success(`成功创建任务，包含 ${customerIds.length} 个客户`);
+      setQuickCreateModalVisible(false);
+      quickCreateForm.resetFields();
+      fetchTasks();
+    } catch (error: any) {
+      message.error(error.response?.data?.error || '创建任务失败');
+    }
   };
 
   // 根据通话状态筛选客户
@@ -876,28 +1100,63 @@ export default function TaskManagement() {
               }
               size="small"
               extra={
-                <Select
-                  value={customerCallStatusFilter}
-                  onChange={setCustomerCallStatusFilter}
-                  style={{ width: 120 }}
-                  size="small"
-                  options={[
-                    { value: 'all', label: '全部客户' },
-                    { value: 'pending', label: '待拨打' },
-                    { value: 'connected', label: '已接听' },
-                    { value: 'voicemail', label: '语音信箱' },
-                    { value: 'unanswered', label: '响铃未接' },
-                    { value: 'rejected', label: '对方拒接' },
-                    { value: 'busy', label: '对方忙线' },
-                    { value: 'power_off', label: '关机/停机' },
-                    { value: 'no_answer', label: '无人接听' },
-                    { value: 'ivr', label: 'IVR语音' },
-                    { value: 'failed', label: '拨打失败' },
-                    { value: 'completed', label: '已完成' },
-                    { value: 'called', label: '其他已拨打' },              
-                    { value: 'other', label: '其他' }
-                  ]}
-                />
+                <Space>
+                  <Dropdown
+                    menu={{
+                      items: [
+                        {
+                          key: 'csv',
+                          icon: <FileTextOutlined />,
+                          label: '导出 CSV',
+                          onClick: () => exportToCSV(filteredCustomers, selectedTask.title || '任务')
+                        },
+                        {
+                          key: 'excel',
+                          icon: <FileExcelOutlined />,
+                          label: '导出 Excel',
+                          onClick: () => exportToExcel(filteredCustomers, selectedTask.title || '任务')
+                        }
+                      ]
+                    }}
+                  >
+                    <Button size="small" icon={<DownloadOutlined />}>
+                      导出数据
+                    </Button>
+                  </Dropdown>
+                  <Select
+                    value={customerCallStatusFilter}
+                    onChange={setCustomerCallStatusFilter}
+                    style={{ width: 120 }}
+                    size="small"
+                    options={[
+                      { value: 'all', label: '全部客户' },
+                      { value: 'pending', label: '待拨打' },
+                      { value: 'connected', label: '已接听' },
+                      { value: 'voicemail', label: '语音信箱' },
+                      { value: 'unanswered', label: '响铃未接' },
+                      { value: 'rejected', label: '对方拒接' },
+                      { value: 'busy', label: '对方忙线' },
+                      { value: 'power_off', label: '关机/停机' },
+                      { value: 'no_answer', label: '无人接听' },
+                      { value: 'ivr', label: 'IVR语音' },
+                      { value: 'failed', label: '拨打失败' },
+                      { value: 'completed', label: '已完成' },
+                      { value: 'called', label: '其他已拨打' },              
+                      { value: 'other', label: '其他' }
+                    ]}
+                  />
+                  <Tooltip title={`用当前筛选的 ${filteredCustomers.length} 个客户创建新任务`}>
+                    <Button 
+                      size="small" 
+                      type="primary"
+                      icon={<PlusOutlined />}
+                      onClick={handleQuickCreateTask}
+                      disabled={filteredCustomers.length === 0}
+                    >
+                      创建新任务
+                    </Button>
+                  </Tooltip>
+                </Space>
               }
             >
               <Table
@@ -988,6 +1247,69 @@ export default function TaskManagement() {
             </Card>
           </div>
         ) : null}
+      </Modal>
+
+      {/* 快速创建任务弹窗 */}
+      <Modal
+        title="快速创建任务"
+        open={quickCreateModalVisible}
+        onOk={() => quickCreateForm.submit()}
+        onCancel={() => {
+          setQuickCreateModalVisible(false);
+          quickCreateForm.resetFields();
+        }}
+        okText="创建"
+        cancelText="取消"
+      >
+        <Alert
+          message={`将使用当前筛选的 ${filteredCustomers.length} 个客户创建新任务`}
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+        />
+        <Form form={quickCreateForm} layout="vertical" onFinish={handleQuickCreateSubmit}>
+          <Form.Item 
+            name="title" 
+            label="任务名称" 
+            rules={[{ required: true, message: '请输入任务名称' }]}
+          >
+            <Input placeholder="例如：已接听重拨任务" />
+          </Form.Item>
+          
+          <Form.Item 
+            name="assigned_to" 
+            label="分配客服" 
+            rules={[{ required: true, message: '请选择客服' }]}
+          >
+            <Select placeholder="选择客服">
+              {agents.map(agent => (
+                <Select.Option key={agent.id} value={agent.id}>
+                  <Space>
+                    <UserOutlined />
+                    {agent.real_name}
+                  </Space>
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+
+          <Form.Item name="priority" label="优先级" initialValue="normal">
+            <Select>
+              <Select.Option value="urgent">紧急</Select.Option>
+              <Select.Option value="high">高</Select.Option>
+              <Select.Option value="normal">普通</Select.Option>
+              <Select.Option value="low">低</Select.Option>
+            </Select>
+          </Form.Item>
+
+          <Form.Item name="due_date" label="截止日期">
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+
+          <Form.Item name="description" label="任务描述">
+            <Input.TextArea rows={2} placeholder="可选：添加任务详细说明" />
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   );

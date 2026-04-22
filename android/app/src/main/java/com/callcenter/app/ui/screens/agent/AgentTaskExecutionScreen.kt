@@ -116,9 +116,13 @@ fun AgentTaskExecutionScreen(
     }
 
     // 当自动拨号状态变化时，刷新任务详情
-    LaunchedEffect(autoDialRunning, dialedCount) {
-        if (autoDialRunning) {
+    // 注意：当 autoDialRunning 从 true 变为 false 时也需要刷新，以显示最新的通话状态
+    var previousAutoDialRunning by remember { mutableStateOf(false) }
+    LaunchedEffect(autoDialRunning) {
+        // 当自动拨号状态变化时刷新（特别是停止时需要刷新以更新状态）
+        if (previousAutoDialRunning != autoDialRunning) {
             viewModel.loadTaskDetail(taskId)
+            previousAutoDialRunning = autoDialRunning
         }
     }
 

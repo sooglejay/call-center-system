@@ -72,13 +72,28 @@ class SettingsViewModel @Inject constructor(
         val maxCacheSize: Int = 10000
     )
 
-    data class VoskModelState(
-        val isModelReady: Boolean = false,
+    /**
+     * 单个模型的状态
+     */
+    data class ModelStatus(
+        val name: String,
+        val displayName: String,
+        val language: String,
+        val isReady: Boolean = false,
         val isDownloading: Boolean = false,
-        val downloadProgress: Int = 0,  // 0-100, -1 表示解压中
-        val modelSize: String = "",
+        val downloadProgress: Int = 0,
+        val size: String = "",
         val error: String? = null
     )
+
+    data class VoskModelState(
+        val models: List<ModelStatus> = emptyList(),
+        val totalSize: String = "",
+        val isDownloadingAll: Boolean = false
+    ) {
+        val hasAnyModel: Boolean get() = models.any { it.isReady }
+        val allModelsReady: Boolean get() = models.isNotEmpty() && models.all { it.isReady }
+    }
 
     fun loadSettings() {
         viewModelScope.launch {
@@ -310,71 +325,142 @@ class SettingsViewModel @Inject constructor(
     // ==================== Vosk 模型管理 ====================
 
     /**
-     * 检查 Vosk 模型状态
+     * 检查所有 Vosk 模型状态
      */
     fun checkVoskModelState(context: Context) {
         viewModelScope.launch {
             val modelManager = VoskModelManager(context)
+            val supportedModels = modelManager.getSupportedModels()
+
+            val modelStatuses = supportedModels.map { config ->
+                ModelStatus(
+                    name = config.name,
+                    displayName = config.displayName,
+                    language = config.language,
+                    isReady = modelManager.isModelReady(config.name),
+                    size = modelManager.getModelSizeDescription(config.name)
+                )
+            }
+
             _voskModelState.value = _voskModelState.value.copy(
-                isModelReady = modelManager.isModelReady(),
-                modelSize = modelManager.getModelSizeDescription()
+                models = modelStatuses,
+                totalSize = modelManager.getTotalSizeDescription()
             )
         }
     }
 
     /**
-     * 下载 Vosk 模型
+     * 下载指定的 Vosk 模型
      */
-    fun downloadVoskModel(context: Context) {
+    fun downloadVoskModel(context: Context, modelName: String? = null) {
         viewModelScope.launch {
             val modelManager = VoskModelManager(context)
+            val targetModelName = modelName ?: modelManager.getSupportedModels().first().name
 
-            _voskModelState.value = _voskModelState.value.copy(
-                isDownloading = true,
-                downloadProgress = 0,
-                error = null
-            )
-
-            val result = modelManager.downloadModel { progress ->
-                _voskModelState.value = _voskModelState.value.copy(
-                    downloadProgress = progress
+            // 更新目标模型的下载状态
+            updateModelStatus(targetModelName) { current ->
+                current.copy(
+                    isDownloading = true,
+                    downloadProgress = 0,
+                    error = null
                 )
+            }
+
+            val result = modelManager.downloadModel(targetModelName) { progress ->
+                updateModelStatus(targetModelName) { current ->
+                    current.copy(downloadProgress = progress)
+                }
             }
 
             result.fold(
                 onSuccess = {
+                    updateModelStatus(targetModelName) { current ->
+                        current.copy(
+                            isReady = true,
+                            isDownloading = false,
+                            downloadProgress = 100,
+                            size = modelManager.getModelSizeDescription(targetModelName),
+                            error = null
+                        )
+                    }
+                    // 更新总大小
                     _voskModelState.value = _voskModelState.value.copy(
-                        isModelReady = true,
-                        isDownloading = false,
-                        downloadProgress = 100,
-                        modelSize = modelManager.getModelSizeDescription()
+                        totalSize = modelManager.getTotalSizeDescription()
                     )
                 },
                 onFailure = { e ->
-                    _voskModelState.value = _voskModelState.value.copy(
-                        isDownloading = false,
-                        downloadProgress = 0,
-                        error = e.message ?: "下载失败"
-                    )
+                    updateModelStatus(targetModelName) { current ->
+                        current.copy(
+                            isDownloading = false,
+                            downloadProgress = 0,
+                            error = e.message ?: "下载失败"
+                        )
+                    }
                 }
             )
         }
     }
 
     /**
-     * 删除 Vosk 模型
+     * 下载所有模型
      */
-    fun deleteVoskModel(context: Context) {
+    fun downloadAllVoskModels(context: Context) {
         viewModelScope.launch {
             val modelManager = VoskModelManager(context)
-            val success = modelManager.deleteModel()
+
+            _voskModelState.value = _voskModelState.value.copy(isDownloadingAll = true)
+
+            modelManager.downloadAllModels { modelName, progress ->
+                updateModelStatus(modelName) { current ->
+                    current.copy(
+                        isDownloading = progress != 100,
+                        downloadProgress = progress,
+                        error = null
+                    )
+                }
+            }
+
+            // 刷新所有模型状态
+            checkVoskModelState(context)
+            _voskModelState.value = _voskModelState.value.copy(isDownloadingAll = false)
+        }
+    }
+
+    /**
+     * 删除指定的 Vosk 模型
+     */
+    fun deleteVoskModel(context: Context, modelName: String? = null) {
+        viewModelScope.launch {
+            val modelManager = VoskModelManager(context)
+            val targetModelName = modelName ?: modelManager.getSupportedModels().first().name
+
+            val success = modelManager.deleteModel(targetModelName)
 
             if (success) {
-                _voskModelState.value = VoskModelState(
-                    isModelReady = false,
-                    modelSize = "0 KB"
+                updateModelStatus(targetModelName) { current ->
+                    current.copy(
+                        isReady = false,
+                        size = "0 KB",
+                        error = null
+                    )
+                }
+                // 更新总大小
+                _voskModelState.value = _voskModelState.value.copy(
+                    totalSize = modelManager.getTotalSizeDescription()
                 )
             }
+        }
+    }
+
+    /**
+     * 更新单个模型状态
+     */
+    private inline fun updateModelStatus(modelName: String, update: (ModelStatus) -> ModelStatus) {
+        val currentModels = _voskModelState.value.models.toMutableList()
+        val index = currentModels.indexOfFirst { it.name == modelName }
+        if (index >= 0) {
+            currentModels[index] = update(currentModels[index])
+            _voskModelState.value = _voskModelState.value.copy(models = currentModels)
         }
     }
 }

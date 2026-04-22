@@ -4,10 +4,12 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.callcenter.app.util.DebugLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
@@ -44,7 +46,17 @@ data class AudioEnergyResult(
  * - 语音信箱特征：能量平稳，单向播放
  * - 真人接听特征：能量波动，双向对话
  *
- * 同时保存音频数据用于后续关键词识别
+ * ## 重要说明：Android 通话录音限制
+ *
+ * Android 10+ 完全禁止第三方应用访问通话音频流（VOICE_CALL、VOICE_DOWNLINK 等）。
+ * 这些音频源需要 CAPTURE_AUDIO_OUTPUT 权限，仅系统应用可用。
+ *
+ * **唯一可行的方案：MIC + 免提模式**
+ * - 必须开启免提（扬声器）模式
+ * - 使用 MIC 音频源捕获从扬声器播放的声音
+ * - 录音质量取决于免提音量和环境噪音
+ *
+ * @see <a href="https://developer.android.com/guide/topics/media/mediarecorder">MediaRecorder</a>
  */
 class AudioEnergyAnalyzer(private val context: Context) {
 
@@ -62,12 +74,12 @@ class AudioEnergyAnalyzer(private val context: Context) {
         private const val MIN_ANALYSIS_DURATION_MS = 2000L  // 最少分析2秒
         private const val MAX_ENERGY_SAMPLES = 600  // 最多600个样本（60秒）
 
-        // 能量阈值
-        private const val SILENCE_THRESHOLD = 500f
-        private const val SPEECH_THRESHOLD = 2000f
-        private const val ENERGY_CHANGE_THRESHOLD = 0.3f
-        private const val STEADY_PATTERN_THRESHOLD = 0.15f
-        private const val FLUCTUATING_PATTERN_THRESHOLD = 0.35f
+        // 能量阈值（针对 MIC 免提模式调整）
+        private const val SILENCE_THRESHOLD = 200f  // 降低静音阈值，MIC 免提音量较小
+        private const val SPEECH_THRESHOLD = 1000f
+        private const val ENERGY_CHANGE_THRESHOLD = 0.25f
+        private const val STEADY_PATTERN_THRESHOLD = 0.18f  // 语音信箱更平稳
+        private const val FLUCTUATING_PATTERN_THRESHOLD = 0.30f
     }
 
     private var audioRecord: AudioRecord? = null
@@ -82,6 +94,9 @@ class AudioEnergyAnalyzer(private val context: Context) {
     private var fileOutputStream: FileOutputStream? = null
     private var saveAudioData: Boolean = false
 
+    // 使用的音频源
+    private var usedAudioSource: String = "无"
+
     /**
      * 检查是否有录音权限
      */
@@ -90,6 +105,14 @@ class AudioEnergyAnalyzer(private val context: Context) {
             context,
             Manifest.permission.RECORD_AUDIO
         ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    /**
+     * 检查免提是否开启
+     */
+    fun isSpeakerphoneOn(): Boolean {
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        return audioManager.isSpeakerphoneOn
     }
 
     /**
@@ -102,16 +125,32 @@ class AudioEnergyAnalyzer(private val context: Context) {
     /**
      * 开始音频能量采集
      *
+     * **重要**：必须先开启免提模式！否则无法捕获对方声音。
+     *
      * @return 是否成功开始
      */
     suspend fun start(): Boolean {
+        DebugLogger.log("[AudioEnergy] start() 被调用")
+
         if (!hasRecordPermission()) {
             Log.w(TAG, "没有录音权限，无法进行音频能量分析")
+            DebugLogger.log("[AudioEnergy] ✗ 没有录音权限")
             return false
+        }
+
+        // 检查免提状态
+        val speakerOn = isSpeakerphoneOn()
+        DebugLogger.log("[AudioEnergy] 免提状态: $speakerOn")
+
+        if (!speakerOn) {
+            Log.w(TAG, "免提未开启，录音效果可能不佳")
+            DebugLogger.log("[AudioEnergy] ⚠ 免提未开启，建议开启免提以获得更好的录音效果")
+            // 不直接返回 false，允许继续尝试（某些设备可能仍然可以录音）
         }
 
         if (isRecording.getAndSet(true)) {
             Log.w(TAG, "音频能量采集已在进行中")
+            DebugLogger.log("[AudioEnergy] 音频采集已在进行中")
             return true
         }
 
@@ -123,37 +162,44 @@ class AudioEnergyAnalyzer(private val context: Context) {
                     AUDIO_FORMAT
                 ) * BUFFER_SIZE_FACTOR
 
-                // 尝试多种音源，按优先级排列
+                DebugLogger.log("[AudioEnergy] 缓冲区大小: $bufferSize bytes")
+
+                // Android 10+ 只能使用 MIC 或 VOICE_RECOGNITION
+                // VOICE_CALL、VOICE_DOWNLINK 等需要 CAPTURE_AUDIO_OUTPUT 系统权限
                 val audioSources = listOf(
-                    MediaRecorder.AudioSource.VOICE_DOWNLINK to "VOICE_DOWNLINK",
-                    MediaRecorder.AudioSource.VOICE_CALL to "VOICE_CALL",
-                    MediaRecorder.AudioSource.VOICE_COMMUNICATION to "VOICE_COMMUNICATION",
-                    MediaRecorder.AudioSource.CAMCORDER to "CAMCORDER",
-                    MediaRecorder.AudioSource.MIC to "MIC",
-                    MediaRecorder.AudioSource.DEFAULT to "DEFAULT"
+                    MediaRecorder.AudioSource.VOICE_RECOGNITION to "VOICE_RECOGNITION",  // 语音识别优化，推荐
+                    MediaRecorder.AudioSource.MIC to "MIC",  // 基本麦克风
+                    MediaRecorder.AudioSource.CAMCORDER to "CAMCORDER",  // 摄像机模式，某些设备可用
                 )
+
+                DebugLogger.log("[AudioEnergy] 开始尝试 MIC 音频源...")
+                DebugLogger.log("[AudioEnergy] 注意: Android 10+ 禁止使用 VOICE_CALL/VOICE_DOWNLINK")
 
                 for ((source, name) in audioSources) {
                     try {
                         audioRecord = createAudioRecord(bufferSize, source)
                         if (audioRecord?.state == AudioRecord.STATE_INITIALIZED) {
                             Log.d(TAG, "成功使用音源: $name")
+                            DebugLogger.log("[AudioEnergy] ✓ 成功使用音源: $name")
+                            usedAudioSource = name
                             break
                         } else {
                             Log.d(TAG, "音源 $name 不可用")
+                            DebugLogger.log("[AudioEnergy] ✗ 音源 $name 不可用")
                             audioRecord?.release()
                             audioRecord = null
                         }
                     } catch (e: Exception) {
                         Log.d(TAG, "音源 $name 创建失败: ${e.message}")
+                        DebugLogger.log("[AudioEnergy] ✗ 音源 $name 创建失败: ${e.message}")
                         audioRecord = null
                     }
                 }
 
                 if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-                    Log.e(TAG, "AudioRecord 初始化失败，所有音源都不可用")
-                    Log.e(TAG, "注意: VOICE_DOWNLINK/VOICE_CALL 需要 CAPTURE_AUDIO_OUTPUT 权限（仅系统应用）")
-                    Log.e(TAG, "注意: 通话期间 MIC 可能被电话应用独占")
+                    Log.e(TAG, "AudioRecord 初始化失败，所有 MIC 音源都不可用")
+                    DebugLogger.log("[AudioEnergy] ✗ AudioRecord 初始化失败")
+                    DebugLogger.log("[AudioEnergy] 可能原因: 1.麦克风被其他应用占用 2.权限未授予 3.设备不支持")
                     isRecording.set(false)
                     return@withContext false
                 }
@@ -165,10 +211,15 @@ class AudioEnergyAnalyzer(private val context: Context) {
                 // 初始化音频文件（如果需要保存）
                 if (saveAudioData) {
                     initAudioFile()
+                    DebugLogger.log("[AudioEnergy] 音频文件路径: ${audioFile?.absolutePath}")
+                } else {
+                    DebugLogger.log("[AudioEnergy] 不保存音频数据 (saveAudioData=false)")
                 }
 
                 audioRecord?.startRecording()
-                Log.d(TAG, "音频能量采集已开始，音源: ${getAudioSourceName()}")
+                Log.d(TAG, "音频能量采集已开始，音源: $usedAudioSource，免提: $speakerOn")
+                DebugLogger.log("[AudioEnergy] ✓ 音频采集已开始")
+                DebugLogger.log("[AudioEnergy] 音源: $usedAudioSource, 免提: $speakerOn, 采样率: ${SAMPLE_RATE}Hz")
 
                 // 开始采集循环
                 startSamplingLoop()
@@ -176,10 +227,13 @@ class AudioEnergyAnalyzer(private val context: Context) {
                 true
             } catch (e: SecurityException) {
                 Log.e(TAG, "录音权限被拒绝: ${e.message}")
+                DebugLogger.log("[AudioEnergy] ✗ SecurityException: ${e.message}")
                 isRecording.set(false)
                 false
             } catch (e: Exception) {
                 Log.e(TAG, "启动音频采集失败: ${e.message}")
+                DebugLogger.log("[AudioEnergy] ✗ 启动异常: ${e.message}")
+                DebugLogger.log("[AudioEnergy] 异常堆栈: ${e.stackTraceToString().take(500)}")
                 isRecording.set(false)
                 false
             }
@@ -201,30 +255,6 @@ class AudioEnergyAnalyzer(private val context: Context) {
         } catch (e: Exception) {
             Log.w(TAG, "创建 AudioRecord 失败 (音源=$audioSource): ${e.message}")
             null
-        }
-    }
-
-    /**
-     * 获取当前使用的音源名称
-     */
-    private fun getAudioSourceName(): String {
-        return when {
-            audioRecord == null -> "无"
-            else -> try {
-                // 通过反射获取音源
-                val field = AudioRecord::class.java.getDeclaredField("mAudioSource")
-                field.isAccessible = true
-                val source = field.getInt(audioRecord)
-                when (source) {
-                    MediaRecorder.AudioSource.VOICE_DOWNLINK -> "VOICE_DOWNLINK"
-                    MediaRecorder.AudioSource.VOICE_CALL -> "VOICE_CALL"
-                    MediaRecorder.AudioSource.MIC -> "MIC"
-                    MediaRecorder.AudioSource.VOICE_RECOGNITION -> "VOICE_RECOGNITION"
-                    else -> "UNKNOWN($source)"
-                }
-            } catch (e: Exception) {
-                "UNKNOWN"
-            }
         }
     }
 
@@ -301,7 +331,7 @@ class AudioEnergyAnalyzer(private val context: Context) {
                 // 短暂休眠
                 Thread.sleep(ANALYSIS_INTERVAL_MS)
             }
-            
+
             Log.d(TAG, "采样循环结束: totalSamples=$sampleCount, totalReads=$totalReadCount")
         }
     }
@@ -321,6 +351,7 @@ class AudioEnergyAnalyzer(private val context: Context) {
      * 停止采集并分析结果
      */
     suspend fun stopAndAnalyze(): AudioEnergyResult? {
+        DebugLogger.log("[AudioEnergy] stopAndAnalyze() 被调用")
         isRecording.set(false)
 
         return withContext(Dispatchers.IO) {
@@ -328,8 +359,10 @@ class AudioEnergyAnalyzer(private val context: Context) {
                 audioRecord?.stop()
                 audioRecord?.release()
                 audioRecord = null
+                DebugLogger.log("[AudioEnergy] AudioRecord 已停止并释放")
             } catch (e: Exception) {
                 Log.e(TAG, "停止音频采集时出错: ${e.message}")
+                DebugLogger.log("[AudioEnergy] 停止音频采集出错: ${e.message}")
             }
 
             // 关闭文件
@@ -337,15 +370,21 @@ class AudioEnergyAnalyzer(private val context: Context) {
                 fileOutputStream?.flush()
                 fileOutputStream?.close()
                 fileOutputStream = null
+                DebugLogger.log("[AudioEnergy] 音频文件已关闭")
             } catch (e: Exception) {
                 Log.e(TAG, "关闭音频文件时出错: ${e.message}")
+                DebugLogger.log("[AudioEnergy] 关闭音频文件出错: ${e.message}")
             }
 
             val durationMs = System.currentTimeMillis() - startTimeMs
+            DebugLogger.log("[AudioEnergy] 采集时长: ${durationMs}ms")
+            DebugLogger.log("[AudioEnergy] 采集样本数: ${energySamples.size}")
+            DebugLogger.log("[AudioEnergy] 使用音源: $usedAudioSource")
 
             // 检查是否有足够的样本
             if (energySamples.isEmpty()) {
                 Log.w(TAG, "没有采集到音频样本")
+                DebugLogger.log("[AudioEnergy] ✗ 没有采集到音频样本")
                 return@withContext AudioEnergyResult(
                     averageEnergy = 0f,
                     energyStdDev = 0f,
@@ -353,13 +392,14 @@ class AudioEnergyAnalyzer(private val context: Context) {
                     durationMs = durationMs,
                     pattern = AudioEnergyPattern.UNKNOWN,
                     confidence = 0f,
-                    reason = "没有采集到音频样本",
+                    reason = "没有采集到音频样本（音源: $usedAudioSource）",
                     audioFilePath = audioFile?.absolutePath
                 )
             }
 
             if (durationMs < MIN_ANALYSIS_DURATION_MS) {
                 Log.w(TAG, "分析时长不足: ${durationMs}ms < ${MIN_ANALYSIS_DURATION_MS}ms")
+                DebugLogger.log("[AudioEnergy] ✗ 分析时长不足: ${durationMs}ms < ${MIN_ANALYSIS_DURATION_MS}ms")
                 return@withContext AudioEnergyResult(
                     averageEnergy = 0f,
                     energyStdDev = 0f,
@@ -380,6 +420,8 @@ class AudioEnergyAnalyzer(private val context: Context) {
      * 分析能量模式
      */
     private fun analyzeEnergyPattern(durationMs: Long): AudioEnergyResult {
+        DebugLogger.log("[AudioEnergy] 开始分析能量模式...")
+
         val samples = energySamples.toList()
 
         // 计算平均能量
@@ -404,6 +446,13 @@ class AudioEnergyAnalyzer(private val context: Context) {
         // 计算变化率（每秒变化次数）
         val changeRate = energyChanges.toFloat() / (durationMs / 1000f)
 
+        // 记录计算过程
+        DebugLogger.log("[AudioEnergy] 平均能量: $averageEnergy")
+        DebugLogger.log("[AudioEnergy] 标准差: $stdDev")
+        DebugLogger.log("[AudioEnergy] 归一化标准差: $normalizedStdDev")
+        DebugLogger.log("[AudioEnergy] 能量变化次数: $energyChanges")
+        DebugLogger.log("[AudioEnergy] 变化率: ${changeRate}次/秒")
+
         // 判断模式
         val (pattern, confidence, reason) = determinePattern(
             averageEnergy = averageEnergy,
@@ -412,8 +461,13 @@ class AudioEnergyAnalyzer(private val context: Context) {
             durationMs = durationMs
         )
 
+        DebugLogger.log("[AudioEnergy] 模式判断结果: $pattern")
+        DebugLogger.log("[AudioEnergy] 置信度: $confidence")
+        DebugLogger.log("[AudioEnergy] 原因: $reason")
+
         Log.d(TAG, """
             音频能量分析结果:
+            - 音源: $usedAudioSource
             - 平均能量: $averageEnergy
             - 标准差: $stdDev
             - 归一化标准差: $normalizedStdDev
@@ -446,20 +500,21 @@ class AudioEnergyAnalyzer(private val context: Context) {
         changeRate: Float,
         durationMs: Long
     ): Triple<AudioEnergyPattern, Float, String> {
-        // 静音情况
+        // 静音情况（针对 MIC 免提模式降低了阈值）
         if (averageEnergy < SILENCE_THRESHOLD) {
             return Triple(
                 AudioEnergyPattern.UNKNOWN,
                 0.3f,
-                "音频能量过低，可能是静音或录音失败"
+                "音频能量过低（$averageEnergy < $SILENCE_THRESHOLD），可能是静音、免提未开或录音失败"
             )
         }
 
         // 平稳模式（语音信箱特征）
+        // 语音信箱是单向播放，能量相对平稳
         if (normalizedStdDev < STEADY_PATTERN_THRESHOLD) {
             val confidence = when {
-                normalizedStdDev < 0.08f -> 0.95f
-                normalizedStdDev < 0.12f -> 0.85f
+                normalizedStdDev < 0.10f -> 0.95f
+                normalizedStdDev < 0.14f -> 0.85f
                 else -> 0.75f
             }
             return Triple(
@@ -470,10 +525,11 @@ class AudioEnergyAnalyzer(private val context: Context) {
         }
 
         // 波动模式（对话特征）
-        if (normalizedStdDev > FLUCTUATING_PATTERN_THRESHOLD && changeRate > 2f) {
+        // 真人对话有明显的能量波动（说话-静音-说话）
+        if (normalizedStdDev > FLUCTUATING_PATTERN_THRESHOLD && changeRate > 1.5f) {
             val confidence = when {
-                normalizedStdDev > 0.5f && changeRate > 3f -> 0.95f
-                normalizedStdDev > 0.4f && changeRate > 2.5f -> 0.85f
+                normalizedStdDev > 0.45f && changeRate > 2.5f -> 0.95f
+                normalizedStdDev > 0.35f && changeRate > 2f -> 0.85f
                 else -> 0.75f
             }
             return Triple(

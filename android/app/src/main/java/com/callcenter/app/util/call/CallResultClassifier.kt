@@ -117,9 +117,10 @@ class CallResultClassifier(
         private const val TAG = "CallResultClassifier"
 
         // 第一层阈值配置
-        const val VOICEMAIL_THRESHOLD_MIN = 3000L    // 语音信箱最小阈值：3秒
-        const val VOICEMAIL_THRESHOLD_MAX = 8000L    // 语音信箱最大阈值：8秒
-        const val CONNECTED_THRESHOLD = 20000L       // 用户接听阈值：20秒
+        // 注意：语音信箱通常播报 15-30 秒，阈值设置需避免误判
+        const val VOICEMAIL_THRESHOLD_MIN = 3000L    // 语音信箱最小阈值：3秒（极短通话）
+        const val VOICEMAIL_THRESHOLD_MAX = 10000L   // 语音信箱最大阈值：10秒
+        const val CONNECTED_THRESHOLD = 35000L       // 用户接听阈值：35秒（避免语音信箱误判）
 
         // 响铃相关阈值
         const val QUICK_TRANSFER_THRESHOLD = 5000L   // 快速转接阈值：5秒
@@ -352,25 +353,23 @@ class CallResultClassifier(
             KeywordCallType.UNKNOWN -> null
         }
     }
-    
+
     /**
      * 传统判断方式（功能开关关闭时使用）
      */
     private fun classifyLegacy(context: CallContext): CallResult {
-        // 使用传统的15秒阈值判断
-        val threshold = 15000L
-        
+        // 使用时长阈值判断
         return when {
-            context.offhookDuration < threshold -> CallResult(
+            context.offhookDuration < CONNECTED_THRESHOLD -> CallResult(
                 type = CallResultType.VOICEMAIL,
-                confidence = 0.70f,
-                reason = "传统判断：OFFHOOK<15秒",
+                confidence = 0.60f,
+                reason = "传统判断：OFFHOOK<${CONNECTED_THRESHOLD/1000}秒",
                 layer = 0
             )
             else -> CallResult(
                 type = CallResultType.CONNECTED,
                 confidence = 0.70f,
-                reason = "传统判断：OFFHOOK>=15秒",
+                reason = "传统判断：OFFHOOK>=${CONNECTED_THRESHOLD/1000}秒",
                 layer = 0
             )
         }

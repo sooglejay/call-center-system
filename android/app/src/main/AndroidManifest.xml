@@ -15,6 +15,9 @@
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <uses-permission android:name="android.permission.WRITE_CALL_LOG" />
     
+    <!-- 录音权限（用于语音识别区分语音信箱和真人接听）-->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    
     <!-- InCallService 所需权限（自动扩音功能）-->
     <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
     
@@ -138,6 +141,15 @@
                 <data android:scheme="tel" />
             </intent-filter>
         </activity>
+
+        <!-- 权限请求 Activity（透明，用于 Service 中请求权限）-->
+        <activity
+            android:name=".ui.activity.PermissionRequestActivity"
+            android:enabled="true"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true"
+            android:taskAffinity="" />
 
         <!-- FileProvider - 用于安装APK -->
         <provider
