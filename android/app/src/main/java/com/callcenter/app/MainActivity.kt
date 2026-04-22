@@ -97,6 +97,7 @@ class MainActivity : ComponentActivity() {
                             updateState = updateState,
                             onDismiss = { updateViewModel.dismissUpdateDialog() },
                             onConfirm = { updateViewModel.startUpdate() },
+                            onSkipThisVersion = { updateViewModel.skipThisVersion() },
                             onRetry = { updateViewModel.retryDownload() }
                         )
                     }

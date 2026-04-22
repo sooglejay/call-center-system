@@ -1,6 +1,7 @@
 package com.callcenter.app.ui.viewmodel
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.callcenter.app.data.local.preferences.CallSettingsManager
@@ -15,6 +16,7 @@ import com.callcenter.app.util.AppUpdateManager
 import com.callcenter.app.util.Constants
 import com.callcenter.app.util.call.VoskModelManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,12 +25,20 @@ import javax.inject.Inject
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val authRepository: AuthRepository,
     private val statsRepository: StatsRepository,
     private val tokenManager: TokenManager,
     private val callSettingsManager: CallSettingsManager,
     private val appUpdateManager: AppUpdateManager
 ) : ViewModel() {
+
+    companion object {
+        private const val PREFS_NAME = "update_prefs"
+        private const val KEY_SKIPPED_VERSION = "skipped_version_code"
+    }
+
+    private val skipPrefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private val _currentUser = MutableStateFlow<User?>(null)
     val currentUser: StateFlow<User?> = _currentUser.asStateFlow()
@@ -125,12 +135,31 @@ class SettingsViewModel @Inject constructor(
             _currentVersionCode.value = appUpdateManager.getCurrentVersionCode()
             val newVersion = appUpdateManager.checkForUpdate()
             if (newVersion != null) {
-                _hasUpdate.value = true
-                _latestVersionInfo.value = newVersion
+                // 检查用户是否已跳过此版本
+                val skippedVersion = skipPrefs.getInt(KEY_SKIPPED_VERSION, -1)
+                if (newVersion.versionCode == skippedVersion) {
+                    // 用户已跳过此版本，不显示更新提示
+                    _hasUpdate.value = false
+                    _latestVersionInfo.value = null
+                } else {
+                    _hasUpdate.value = true
+                    _latestVersionInfo.value = newVersion
+                }
             } else {
                 _hasUpdate.value = false
                 _latestVersionInfo.value = null
             }
+        }
+    }
+
+    /**
+     * 跳过本次版本更新
+     */
+    fun skipThisVersion() {
+        _latestVersionInfo.value?.let { versionInfo ->
+            skipPrefs.edit().putInt(KEY_SKIPPED_VERSION, versionInfo.versionCode).apply()
+            _hasUpdate.value = false
+            _latestVersionInfo.value = null
         }
     }
 

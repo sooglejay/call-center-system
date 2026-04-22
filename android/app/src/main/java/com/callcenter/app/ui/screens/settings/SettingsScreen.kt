@@ -1,7 +1,9 @@
 package com.callcenter.app.ui.screens.settings
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -42,6 +44,10 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
+    
+    // 跳过版本的 SharedPreferences
+    val skipPrefs = remember { context.getSharedPreferences("update_prefs", Context.MODE_PRIVATE) }
+    
     val serverUrl by viewModel.serverUrl.collectAsState()
     val currentUser by viewModel.currentUser.collectAsState()
     val stats by viewModel.stats.collectAsState()
@@ -409,6 +415,14 @@ fun SettingsScreen(
                 // 使用系统浏览器下载
                 val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(latestVersionInfo?.apkUrl))
                 context.startActivity(intent)
+            },
+            onSkipThisVersion = {
+                // 保存跳过的版本号
+                latestVersionInfo?.let { info ->
+                    skipPrefs.edit().putInt("skipped_version_code", info.versionCode).apply()
+                }
+                showUpdateDialog = false
+                Toast.makeText(context, "已跳过此版本", Toast.LENGTH_SHORT).show()
             },
             onRetry = {
                 val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(latestVersionInfo?.apkUrl))

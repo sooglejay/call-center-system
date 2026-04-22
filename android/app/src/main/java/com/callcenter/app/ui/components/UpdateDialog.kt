@@ -23,16 +23,15 @@ fun UpdateDialog(
     updateState: UpdateState,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
+    onSkipThisVersion: (() -> Unit)? = null,  // 跳过本次版本的回调
     onRetry: () -> Unit = {}
 ) {
     if (versionInfo == null) return
 
     AlertDialog(
         onDismissRequest = {
-            // 强制更新时不能取消
-            if (!versionInfo.forceUpdate) {
-                onDismiss()
-            }
+            // 允许用户点击外部关闭弹窗
+            onDismiss()
         },
         icon = {
             Icon(
@@ -127,11 +126,21 @@ fun UpdateDialog(
             }
         },
         dismissButton = {
-            // 强制更新或非错误状态不显示取消按钮
-            if (!versionInfo.forceUpdate && updateState !is UpdateState.Error 
-                && updateState !is UpdateState.Downloading && updateState != UpdateState.Installing) {
-                TextButton(onClick = onDismiss) {
-                    Text("稍后更新")
+            // 非下载/安装状态时显示跳过按钮
+            if (updateState !is UpdateState.Downloading && 
+                updateState !is UpdateState.Installing &&
+                updateState !is UpdateState.Error) {
+                Row {
+                    // 如果提供了跳过回调，显示"本次不更新"按钮
+                    if (onSkipThisVersion != null) {
+                        TextButton(onClick = onSkipThisVersion) {
+                            Text("本次不更新")
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    TextButton(onClick = onDismiss) {
+                        Text("稍后提醒")
+                    }
                 }
             }
         }
@@ -162,23 +171,6 @@ private fun VersionInfoContent(versionInfo: VersionInfo) {
         }
 
         Spacer(modifier = Modifier.height(8.dp))
-
-        // 强制更新提示
-        if (versionInfo.forceUpdate) {
-            Surface(
-                color = MaterialTheme.colorScheme.errorContainer,
-                shape = MaterialTheme.shapes.small,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = "⚠️ 此版本为强制更新，必须升级后才能继续使用",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onErrorContainer,
-                    modifier = Modifier.padding(12.dp)
-                )
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-        }
 
         // 更新日志
         if (!versionInfo.updateLog.isNullOrBlank()) {
