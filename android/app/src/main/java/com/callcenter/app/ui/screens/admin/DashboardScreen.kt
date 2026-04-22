@@ -1,5 +1,6 @@
 package com.callcenter.app.ui.screens.admin
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -27,6 +28,7 @@ import com.callcenter.app.data.model.CallRecord
 import com.callcenter.app.data.model.DashboardStats
 import com.callcenter.app.util.VersionInfoUtil
 import com.callcenter.app.ui.viewmodel.DashboardViewModel
+import com.callcenter.app.ui.viewmodel.MyStatsViewModel
 
 /**
  * 管理员仪表盘页面
@@ -38,12 +40,26 @@ fun DashboardScreen(
     onNavigateToAgents: () -> Unit,
     onNavigateToTasks: () -> Unit,
     onNavigateToAgentDetail: (Int) -> Unit,
-    viewModel: DashboardViewModel = hiltViewModel()
+    onNavigateToCustomers: () -> Unit,
+    viewModel: DashboardViewModel = hiltViewModel(),
+    myStatsViewModel: MyStatsViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val dashboardStats by viewModel.dashboardStats.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
+
+    // 日志上传状态
+    val isUploadingLogs by myStatsViewModel.isUploadingLogs.collectAsState()
+    val logUploadMessage by myStatsViewModel.logUploadMessage.collectAsState()
+
+    // 显示上传结果消息
+    LaunchedEffect(logUploadMessage) {
+        logUploadMessage?.let { message ->
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            myStatsViewModel.clearLogUploadMessage()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -110,7 +126,10 @@ fun DashboardScreen(
                 item {
                     QuickActionsCard(
                         onNavigateToAgents = onNavigateToAgents,
-                        onNavigateToTasks = onNavigateToTasks
+                        onNavigateToTasks = onNavigateToTasks,
+                        onNavigateToCustomers = onNavigateToCustomers,
+                        onUploadLogs = { myStatsViewModel.uploadDeviceLogs(context) },
+                        isUploadingLogs = isUploadingLogs
                     )
                 }
 
@@ -259,7 +278,10 @@ private fun StatItem(
 @Composable
 private fun QuickActionsCard(
     onNavigateToAgents: () -> Unit,
-    onNavigateToTasks: () -> Unit
+    onNavigateToTasks: () -> Unit,
+    onNavigateToCustomers: () -> Unit,
+    onUploadLogs: () -> Unit,
+    isUploadingLogs: Boolean
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -301,18 +323,19 @@ private fun QuickActionsCard(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 QuickActionButton(
-                    icon = Icons.Default.CloudUpload,
-                    label = "导入客户",
-                    color = Color(0xFFFF9800),
-                    modifier = Modifier.weight(1f),
-                    onClick = { /* TODO */ }
-                )
-                QuickActionButton(
-                    icon = Icons.Default.BarChart,
-                    label = "数据报表",
+                    icon = Icons.Default.People,
+                    label = "客户列表",
                     color = Color(0xFF9C27B0),
                     modifier = Modifier.weight(1f),
-                    onClick = { /* TODO */ }
+                    onClick = onNavigateToCustomers
+                )
+                QuickActionButton(
+                    icon = if (isUploadingLogs) Icons.Default.HourglassTop else Icons.Default.Upload,
+                    label = if (isUploadingLogs) "上传中..." else "上传日志",
+                    color = Color(0xFFE91E63),
+                    modifier = Modifier.weight(1f),
+                    onClick = onUploadLogs,
+                    enabled = !isUploadingLogs
                 )
             }
         }
@@ -328,13 +351,15 @@ private fun QuickActionButton(
     label: String,
     color: Color,
     modifier: Modifier = Modifier,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    enabled: Boolean = true
 ) {
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(12.dp),
-        color = color.copy(alpha = 0.1f),
-        onClick = onClick
+        color = if (enabled) color.copy(alpha = 0.1f) else color.copy(alpha = 0.05f),
+        onClick = onClick,
+        enabled = enabled
     ) {
         Column(
             modifier = Modifier
@@ -345,14 +370,14 @@ private fun QuickActionButton(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = color,
+                tint = if (enabled) color else color.copy(alpha = 0.5f),
                 modifier = Modifier.size(32.dp)
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = label,
                 style = MaterialTheme.typography.bodyMedium,
-                color = color,
+                color = if (enabled) color else color.copy(alpha = 0.5f),
                 fontWeight = FontWeight.Medium
             )
         }

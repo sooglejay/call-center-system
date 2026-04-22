@@ -23,6 +23,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.callcenter.app.service.AutoDialService
+import com.callcenter.app.ui.screens.admin.AdminCustomerListScreen
 import com.callcenter.app.ui.screens.admin.AgentDetailScreen
 import com.callcenter.app.ui.screens.admin.AgentListScreen
 import com.callcenter.app.ui.screens.admin.CreateTaskScreen
@@ -91,6 +92,7 @@ sealed class Screen(val route: String) {
     object TaskDetail : Screen("admin/tasks/{taskId}") {
         fun createRoute(taskId: Int) = "admin/tasks/$taskId"
     }
+    object AdminCustomerList : Screen("admin/customers")
 }
 
 /**
@@ -393,6 +395,9 @@ fun AppNavigation(
                 },
                 onNavigateToAgentDetail = { agentId ->
                     navController.navigate(Screen.AgentDetail.createRoute(agentId))
+                },
+                onNavigateToCustomers = {
+                    navController.navigate(Screen.AdminCustomerList.route)
                 }
             )
         }
@@ -446,6 +451,16 @@ fun AppNavigation(
         composable(Screen.CreateTask.route) {
             CreateTaskScreen(
                 onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.AdminCustomerList.route) {
+            AdminCustomerListScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onCreateTask = { customerIds ->
+                    // 导航到创建任务页面，带上客户ID
+                    navController.navigate(Screen.CreateTask.route)
+                }
             )
         }
     }

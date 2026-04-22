@@ -36,6 +36,9 @@ class CreateTaskViewModel @Inject constructor(
     private val _nameLetterStats = MutableStateFlow<Map<String, Int>>(emptyMap())
     val nameLetterStats: StateFlow<Map<String, Int>> = _nameLetterStats.asStateFlow()
 
+    private val _tagStats = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val tagStats: StateFlow<Map<String, Int>> = _tagStats.asStateFlow()
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -57,6 +60,7 @@ class CreateTaskViewModel @Inject constructor(
             loadAgents()
             loadCustomers(false)
             loadNameLetterStats(false)
+            loadTagStats(false)
 
             _isLoading.value = false
         }
@@ -133,6 +137,32 @@ class CreateTaskViewModel @Inject constructor(
             } catch (e: Exception) {
                 // 统计失败不影响主要功能
                 _nameLetterStats.value = emptyMap()
+            }
+        }
+    }
+
+    /**
+     * 加载标签统计
+     * @param unassignedOnly 是否只统计未分配客户
+     */
+    fun loadTagStats(unassignedOnly: Boolean = false) {
+        viewModelScope.launch {
+            try {
+                val customersToCount = if (unassignedOnly) {
+                    _customers.value.filter { it.assignedTo == null }
+                } else {
+                    _customers.value
+                }
+
+                val stats = mutableMapOf<String, Int>()
+                customersToCount.forEach { customer ->
+                    val tag = customer.tag.ifBlank { "未打标客户" }
+                    stats[tag] = (stats[tag] ?: 0) + 1
+                }
+
+                _tagStats.value = stats
+            } catch (e: Exception) {
+                _tagStats.value = emptyMap()
             }
         }
     }

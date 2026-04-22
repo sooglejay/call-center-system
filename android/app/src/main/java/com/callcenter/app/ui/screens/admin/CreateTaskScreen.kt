@@ -43,6 +43,7 @@ fun CreateTaskScreen(
     val agents by viewModel.agents.collectAsState()
     val customers by viewModel.customers.collectAsState()
     val nameLetterStats by viewModel.nameLetterStats.collectAsState()
+    val tagStats by viewModel.tagStats.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isCreating by viewModel.isCreating.collectAsState()
     val error by viewModel.error.collectAsState()
@@ -57,9 +58,10 @@ fun CreateTaskScreen(
     var showPriorityDropdown by remember { mutableStateOf(false) }
 
     // 客户选择状态
-    var selectedTab by remember { mutableStateOf(0) } // 0: 列表选择, 1: 字母选择
+    var selectedTab by remember { mutableStateOf(0) } // 0: 列表选择, 1: 字母选择, 2: 标签选择
     var selectedCustomerIds by remember { mutableStateOf(setOf<Int>()) }
     var selectedLetters by remember { mutableStateOf(setOf<String>()) }
+    var selectedTags by remember { mutableStateOf(setOf<String>()) }
     var unassignedOnly by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
 
@@ -78,6 +80,16 @@ fun CreateTaskScreen(
                 selectedLetters.contains(firstLetter)
             }
             selectedCustomerIds = selectedCustomerIds + letterCustomers.map { it.id }.toSet()
+        }
+    }
+
+    // 当选择标签时，自动选择对应的客户
+    LaunchedEffect(selectedTags, customers) {
+        if (selectedTags.isNotEmpty()) {
+            val tagCustomers = customers.filter { customer ->
+                selectedTags.contains(customer.tag.ifBlank { "未打标客户" })
+            }
+            selectedCustomerIds = selectedCustomerIds + tagCustomers.map { it.id }.toSet()
         }
     }
 
@@ -373,7 +385,12 @@ fun CreateTaskScreen(
                                 Tab(
                                     selected = selectedTab == 1,
                                     onClick = { selectedTab = 1 },
-                                    text = { Text("按姓氏选择") }
+                                    text = { Text("按姓氏") }
+                                )
+                                Tab(
+                                    selected = selectedTab == 2,
+                                    onClick = { selectedTab = 2 },
+                                    text = { Text("按标签") }
                                 )
                             }
                         }
@@ -386,6 +403,7 @@ fun CreateTaskScreen(
                                     unassignedOnly = !unassignedOnly
                                     viewModel.loadCustomers(unassignedOnly)
                                     viewModel.loadNameLetterStats(unassignedOnly)
+                                    viewModel.loadTagStats(unassignedOnly)
                                 }
                             ) {
                                 Checkbox(
@@ -394,6 +412,7 @@ fun CreateTaskScreen(
                                         unassignedOnly = it
                                         viewModel.loadCustomers(it)
                                         viewModel.loadNameLetterStats(it)
+                                        viewModel.loadTagStats(it)
                                     }
                                 )
                                 Text("只显示未分配客户")
@@ -520,6 +539,81 @@ fun CreateTaskScreen(
                                     }
                                 }
                             }
+                            2 -> {
+                                // 标签选择
+                                item {
+                                    Text(
+                                        text = "点击标签选择该标签的所有客户",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(bottom = 8.dp)
+                                    )
+                                }
+
+                                item {
+                                    val sortedTags = tagStats.entries.sortedByDescending { it.value }
+                                    if (sortedTags.isEmpty()) {
+                                        Text(
+                                            text = "暂无标签数据",
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    } else {
+                                        FlowRow(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            sortedTags.forEach { (tag, count) ->
+                                                val isSelected = selectedTags.contains(tag)
+                                                TagChip(
+                                                    tag = tag,
+                                                    count = count,
+                                                    isSelected = isSelected,
+                                                    onClick = {
+                                                        selectedTags = if (isSelected) {
+                                                            selectedTags - tag
+                                                        } else {
+                                                            selectedTags + tag
+                                                        }
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // 已选择的标签
+                                if (selectedTags.isNotEmpty()) {
+                                    item {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text(
+                                            text = "已选择标签:",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        FlowRow(
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            selectedTags.forEach { tag ->
+                                                InputChip(
+                                                    selected = true,
+                                                    onClick = { selectedTags = selectedTags - tag },
+                                                    label = { Text(tag) },
+                                                    trailingIcon = {
+                                                        Icon(
+                                                            Icons.Default.Close,
+                                                            contentDescription = "移除",
+                                                            modifier = Modifier.size(16.dp)
+                                                        )
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                         // 底部留白
@@ -613,6 +707,69 @@ private fun LetterChip(
 }
 
 @Composable
+private fun TagChip(
+    tag: String,
+    count: Int,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = when {
+            isSelected -> MaterialTheme.colorScheme.tertiary
+            count > 0 -> MaterialTheme.colorScheme.tertiaryContainer
+            else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        },
+        modifier = Modifier.clickable(enabled = count > 0, onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (isSelected) {
+                Icon(
+                    Icons.Default.Check,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onTertiary
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+            Text(
+                text = tag,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                color = when {
+                    isSelected -> MaterialTheme.colorScheme.onTertiary
+                    count > 0 -> MaterialTheme.colorScheme.onTertiaryContainer
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                }
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = when {
+                    isSelected -> MaterialTheme.colorScheme.onTertiary.copy(alpha = 0.2f)
+                    count > 0 -> MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.2f)
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f)
+                }
+            ) {
+                Text(
+                    text = "$count",
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    color = when {
+                        isSelected -> MaterialTheme.colorScheme.onTertiary
+                        count > 0 -> MaterialTheme.colorScheme.onTertiaryContainer
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun CustomerSelectItem(
     customer: Customer,
     isSelected: Boolean,
@@ -671,6 +828,21 @@ private fun CustomerSelectItem(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                }
+                // 显示客户标签
+                if (customer.tag.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.tertiaryContainer
+                    ) {
+                        Text(
+                            text = customer.tag,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
                 }
             }
             if (customer.assignedTo != null) {
