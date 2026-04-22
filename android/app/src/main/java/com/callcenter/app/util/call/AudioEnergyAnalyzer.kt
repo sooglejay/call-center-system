@@ -75,7 +75,7 @@ class AudioEnergyAnalyzer(private val context: Context) {
         private const val MAX_ENERGY_SAMPLES = 600  // 最多600个样本（60秒）
 
         // 能量阈值（针对 MIC 免提模式调整）
-        private const val SILENCE_THRESHOLD = 200f  // 降低静音阈值，MIC 免提音量较小
+        private const val SILENCE_THRESHOLD = 20f  // 大幅降低静音阈值，MIC 免提模式能量很低
         private const val SPEECH_THRESHOLD = 1000f
         private const val ENERGY_CHANGE_THRESHOLD = 0.25f
         private const val STEADY_PATTERN_THRESHOLD = 0.18f  // 语音信箱更平稳

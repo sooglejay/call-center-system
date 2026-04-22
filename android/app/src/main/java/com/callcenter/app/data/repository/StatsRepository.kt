@@ -1,9 +1,12 @@
 package com.callcenter.app.data.repository
 
 import com.callcenter.app.data.api.ApiService
+import com.callcenter.app.data.api.LogUploadResponse
 import com.callcenter.app.data.local.dao.CallRecordDao
 import com.callcenter.app.data.local.dao.CustomerDao
 import com.callcenter.app.data.model.Stats
+import okhttp3.MultipartBody
+import retrofit2.Response
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -63,5 +66,12 @@ class StatsRepository @Inject constructor(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    /**
+     * 上传设备日志
+     */
+    suspend fun uploadDeviceLogs(filePart: MultipartBody.Part): Response<LogUploadResponse> {
+        return apiService.uploadDeviceLogs(filePart)
     }
 }

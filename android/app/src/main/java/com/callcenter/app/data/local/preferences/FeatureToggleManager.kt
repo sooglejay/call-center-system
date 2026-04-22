@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.featureToggleDataStore: DataStore<Preferences> by preferencesDataStore(name = "feature_toggles")
@@ -203,14 +204,4 @@ class FeatureToggleManager(private val context: Context) {
             }
         }
     }
-}
-
-// 扩展函数：方便在协程中使用 Flow.first()
-private suspend fun <T> Flow<T>.first(): T {
-    var result: T? = null
-    collect { 
-        result = it
-        return@collect
-    }
-    return result!!
 }

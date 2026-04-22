@@ -123,7 +123,7 @@ class AutoDialService : Service() {
         // 通话状态检测常量
         private const val MIN_CALL_DURATION = 3000L      // 最小通话持续时间 3 秒
         private const val MAX_CALL_DURATION = 600000L    // 最大通话持续时间 10 分钟
-        private const val MIN_CONFIRM_IDLE_TIME = 3000L  // 确认通话结束的最小等待时间
+        private const val MIN_CONFIRM_IDLE_TIME = 800L   // 确认通话结束的最小等待时间（0.8秒，支持用户设置1秒间隔）
 
         // 通话结果判断阈值已迁移到 CallResultClassifier
         // CONNECTED_THRESHOLD = 35秒（通话时长超过此值判定为已接听）
@@ -817,8 +817,8 @@ class AutoDialService : Service() {
     private fun startAutoDial() {
         if (_isRunning.value) return
 
-        // 检查并请求录音权限（用于语音信箱识别）
-        checkAndRequestRecordPermission()
+        // 注意：录音权限检查已移到 waitForCallEndOrTimeout() 中
+        // 不在 Service 中请求权限，避免透明 Activity 导致前台状态异常
 
         _isRunning.value = true
         startForeground()
@@ -1787,16 +1787,20 @@ class AutoDialService : Service() {
                                     _currentCustomer.value?.name,
                                     callDuration
                                 )
-                                
-                                // 自动标记通话状态到服务器
+
+                                // 自动标记通话状态到服务器（异步执行，不阻塞主流程）
                                 Log.d(TAG, "准备自动标记通话状态...")
                                 val statusKey = when (callResult.second) {
                                     "已接听" -> "connected"
                                     "语音信箱" -> "voicemail"
                                     else -> "unanswered"
                                 }
-                                autoMarkCallStatus(statusKey, callResult.second)
-                                
+                                // 先设置标志，避免 processQueue 中重复调用
+                                hasAutoMarkedCurrentCall = true
+                                serviceScope.launch {
+                                    autoMarkCallStatus(statusKey, callResult.second)
+                                }
+
                                 Log.d(TAG, "通话结果处理完成，返回")
                                 return true
                             }
@@ -1823,7 +1827,7 @@ class AutoDialService : Service() {
 
                                 val idleDuration = System.currentTimeMillis() - idleConfirmStartTime
                                 DebugLogger.log("[WaitCall] IDLE确认时间: idleDuration=${idleDuration}ms, MIN_CONFIRM_IDLE_TIME=${MIN_CONFIRM_IDLE_TIME}ms")
-                                
+
                                 if (idleDuration >= MIN_CONFIRM_IDLE_TIME) {
                                     Log.d(TAG, "确认电话未接通即结束")
                                     DebugLogger.log("[WaitCall] ✗ 确认电话未接通即结束")
@@ -1831,8 +1835,12 @@ class AutoDialService : Service() {
                                     FloatingCustomerService.addCallStateHistory("未接通", _currentCustomer.value?.phone, _currentCustomer.value?.name)
                                     lastCallWasConnected = false
                                     lastResolvedCallResult = "响铃未接"
-                                    // 自动标记为未接通
-                                    autoMarkCallStatus("unanswered", "响铃未接")
+                                    // 先设置标志，避免 processQueue 中重复调用
+                                    hasAutoMarkedCurrentCall = true
+                                    // 自动标记为未接通（异步执行）
+                                    serviceScope.launch {
+                                        autoMarkCallStatus("unanswered", "响铃未接")
+                                    }
                                     return true
                                 }
                             }

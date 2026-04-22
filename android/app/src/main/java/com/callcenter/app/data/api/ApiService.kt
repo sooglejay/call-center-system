@@ -391,4 +391,24 @@ interface ApiService {
         @Query("version_code") versionCode: Int,
         @Query("platform") platform: String = "android"
     ): Response<VersionInfo>
+
+    // ==================== 日志管理 ====================
+
+    /**
+     * 上传设备日志
+     */
+    @Multipart
+    @POST("logs/upload")
+    suspend fun uploadDeviceLogs(
+        @Part file: MultipartBody.Part
+    ): Response<LogUploadResponse>
 }
+
+/**
+ * 日志上传响应
+ */
+data class LogUploadResponse(
+    val message: String,
+    val file_size: Long,
+    val upload_time: String
+)

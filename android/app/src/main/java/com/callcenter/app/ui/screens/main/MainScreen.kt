@@ -264,6 +264,8 @@ fun MainScreen(
                     padding = padding,
                     onNavigateToMyStats = onNavigateToMyStats,
                     onNavigateToAgentTaskExecution = onNavigateToAgentTaskExecution,
+                    onNavigateToPermissionTest = onNavigateToPermissionTest,
+                    onNavigateToFeatureToggles = onNavigateToFeatureToggles,
                     authViewModel = authViewModel,
                     taskListViewModel = taskListViewModel,
                     myStatsViewModel = myStatsViewModel,
@@ -1157,6 +1159,8 @@ private fun AgentWorkTab(
     padding: PaddingValues,
     onNavigateToMyStats: () -> Unit,
     onNavigateToAgentTaskExecution: (Int) -> Unit,
+    onNavigateToPermissionTest: () -> Unit,
+    onNavigateToFeatureToggles: () -> Unit,
     authViewModel: AuthViewModel,
     taskListViewModel: TaskListViewModel,
     myStatsViewModel: MyStatsViewModel,
@@ -1649,6 +1653,7 @@ private fun AgentWorkTab(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
+                // 第一行：我的统计、上传日志
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -1658,6 +1663,47 @@ private fun AgentWorkTab(
                         title = "我的统计",
                         icon = Icons.Default.BarChart,
                         onClick = onNavigateToMyStats
+                    )
+
+                    // 上传日志按钮
+                    val isUploadingLogs by myStatsViewModel.isUploadingLogs.collectAsState()
+                    val logUploadMessage by myStatsViewModel.logUploadMessage.collectAsState()
+
+                    // 显示上传结果消息
+                    LaunchedEffect(logUploadMessage) {
+                        logUploadMessage?.let { message ->
+                            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                            myStatsViewModel.clearLogUploadMessage()
+                        }
+                    }
+
+                    QuickActionButton(
+                        modifier = Modifier.weight(1f),
+                        title = if (isUploadingLogs) "上传中..." else "上传日志",
+                        icon = Icons.Default.Upload,
+                        onClick = { myStatsViewModel.uploadDeviceLogs(context) }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 第二行：权限测试、功能开关
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    QuickActionButton(
+                        modifier = Modifier.weight(1f),
+                        title = "权限测试",
+                        icon = Icons.Default.Security,
+                        onClick = onNavigateToPermissionTest
+                    )
+
+                    QuickActionButton(
+                        modifier = Modifier.weight(1f),
+                        title = "功能开关",
+                        icon = Icons.Default.ToggleOn,
+                        onClick = onNavigateToFeatureToggles
                     )
                 }
             }

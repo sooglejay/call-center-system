@@ -248,7 +248,7 @@ class CallResultClassifier(
         }
         
         // 正常响铃 + 中等时长：可能是用户接听
-        if (alertingDuration >= NORMAL_ALERTING_MIN && 
+        if (alertingDuration >= NORMAL_ALERTING_MIN &&
             offhookDuration >= VOICEMAIL_THRESHOLD_MAX) {
             return CallResult(
                 type = CallResultType.CONNECTED,
@@ -257,7 +257,7 @@ class CallResultClassifier(
                 layer = 1
             )
         }
-        
+
         // Root 设备精确状态检测
         context.rootDetectedState?.let { state ->
             return when (state) {

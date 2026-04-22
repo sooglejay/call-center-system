@@ -1,5 +1,6 @@
 package com.callcenter.app.ui.screens.stats
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -15,10 +16,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.callcenter.app.data.model.Stats
 import com.callcenter.app.util.VersionInfoUtil
@@ -116,7 +117,9 @@ fun MyStatsScreen(
  * 今日统计卡片
  */
 @Composable
-private fun TodayStatsCard(stats: Stats) {
+private fun TodayStatsCard(
+    stats: Stats
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()

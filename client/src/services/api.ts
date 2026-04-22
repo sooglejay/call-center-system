@@ -219,6 +219,21 @@ export const versionApi = {
   deleteVersion: (id: number) => api.delete(`/version/${id}`)
 };
 
+// 日志管理API（管理员）
+export const logsApi = {
+  // 获取所有用户日志列表
+  getLogsList: () => api.get('/logs/list'),
+  // 获取指定用户的日志信息
+  getLogInfo: (userId: number) => api.get(`/logs/user/${userId}/info`),
+  // 下载指定用户的日志（返回 Blob）
+  downloadLog: async (userId: number): Promise<Blob> => {
+    const response = await api.get(`/logs/user/${userId}`, {
+      responseType: 'blob'
+    });
+    return response.data;
+  }
+};
+
 import type { User, Customer, CallRecord, Task, AgentConfig, SystemConfig, Stats, DashboardStats, AgentRanking } from '../types';
 export type { User, Customer, CallRecord, Task, AgentConfig, SystemConfig, Stats, DashboardStats, AgentRanking };
 

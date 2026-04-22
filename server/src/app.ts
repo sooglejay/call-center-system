@@ -21,6 +21,7 @@ import systemRoutes from './routes/system.routes';
 import communicationRoutes from './routes/communication.routes';
 import dataImportRoutes from './routes/data-import.routes';
 import versionRoutes from './routes/version.routes';
+import logsRoutes from './routes/logs.routes';
 
 dotenv.config();
 
@@ -116,6 +117,7 @@ app.use('/api/system', systemRoutes);
 app.use('/api/communication', communicationRoutes);
 app.use('/api/data-import', dataImportRoutes);
 app.use('/api/version', versionRoutes);
+app.use('/api/logs', logsRoutes);
 
 // 404 处理
 app.use(notFoundHandler);
