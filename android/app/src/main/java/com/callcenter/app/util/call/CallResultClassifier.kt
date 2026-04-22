@@ -120,7 +120,7 @@ class CallResultClassifier(
         // 注意：语音信箱通常播报 15-30 秒，阈值设置需避免误判
         const val VOICEMAIL_THRESHOLD_MIN = 3000L    // 语音信箱最小阈值：3秒（极短通话）
         const val VOICEMAIL_THRESHOLD_MAX = 10000L   // 语音信箱最大阈值：10秒
-        const val CONNECTED_THRESHOLD = 35000L       // 用户接听阈值：35秒（避免语音信箱误判）
+        const val CONNECTED_THRESHOLD = 45000L       // 用户接听阈值：45秒（避免语音信箱误判）
 
         // 响铃相关阈值
         const val QUICK_TRANSFER_THRESHOLD = 5000L   // 快速转接阈值：5秒
