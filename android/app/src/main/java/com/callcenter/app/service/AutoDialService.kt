@@ -123,7 +123,7 @@ class AutoDialService : Service() {
         // 通话状态检测常量
         private const val MIN_CALL_DURATION = 3000L      // 最小通话持续时间 3 秒
         private const val MAX_CALL_DURATION = 600000L    // 最大通话持续时间 10 分钟
-        private const val MIN_CONFIRM_IDLE_TIME = 800L   // 确认通话结束的最小等待时间（0.8秒，支持用户设置1秒间隔）
+        private const val MIN_CONFIRM_IDLE_TIME = 500L   // 确认通话结束的最小等待时间（0.5秒）
 
         // 通话结果判断阈值已迁移到 CallResultClassifier
         // CONNECTED_THRESHOLD = 35秒（通话时长超过此值判定为已接听）
@@ -1532,7 +1532,7 @@ class AutoDialService : Service() {
                             FloatingCustomerService.addCallStateHistory("已进入通话", _currentCustomer.value?.phone, _currentCustomer.value?.name)
 
                             // 延迟后自动开启免提（等待音频系统准备好）
-                            delay(500)  // 延迟 500ms
+                            delay(300)  // 缩短延迟到300ms
                             enableSpeakerphoneWithRetry()
 
                             // 启动音频能量分析（同时保存音频数据用于关键词识别）
