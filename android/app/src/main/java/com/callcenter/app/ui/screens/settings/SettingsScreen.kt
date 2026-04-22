@@ -44,10 +44,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
-    
-    // 跳过版本的 SharedPreferences
-    val skipPrefs = remember { context.getSharedPreferences("update_prefs", Context.MODE_PRIVATE) }
-    
+
     val serverUrl by viewModel.serverUrl.collectAsState()
     val currentUser by viewModel.currentUser.collectAsState()
     val stats by viewModel.stats.collectAsState()
@@ -417,10 +414,7 @@ fun SettingsScreen(
                 context.startActivity(intent)
             },
             onSkipThisVersion = {
-                // 保存跳过的版本号
-                latestVersionInfo?.let { info ->
-                    skipPrefs.edit().putInt("skipped_version_code", info.versionCode).apply()
-                }
+                viewModel.skipThisVersion()
                 showUpdateDialog = false
                 Toast.makeText(context, "已跳过此版本", Toast.LENGTH_SHORT).show()
             },
