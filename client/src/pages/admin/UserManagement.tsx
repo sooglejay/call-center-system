@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Table, Button, Modal, Form, Input, Select, Popconfirm, message, Tag, Tooltip } from 'antd';
+import { Table, Button, Modal, Form, Input, Select, Popconfirm, message, Tag, Tooltip, Space } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, KeyOutlined } from '@ant-design/icons';
 import { userApi } from '../../services/api';
 import type { User } from '../../services/api';
@@ -13,6 +13,9 @@ export default function UserManagement() {
   const [resetUserId, setResetUserId] = useState<number | null>(null);
   const [form] = Form.useForm();
   const [passwordForm] = Form.useForm();
+  
+  // 多选状态
+  const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
 
   useEffect(() => {
     fetchUsers();
@@ -108,6 +111,70 @@ export default function UserManagement() {
     }
   };
 
+  // 获取当前登录用户ID
+  const getCurrentUserId = (): number | null => {
+    const currentUser = localStorage.getItem('user');
+    if (currentUser) {
+      const user = JSON.parse(currentUser);
+      return user.id;
+    }
+    return null;
+  };
+
+  // 批量删除用户
+  const handleBatchDelete = async () => {
+    if (selectedUserIds.length === 0) {
+      message.warning('请先选择要删除的人员');
+      return;
+    }
+
+    // 防止删除自己
+    const currentUserId = getCurrentUserId();
+    if (currentUserId && selectedUserIds.includes(currentUserId)) {
+      message.warning('不能删除当前登录的账号，请取消选择后再试');
+      return;
+    }
+
+    Modal.confirm({
+      title: '确认批量删除',
+      content: `确定要删除选中的 ${selectedUserIds.length} 个人员吗？此操作不可恢复。`,
+      okText: '确定删除',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          let successCount = 0;
+          let failCount = 0;
+          
+          for (const userId of selectedUserIds) {
+            // 跳过当前用户
+            if (userId === currentUserId) {
+              failCount++;
+              continue;
+            }
+            try {
+              await userApi.deleteUser(userId);
+              successCount++;
+            } catch {
+              failCount++;
+            }
+          }
+          
+          if (failCount === 0) {
+            message.success(`成功删除 ${successCount} 个人员`);
+          } else {
+            message.warning(`成功删除 ${successCount} 个人员，失败 ${failCount} 个`);
+          }
+          
+          setSelectedUserIds([]);
+          fetchUsers();
+        } catch (error: any) {
+          message.error(error.response?.data?.error || '批量删除失败');
+        }
+      }
+    });
+  };
+
   const columns = [
     { title: '用户名', dataIndex: 'username', key: 'username' },
     { title: '姓名', dataIndex: 'real_name', key: 'real_name' },
@@ -171,12 +238,37 @@ export default function UserManagement() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
         <h2>人员管理</h2>
-        <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-          添加人员
-        </Button>
+        <Space>
+          {selectedUserIds.length > 0 && (
+            <Button 
+              danger 
+              icon={<DeleteOutlined />} 
+              onClick={handleBatchDelete}
+            >
+              删除选中 ({selectedUserIds.length})
+            </Button>
+          )}
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+            添加人员
+          </Button>
+        </Space>
       </div>
 
-      <Table columns={columns} dataSource={users} rowKey="id" loading={loading} />
+      <Table 
+        columns={columns} 
+        dataSource={users} 
+        rowKey="id" 
+        loading={loading}
+        rowSelection={{
+          selectedRowKeys: selectedUserIds,
+          onChange: (keys) => setSelectedUserIds(keys as number[]),
+          selections: [
+            Table.SELECTION_ALL,
+            Table.SELECTION_INVERT,
+            Table.SELECTION_NONE,
+          ]
+        }}
+      />
 
       <Modal
         title={editingUser ? '编辑人员' : '添加人员'}
