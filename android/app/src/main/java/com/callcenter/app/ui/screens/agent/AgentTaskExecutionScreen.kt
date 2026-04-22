@@ -377,8 +377,8 @@ fun AgentTaskExecutionScreen(
                             Slider(
                                 value = localInterval.toFloat(),
                                 onValueChange = { localInterval = it.toInt() },
-                                valueRange = 3f..30f,
-                                steps = 26
+                                valueRange = 1f..30f,
+                                steps = 28
                             )
                             Text(
                                 text = "每次拨打完成后等待的时间",
