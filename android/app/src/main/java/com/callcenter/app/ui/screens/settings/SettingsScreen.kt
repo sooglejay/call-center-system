@@ -37,6 +37,7 @@ fun SettingsScreen(
     onLogout: () -> Unit,
     onSwitchAccount: () -> Unit,
     onNavigateToCallSettings: () -> Unit,
+    onNavigateToFeatureToggles: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -105,6 +106,8 @@ fun SettingsScreen(
         viewModel.loadSettings()
         // 检查版本更新
         viewModel.checkForUpdate()
+        // 检查 Vosk 模型状态
+        viewModel.checkVoskModelState(context)
     }
 
     Scaffold(
@@ -222,6 +225,7 @@ fun SettingsScreen(
                 collectLogcatEnabled = collectLogcatEnabled,
                 isExporting = isExporting,
                 logStatus = logStatus,
+                voskModelState = viewModel.voskModelState.collectAsState().value,
                 onToggleLogCollection = { enabled ->
                     collectLogcatEnabled = enabled
                     viewModel.updateCollectLogcat(enabled)
@@ -239,7 +243,11 @@ fun SettingsScreen(
                 },
                 onOpenAdvancedConfig = {
                     showLogConfigDialog = true
-                }
+                },
+                onNavigateToFeatureToggles = onNavigateToFeatureToggles,
+                onDownloadVoskModel = { viewModel.downloadVoskModel(context) },
+                onDeleteVoskModel = { viewModel.deleteVoskModel(context) },
+                onCheckVoskModelState = { viewModel.checkVoskModelState(context) }
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -567,11 +575,47 @@ private fun DebugSettingsGroup(
     collectLogcatEnabled: Boolean,
     isExporting: Boolean,
     logStatus: SettingsViewModel.LogCollectorStatus,
+    voskModelState: SettingsViewModel.VoskModelState = SettingsViewModel.VoskModelState(),
     onToggleLogCollection: (Boolean) -> Unit,
     onExportLogs: () -> Unit,
-    onOpenAdvancedConfig: () -> Unit
+    onOpenAdvancedConfig: () -> Unit,
+    onNavigateToFeatureToggles: () -> Unit = {},
+    onDownloadVoskModel: () -> Unit = {},
+    onDeleteVoskModel: () -> Unit = {},
+    onCheckVoskModelState: () -> Unit = {}
 ) {
     SettingsGroup(title = "调试") {
+        // 功能开关入口
+        ListItem(
+            headlineContent = { 
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("功能开关")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Text(
+                            text = "NEW",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            },
+            supportingContent = { Text("管理实验性功能和新特性开关") },
+            leadingContent = {
+                Icon(Icons.Default.ToggleOn, null, tint = MaterialTheme.colorScheme.primary)
+            },
+            trailingContent = {
+                Icon(Icons.Default.ChevronRight, null)
+            },
+            modifier = Modifier.clickable(onClick = onNavigateToFeatureToggles)
+        )
+
+        Divider()
+
         ListItem(
             headlineContent = { Text("收集 logcat 日志") },
             supportingContent = { Text("收集通话相关的日志（默认最多 10000 条）") },
@@ -630,6 +674,113 @@ private fun DebugSettingsGroup(
                 Icon(Icons.Default.ChevronRight, null)
             },
             modifier = Modifier.clickable(onClick = onOpenAdvancedConfig)
+        )
+
+        Divider()
+
+        // Vosk 语音识别模型
+        ListItem(
+            headlineContent = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("语音识别模型")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Surface(
+                        color = if (voskModelState.isModelReady)
+                            MaterialTheme.colorScheme.primaryContainer
+                        else
+                            MaterialTheme.colorScheme.secondaryContainer,
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Text(
+                            text = if (voskModelState.isModelReady) "已下载" else "未下载",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (voskModelState.isModelReady)
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            else
+                                MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            },
+            supportingContent = {
+                Column {
+                    when {
+                        voskModelState.isDownloading -> {
+                            Text(
+                                text = when (voskModelState.downloadProgress) {
+                                    -1 -> "正在解压模型..."
+                                    else -> "下载中... ${voskModelState.downloadProgress}%"
+                                },
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            if (voskModelState.downloadProgress >= 0) {
+                                LinearProgressIndicator(
+                                    progress = voskModelState.downloadProgress / 100f,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 4.dp)
+                                )
+                            }
+                        }
+                        voskModelState.error != null -> {
+                            Text(
+                                text = "错误: ${voskModelState.error}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                        voskModelState.isModelReady -> {
+                            Text(
+                                text = "大小: ${voskModelState.modelSize} | 点击删除",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        else -> {
+                            Text(
+                                text = "离线语音识别模型（约50MB）| 点击下载",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+            },
+            leadingContent = {
+                Icon(
+                    Icons.Default.RecordVoiceOver,
+                    null,
+                    tint = if (voskModelState.isModelReady)
+                        MaterialTheme.colorScheme.primary
+                    else
+                        MaterialTheme.colorScheme.outline
+                )
+            },
+            trailingContent = {
+                when {
+                    voskModelState.isDownloading -> {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp
+                        )
+                    }
+                    voskModelState.isModelReady -> {
+                        Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error)
+                    }
+                    else -> {
+                        Icon(Icons.Default.Download, null)
+                    }
+                }
+            },
+            modifier = Modifier.clickable(
+                enabled = !voskModelState.isDownloading,
+                onClick = {
+                    if (voskModelState.isModelReady) {
+                        onDeleteVoskModel()
+                    } else {
+                        onDownloadVoskModel()
+                    }
+                }
+            )
         )
     }
 }

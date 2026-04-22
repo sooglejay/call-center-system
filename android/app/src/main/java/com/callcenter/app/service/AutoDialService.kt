@@ -26,6 +26,13 @@ import com.callcenter.app.util.CallHelper
 import com.callcenter.app.util.DebugLogger
 import com.callcenter.app.util.FloatingWindowManager
 import com.callcenter.app.util.UserNotifier
+import com.callcenter.app.util.call.AudioEnergyAnalyzer
+import com.callcenter.app.util.call.AudioEnergyPattern
+import com.callcenter.app.util.call.CallContext
+import com.callcenter.app.util.call.CallResultClassifier
+import com.callcenter.app.util.call.CallResultType
+import com.callcenter.app.util.call.KeywordCallType
+import com.callcenter.app.util.call.KeywordDetector
 import com.callcenter.app.util.root.RootCallState
 import com.callcenter.app.util.root.RootCallStateDetector
 import com.callcenter.app.util.root.RootPhoneStateListener
@@ -133,6 +140,9 @@ class AutoDialService : Service() {
 
     @Inject
     lateinit var tokenManager: TokenManager
+
+    @Inject
+    lateinit var callResultClassifier: CallResultClassifier
 
     private var job: Job? = null
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -303,7 +313,11 @@ class AutoDialService : Service() {
      * 自动标记通话状态
      */
     private suspend fun autoMarkCallStatus(status: String, displayName: String) {
-        Log.d(TAG, "[AutoMark] 自动标记通话状态: $status ($displayName)")
+        Log.d(TAG, "========== [AutoMark] 自动标记通话状态 ==========")
+        Log.d(TAG, "[AutoMark] status=$status, displayName=$displayName")
+        Log.d(TAG, "[AutoMark] 当前客户: ${_currentCustomer.value?.name}, phone=${_currentCustomer.value?.phone}")
+        Log.d(TAG, "[AutoMark] 当前任务ID: ${_taskId.value}")
+        
         lastResolvedCallResult = displayName
         if (status == "connected") {
             lastCallWasConnected = true
@@ -334,6 +348,7 @@ class AutoDialService : Service() {
             )
             
             Log.d(TAG, "[AutoMark] 自动标记完成: $status")
+            Log.d(TAG, "========== [AutoMark] 标记完成 ==========")
         } catch (e: Exception) {
             Log.e(TAG, "[AutoMark] 自动标记失败: ${e.message}")
             UserNotifier.showError("自动标记通话状态失败: ${e.message}")
@@ -344,7 +359,13 @@ class AutoDialService : Service() {
      * 根据状态标记客户
      */
     private suspend fun markCustomerAsCalledWithStatus(customer: Customer, status: String, callResult: String) {
-        val taskId = _taskId.value ?: return
+        val taskId = _taskId.value
+        Log.d(TAG, "[AutoMark] markCustomerAsCalledWithStatus: taskId=$taskId, customerId=${customer.id}, status=$status, callResult=$callResult")
+        
+        if (taskId == null) {
+            Log.e(TAG, "[AutoMark] taskId为空，无法更新客户状态")
+            return
+        }
         
         try {
             // 更新客户状态
@@ -1058,11 +1079,23 @@ class AutoDialService : Service() {
     private suspend fun waitForCallEndOrTimeout(): Boolean {
         var callConnected = false
         var offHookStartTime: Long = 0
+        var alertingStartTime: Long = 0
+        var hasAlertingState = false
+        var hasActiveState = false
+
+        // 音频能量分析器
+        var audioEnergyAnalyzer: AudioEnergyAnalyzer? = null
+        var audioEnergyPattern = AudioEnergyPattern.UNKNOWN
+
+        // 关键词检测器
+        var keywordDetector: KeywordDetector? = null
+        var detectedKeywords = emptyList<String>()
+        var keywordCallType: KeywordCallType? = null
 
         // 更新初始状态为拨号中
         _currentCallState.value = com.callcenter.app.util.root.RootCallState.DIALING
         _currentCallNumber.value = _currentCustomer.value?.phone
-        
+
         // 添加拨号中历史记录
         FloatingCustomerService.addCallStateHistory("拨号中", _currentCustomer.value?.phone, _currentCustomer.value?.name)
 
@@ -1070,7 +1103,7 @@ class AutoDialService : Service() {
             // 等待电话接通
             Log.d(TAG, "等待电话接通...")
             var idleConfirmStartTime: Long = 0
-            
+
             while (_isRunning.value) {
                 val state = telephonyManager.callState
 
@@ -1081,6 +1114,7 @@ class AutoDialService : Service() {
                             callConnected = true
                             offHookStartTime = System.currentTimeMillis()
                             idleConfirmStartTime = 0
+                            hasActiveState = true
                             Log.d(TAG, "电话已接通/进入通话状态")
                             _currentCallState.value = com.callcenter.app.util.root.RootCallState.ACTIVE
                             // 注意：此时还不知道是用户接听还是语音信箱，等通话结束后根据时长判断
@@ -1089,6 +1123,35 @@ class AutoDialService : Service() {
                             // 延迟后自动开启免提（等待音频系统准备好）
                             delay(500)  // 延迟 500ms
                             enableSpeakerphoneWithRetry()
+
+                            // 启动音频能量分析（同时保存音频数据用于关键词识别）
+                            serviceScope.launch {
+                                try {
+                                    audioEnergyAnalyzer = AudioEnergyAnalyzer(this@AutoDialService)
+                                    // 检查是否启用了关键词检测功能
+                                    val keywordDetectionEnabled = try {
+                                        callResultClassifier.isKeywordDetectionEnabled()
+                                    } catch (e: Exception) {
+                                        false
+                                    }
+                                    audioEnergyAnalyzer?.setSaveAudioData(keywordDetectionEnabled)
+                                    val started = audioEnergyAnalyzer?.start() ?: false
+                                    if (started) {
+                                        Log.d(TAG, "音频能量分析已启动")
+                                        FloatingCustomerService.addCallStateHistory(
+                                            "音频分析中",
+                                            _currentCustomer.value?.phone,
+                                            _currentCustomer.value?.name
+                                        )
+                                    } else {
+                                        Log.w(TAG, "音频能量分析启动失败")
+                                        audioEnergyAnalyzer = null
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "启动音频能量分析异常: ${e.message}")
+                                    audioEnergyAnalyzer = null
+                                }
+                            }
                         } else {
                             // 状态从 IDLE 变回 OFFHOOK，重置确认计时
                             if (idleConfirmStartTime > 0) {
@@ -1105,10 +1168,10 @@ class AutoDialService : Service() {
                                 idleConfirmStartTime = System.currentTimeMillis()
                                 Log.d(TAG, "检测到 IDLE 状态，开始确认流程...")
                             }
-                            
+
                             val idleDuration = System.currentTimeMillis() - idleConfirmStartTime
                             val callDuration = System.currentTimeMillis() - offHookStartTime
-                            
+
                             // 必须满足两个条件才能确认通话结束：
                             // 1. IDLE 状态持续时间超过最小确认时间
                             // 2. 通话总时长超过最小通话时间（或确认时间足够长）
@@ -1117,34 +1180,98 @@ class AutoDialService : Service() {
                                 Log.d(TAG, "通话已确认结束，总持续时间: ${callDuration}ms，IDLE确认时间: ${idleDuration}ms")
                                 _currentCallState.value = com.callcenter.app.util.root.RootCallState.IDLE
                                 callHelper.disableSpeakerphone()
-                                
-                                // 根据 OFFHOOK 持续时间判断通话结果
-                                // 1. 从未进入 OFFHOOK → 响铃未接
-                                // 2. OFFHOOK < 15秒 → 语音信箱
-                                // 3. OFFHOOK >= 15秒 → 用户接听
-                                when {
-                                    !callConnected -> {
-                                        // 从未进入 OFFHOOK，响铃未接
-                                        Log.d(TAG, "判断结果: 响铃未接（从未进入 OFFHOOK）")
-                                        FloatingCustomerService.addCallStateHistory("未接通", _currentCustomer.value?.phone, _currentCustomer.value?.name)
-                                        lastCallWasConnected = false
-                                        lastResolvedCallResult = "响铃未接"
+
+                                // 停止音频能量分析并获取结果
+                                Log.d(TAG, "开始停止音频能量分析...")
+                                try {
+                                    val audioResult = audioEnergyAnalyzer?.stopAndAnalyze()
+                                    audioEnergyPattern = audioResult?.pattern ?: AudioEnergyPattern.UNKNOWN
+                                    Log.d(TAG, "音频能量分析结果: pattern=$audioEnergyPattern, confidence=${audioResult?.confidence}, reason=${audioResult?.reason}")
+                                    if (audioResult != null && audioEnergyPattern != AudioEnergyPattern.UNKNOWN) {
+                                        FloatingCustomerService.addCallStateHistory(
+                                            "音频分析: ${audioEnergyPattern.name}",
+                                            _currentCustomer.value?.phone,
+                                            _currentCustomer.value?.name
+                                        )
                                     }
-                                    callDuration < VOICE_MAIL_THRESHOLD -> {
-                                        // OFFHOOK 时间较短，判断为语音信箱
-                                        Log.d(TAG, "判断结果: 语音信箱（OFFHOOK 持续 ${callDuration}ms < ${VOICE_MAIL_THRESHOLD}ms）")
-                                        FloatingCustomerService.addCallStateHistory("语音信箱", _currentCustomer.value?.phone, _currentCustomer.value?.name, callDuration)
-                                        lastCallWasConnected = false
-                                        lastResolvedCallResult = "语音信箱"
+
+                                    // 如果有音频文件，进行关键词识别
+                                    val audioFilePath = audioResult?.audioFilePath
+                                    Log.d(TAG, "音频文件路径: $audioFilePath")
+                                    if (!audioFilePath.isNullOrBlank()) {
+                                        try {
+                                            keywordDetector = KeywordDetector(this@AutoDialService)
+                                            if (keywordDetector?.init() == true && keywordDetector?.isModelAvailable() == true) {
+                                                Log.d(TAG, "开始从音频文件识别关键词: $audioFilePath")
+                                                FloatingCustomerService.addCallStateHistory(
+                                                    "关键词识别中",
+                                                    _currentCustomer.value?.phone,
+                                                    _currentCustomer.value?.name
+                                                )
+                                                val keywordResult = keywordDetector?.recognizeFromFile(audioFilePath)
+                                                detectedKeywords = keywordResult?.keywords ?: emptyList()
+                                                keywordCallType = keywordResult?.callType
+                                                Log.d(TAG, "关键词检测结果: type=$keywordCallType, keywords=$detectedKeywords, text=${keywordResult?.fullText}")
+                                                if (keywordResult != null && keywordResult.detected) {
+                                                    FloatingCustomerService.addCallStateHistory(
+                                                        "关键词: ${keywordResult.keywords.joinToString()}",
+                                                        _currentCustomer.value?.phone,
+                                                        _currentCustomer.value?.name
+                                                    )
+                                                }
+                                            } else {
+                                                Log.d(TAG, "Vosk模型不可用，跳过关键词识别")
+                                            }
+                                        } catch (e: Exception) {
+                                            Log.e(TAG, "关键词识别异常: ${e.message}")
+                                        } finally {
+                                            keywordDetector?.release()
+                                            keywordDetector = null
+                                        }
                                     }
-                                    else -> {
-                                        // OFFHOOK 时间较长，判断为用户接听
-                                        Log.d(TAG, "判断结果: 用户接听（OFFHOOK 持续 ${callDuration}ms >= ${VOICE_MAIL_THRESHOLD}ms）")
-                                        FloatingCustomerService.addCallStateHistory("已挂断", _currentCustomer.value?.phone, _currentCustomer.value?.name, callDuration)
-                                        lastCallWasConnected = true
-                                        lastResolvedCallResult = "已接听"
-                                    }
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "停止音频能量分析异常: ${e.message}")
                                 }
+                                audioEnergyAnalyzer = null
+
+                                // 使用智能分类器判断通话结果
+                                Log.d(TAG, "开始智能分类判断...")
+                                Log.d(TAG, "分类参数: offhookDuration=$callDuration, hasActiveState=$hasActiveState, audioEnergyPattern=$audioEnergyPattern")
+                                
+                                val callResult = determineCallResult(
+                                    offhookDuration = callDuration,
+                                    alertingDuration = if (hasAlertingState && alertingStartTime > 0) {
+                                        offHookStartTime - alertingStartTime
+                                    } else 0,
+                                    hasActiveState = hasActiveState,
+                                    hasAlertingState = hasAlertingState,
+                                    audioEnergyPattern = audioEnergyPattern,
+                                    detectedKeywords = detectedKeywords,
+                                    keywordCallType = keywordCallType
+                                )
+
+                                Log.d(TAG, "智能分类完成: isConnected=${callResult.first}, result=${callResult.second}")
+                                
+                                lastCallWasConnected = callResult.first
+                                lastResolvedCallResult = callResult.second
+
+                                FloatingCustomerService.addCallStateHistory(
+                                    callResult.second,
+                                    _currentCustomer.value?.phone,
+                                    _currentCustomer.value?.name,
+                                    callDuration
+                                )
+                                
+                                // 自动标记通话状态到服务器
+                                Log.d(TAG, "准备自动标记通话状态...")
+                                val statusKey = when (callResult.second) {
+                                    "已接听" -> "connected"
+                                    "语音信箱" -> "voicemail"
+                                    else -> "unanswered"
+                                }
+                                autoMarkCallStatus(statusKey, callResult.second)
+                                
+                                Log.d(TAG, "通话结果处理完成，返回")
                                 return true
                             }
                         } else {
@@ -1154,7 +1281,7 @@ class AutoDialService : Service() {
                                 idleConfirmStartTime = System.currentTimeMillis()
                                 Log.d(TAG, "未接通状态，开始确认流程...")
                             }
-                            
+
                             val idleDuration = System.currentTimeMillis() - idleConfirmStartTime
                             if (idleDuration >= MIN_CONFIRM_IDLE_TIME) {
                                 Log.d(TAG, "确认电话未接通即结束")
@@ -1162,6 +1289,8 @@ class AutoDialService : Service() {
                                 FloatingCustomerService.addCallStateHistory("未接通", _currentCustomer.value?.phone, _currentCustomer.value?.name)
                                 lastCallWasConnected = false
                                 lastResolvedCallResult = "响铃未接"
+                                // 自动标记为未接通
+                                autoMarkCallStatus("unanswered", "响铃未接")
                                 return true
                             }
                         }
@@ -1170,6 +1299,10 @@ class AutoDialService : Service() {
                         // 响铃中，继续等待
                         Log.d(TAG, "电话响铃中...")
                         // 更新状态为响铃中（只在第一次检测到响铃时更新）
+                        if (!hasAlertingState) {
+                            hasAlertingState = true
+                            alertingStartTime = System.currentTimeMillis()
+                        }
                         if (_currentCallState.value != com.callcenter.app.util.root.RootCallState.ALERTING) {
                             _currentCallState.value = com.callcenter.app.util.root.RootCallState.ALERTING
                             FloatingCustomerService.addCallStateHistory("对方响铃中", _currentCustomer.value?.phone, _currentCustomer.value?.name)
@@ -1185,6 +1318,8 @@ class AutoDialService : Service() {
                     // 对于非 root 设备，长时间通话肯定是接通了
                     lastCallWasConnected = true
                     lastResolvedCallResult = "已接听"
+                    // 自动标记为已接听
+                    autoMarkCallStatus("connected", "已接听")
                     return true
                 }
 
@@ -1204,6 +1339,52 @@ class AutoDialService : Service() {
         Log.d(TAG, "服务被停止，结束等待")
         _currentCallState.value = com.callcenter.app.util.root.RootCallState.IDLE
         return false
+    }
+
+    /**
+     * 使用智能分类器判断通话结果
+     * @return Pair<是否接通, 结果描述>
+     */
+    private suspend fun determineCallResult(
+        offhookDuration: Long,
+        alertingDuration: Long,
+        hasActiveState: Boolean,
+        hasAlertingState: Boolean,
+        audioEnergyPattern: AudioEnergyPattern = AudioEnergyPattern.UNKNOWN,
+        detectedKeywords: List<String> = emptyList(),
+        keywordCallType: KeywordCallType? = null
+    ): Pair<Boolean, String> {
+        // 构建通话上下文
+        val context = CallContext(
+            offhookDuration = offhookDuration,
+            alertingDuration = alertingDuration,
+            totalDuration = offhookDuration,
+            hasActiveState = hasActiveState,
+            hasAlertingState = hasAlertingState,
+            audioEnergyPattern = audioEnergyPattern,
+            rootDetectedState = null, // Root状态由 RootCallStateDetector 单独处理
+            detectedKeywords = detectedKeywords,
+            keywordCallType = keywordCallType
+        )
+
+        // 使用分类器判断
+        val result = callResultClassifier.classify(context)
+
+        Log.d(TAG, "智能分类结果: type=${result.type}, confidence=${result.confidence}, reason=${result.reason}, layer=${result.layer}, audioPattern=$audioEnergyPattern, keywords=$detectedKeywords")
+
+        return when (result.type) {
+            CallResultType.CONNECTED -> {
+                Pair(true, "已接听")
+            }
+            CallResultType.VOICEMAIL -> {
+                Pair(false, "语音信箱")
+            }
+            CallResultType.UNKNOWN -> {
+                // 无法确定，需要用户手动确认
+                // 默认标记为需要确认的状态
+                Pair(false, "待确认")
+            }
+        }
     }
 
     private fun startForeground() {

@@ -125,6 +125,9 @@ dependencies {
     // SwipeRefresh (Pull to refresh)
     implementation("com.google.accompanist:accompanist-swiperefresh:0.32.0")
 
+    // Vosk (Offline Speech Recognition - for keyword detection)
+    implementation("com.alphacephei:vosk-android:0.3.47")
+
     // Testing
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")

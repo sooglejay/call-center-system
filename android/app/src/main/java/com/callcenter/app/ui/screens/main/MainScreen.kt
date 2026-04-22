@@ -72,6 +72,7 @@ fun MainScreen(
     onNavigateToAgentTaskExecution: (Int) -> Unit,
     onNavigateToHelp: () -> Unit,
     onNavigateToPermissionTest: () -> Unit,
+    onNavigateToFeatureToggles: () -> Unit = {},
     onLogout: () -> Unit,
     onSwitchAccount: () -> Unit,
     authViewModel: AuthViewModel = hiltViewModel(),
@@ -253,6 +254,7 @@ fun MainScreen(
                     onSwitchAccount = onSwitchAccount,
                     onNavigateToHelp = onNavigateToHelp,
                     onNavigateToPermissionTest = onNavigateToPermissionTest,
+                    onNavigateToFeatureToggles = onNavigateToFeatureToggles,
                     authViewModel = authViewModel
                 )
             }
@@ -293,6 +295,7 @@ fun MainScreen(
                     onSwitchAccount = onSwitchAccount,
                     onNavigateToHelp = onNavigateToHelp,
                     onNavigateToPermissionTest = onNavigateToPermissionTest,
+                    onNavigateToFeatureToggles = onNavigateToFeatureToggles,
                     authViewModel = authViewModel
                 )
             }
@@ -2624,6 +2627,7 @@ private fun ProfileTab(
     onSwitchAccount: () -> Unit,
     onNavigateToHelp: () -> Unit,
     onNavigateToPermissionTest: () -> Unit,
+    onNavigateToFeatureToggles: () -> Unit = {},
     authViewModel: AuthViewModel,
     settingsViewModel: com.callcenter.app.ui.viewmodel.SettingsViewModel = hiltViewModel()
 ) {
@@ -2752,6 +2756,13 @@ private fun ProfileTab(
                 title = "帮助文档",
                 subtitle = "查看使用说明",
                 onClick = onNavigateToHelp
+            )
+            // 功能开关入口
+            SettingsItem(
+                icon = Icons.Default.ToggleOn,
+                title = "功能开关",
+                subtitle = "管理实验性功能和新特性",
+                onClick = onNavigateToFeatureToggles
             )
             SettingsItem(
                 icon = Icons.Default.Security,

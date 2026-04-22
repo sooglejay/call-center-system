@@ -1,6 +1,7 @@
 package com.callcenter.app.ui.navigation
 
 import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
@@ -32,6 +33,7 @@ import com.callcenter.app.ui.screens.auth.LoginScreen
 import com.callcenter.app.ui.screens.customer.CustomerDetailScreen
 import com.callcenter.app.ui.screens.main.MainScreen
 import com.callcenter.app.ui.screens.settings.CallSettingsScreen
+import com.callcenter.app.ui.screens.settings.FeatureToggleScreen
 import com.callcenter.app.ui.screens.settings.SettingsScreen
 import com.callcenter.app.ui.screens.agent.AgentTaskExecutionScreen
 import com.callcenter.app.ui.screens.agent.AgentCreateRetryTaskScreen
@@ -39,6 +41,9 @@ import com.callcenter.app.ui.screens.agent.AgentTaskListScreen
 import com.callcenter.app.ui.screens.stats.MyStatsScreen
 import com.callcenter.app.ui.screens.help.HelpScreen
 import com.callcenter.app.ui.viewmodel.AuthViewModel
+import com.callcenter.app.ui.viewmodel.SessionViewModel
+import com.callcenter.app.util.SessionEvent
+import com.callcenter.app.util.SessionManager
 
 /**
  * 导航路由定义
@@ -61,6 +66,7 @@ sealed class Screen(val route: String) {
     // 设置
     object Settings : Screen("settings")
     object AutoDialSettings : Screen("auto_dial_settings")
+    object FeatureToggles : Screen("feature_toggles")
     object PermissionTest : Screen("permission_test")
 
     // 客服个人
@@ -93,12 +99,45 @@ sealed class Screen(val route: String) {
 @Composable
 fun AppNavigation(
     navController: NavHostController = rememberNavController(),
-    authViewModel: AuthViewModel = hiltViewModel()
+    authViewModel: AuthViewModel = hiltViewModel(),
+    sessionViewModel: SessionViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val isLoggedIn by authViewModel.isLoggedIn.collectAsState()
     val isCheckingAuth by authViewModel.isCheckingAuth.collectAsState()
     val authError by authViewModel.error.collectAsState()
+
+    // 监听会话过期事件
+    LaunchedEffect(Unit) {
+        sessionViewModel.sessionManager.sessionEvent.collect { event ->
+            when (event) {
+                is SessionEvent.TokenExpired -> {
+                    Toast.makeText(context, "登录已过期，请重新登录", Toast.LENGTH_LONG).show()
+                    // 停止自动拨号
+                    val intent = Intent(context, AutoDialService::class.java).apply {
+                        action = AutoDialService.ACTION_STOP
+                    }
+                    context.startService(intent)
+                    // 跳转到登录页
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+                is SessionEvent.TokenInvalid -> {
+                    Toast.makeText(context, "登录状态无效，请重新登录", Toast.LENGTH_LONG).show()
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+                is SessionEvent.KickedOut -> {
+                    Toast.makeText(context, event.reason, Toast.LENGTH_LONG).show()
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            }
+        }
+    }
 
     // 显示错误提示
     LaunchedEffect(authError) {
@@ -185,6 +224,9 @@ fun AppNavigation(
                 onNavigateToPermissionTest = {
                     navController.navigate(Screen.PermissionTest.route)
                 },
+                onNavigateToFeatureToggles = {
+                    navController.navigate(Screen.FeatureToggles.route)
+                },
                 onLogout = {
                     stopAutoDialAndLogout()
                     authViewModel.logout {
@@ -237,6 +279,9 @@ fun AppNavigation(
                 onNavigateToCallSettings = {
                     navController.navigate(Screen.AutoDialSettings.route)
                 },
+                onNavigateToFeatureToggles = {
+                    navController.navigate(Screen.FeatureToggles.route)
+                },
                 onLogout = {
                     stopAutoDialAndLogout()
                     authViewModel.logout {
@@ -267,6 +312,12 @@ fun AppNavigation(
 
         composable(Screen.PermissionTest.route) {
             com.callcenter.app.ui.screens.settings.PermissionTestScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.FeatureToggles.route) {
+            FeatureToggleScreen(
                 onNavigateBack = { navController.popBackStack() }
             )
         }

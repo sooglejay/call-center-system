@@ -4,25 +4,40 @@ import axios, { AxiosError } from 'axios';
 const CURRENT_SERVER_KEY = 'current_server';
 
 // 获取 API 基础路径
-// 子路径部署时，API 路径应该是相对路径，让浏览器自动拼接
+// 支持三种模式：
+// 1. 环境变量 VITE_API_URL：指定完整的后端 API 地址（适用于前端后端分离部署）
+// 2. localStorage 中存储的自定义服务器地址
+// 3. 相对路径 /api（适用于同服务器部署）
 const getBaseURL = () => {
-  // 首先检查是否有手动设置的服务器地址
+  // 优先使用环境变量指定的 API 地址（Vercel 部署时使用）
+  const envApiUrl = import.meta.env.VITE_API_URL;
+  if (envApiUrl) {
+    console.log('[API] 使用环境变量 API 地址:', envApiUrl);
+    return envApiUrl;
+  }
+  
+  // 检查是否有手动设置的服务器地址
   const customServer = localStorage.getItem(CURRENT_SERVER_KEY);
   if (customServer) {
     // 如果设置了自定义服务器地址，使用它
-    return `${customServer}/api`;
+    const apiUrl = `${customServer}/api`;
+    console.log('[API] 使用自定义服务器地址:', apiUrl);
+    return apiUrl;
   }
   
-  // 否则使用默认逻辑
+  // 否则使用相对路径（同服务器部署）
   const basePath = import.meta.env.VITE_BASE_PATH || '';
   // 如果是根路径（/ 或空），直接返回 /api
   // 如果是子路径（如 /callcenter），拼接为 /callcenter/api
   if (!basePath || basePath === '/') {
+    console.log('[API] 使用相对路径: /api');
     return '/api';
   }
   // 确保子路径不以 / 结尾，然后拼接 /api
   const normalizedPath = basePath.endsWith('/') ? basePath.slice(0, -1) : basePath;
-  return `${normalizedPath}/api`;
+  const apiUrl = `${normalizedPath}/api`;
+  console.log('[API] 使用子路径:', apiUrl);
+  return apiUrl;
 };
 
 const api = axios.create({

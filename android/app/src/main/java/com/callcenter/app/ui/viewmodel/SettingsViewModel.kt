@@ -1,5 +1,6 @@
 package com.callcenter.app.ui.viewmodel
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.callcenter.app.data.local.preferences.CallSettingsManager
@@ -12,6 +13,7 @@ import com.callcenter.app.data.repository.AuthRepository
 import com.callcenter.app.data.repository.StatsRepository
 import com.callcenter.app.util.AppUpdateManager
 import com.callcenter.app.util.Constants
+import com.callcenter.app.util.call.VoskModelManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -60,10 +62,22 @@ class SettingsViewModel @Inject constructor(
     private val _logCollectorStatus = MutableStateFlow(LogCollectorStatus())
     val logCollectorStatus: StateFlow<LogCollectorStatus> = _logCollectorStatus.asStateFlow()
 
+    // Vosk 模型相关
+    private val _voskModelState = MutableStateFlow(VoskModelState())
+    val voskModelState: StateFlow<VoskModelState> = _voskModelState.asStateFlow()
+
     data class LogCollectorStatus(
         val isCollecting: Boolean = false,
         val cacheSize: Int = 0,
         val maxCacheSize: Int = 10000
+    )
+
+    data class VoskModelState(
+        val isModelReady: Boolean = false,
+        val isDownloading: Boolean = false,
+        val downloadProgress: Int = 0,  // 0-100, -1 表示解压中
+        val modelSize: String = "",
+        val error: String? = null
     )
 
     fun loadSettings() {
@@ -291,5 +305,76 @@ class SettingsViewModel @Inject constructor(
      */
     fun getLogOutputDirectory(context: android.content.Context): String {
         return context.getExternalFilesDir(null)?.absolutePath ?: ""
+    }
+
+    // ==================== Vosk 模型管理 ====================
+
+    /**
+     * 检查 Vosk 模型状态
+     */
+    fun checkVoskModelState(context: Context) {
+        viewModelScope.launch {
+            val modelManager = VoskModelManager(context)
+            _voskModelState.value = _voskModelState.value.copy(
+                isModelReady = modelManager.isModelReady(),
+                modelSize = modelManager.getModelSizeDescription()
+            )
+        }
+    }
+
+    /**
+     * 下载 Vosk 模型
+     */
+    fun downloadVoskModel(context: Context) {
+        viewModelScope.launch {
+            val modelManager = VoskModelManager(context)
+
+            _voskModelState.value = _voskModelState.value.copy(
+                isDownloading = true,
+                downloadProgress = 0,
+                error = null
+            )
+
+            val result = modelManager.downloadModel { progress ->
+                _voskModelState.value = _voskModelState.value.copy(
+                    downloadProgress = progress
+                )
+            }
+
+            result.fold(
+                onSuccess = {
+                    _voskModelState.value = _voskModelState.value.copy(
+                        isModelReady = true,
+                        isDownloading = false,
+                        downloadProgress = 100,
+                        modelSize = modelManager.getModelSizeDescription()
+                    )
+                },
+                onFailure = { e ->
+                    _voskModelState.value = _voskModelState.value.copy(
+                        isDownloading = false,
+                        downloadProgress = 0,
+                        error = e.message ?: "下载失败"
+                    )
+                }
+            )
+        }
+    }
+
+    /**
+     * 删除 Vosk 模型
+     */
+    fun deleteVoskModel(context: Context) {
+        viewModelScope.launch {
+            val modelManager = VoskModelManager(context)
+            val success = modelManager.deleteModel()
+
+            if (success) {
+                _voskModelState.value = VoskModelState(
+                    isModelReady = false,
+                    modelSize = "0 KB"
+                )
+            }
+        }
     }
 }

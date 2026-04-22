@@ -1,11 +1,13 @@
 package com.callcenter.app.di
 
 import android.content.Context
+import android.util.Log
 import com.callcenter.app.BuildConfig
 import com.callcenter.app.data.api.ApiService
 import com.callcenter.app.data.local.preferences.TokenManager
 import com.callcenter.app.data.local.preferences.UserPreferences
 import com.callcenter.app.util.Constants
+import com.callcenter.app.util.SessionManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -16,6 +18,7 @@ import kotlinx.coroutines.runBlocking
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
+import okhttp3.Response
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -68,6 +71,50 @@ class DynamicBaseUrlInterceptor(private val tokenManager: TokenManager) : Interc
     }
 }
 
+/**
+ * 认证响应拦截器
+ *
+ * 拦截401响应，通知SessionManager处理token过期
+ */
+class AuthResponseInterceptor(
+    private val tokenManager: TokenManager,
+    private val sessionManager: SessionManager
+) : Interceptor {
+
+    companion object {
+        private const val TAG = "AuthResponseInterceptor"
+    }
+
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val request = chain.request()
+        val response = chain.proceed(request)
+
+        // 检查是否为401未授权响应
+        if (response.code == 401) {
+            Log.w(TAG, "收到401响应，Token可能已过期")
+
+            // 关闭响应体
+            response.close()
+
+            // 清除本地token
+            runBlocking {
+                tokenManager.clearAuth()
+            }
+
+            // 通知SessionManager token过期
+            sessionManager.notifyTokenExpired()
+
+            // 返回新的401响应（因为原响应已关闭）
+            return response.newBuilder()
+                .code(401)
+                .message("Unauthorized - Token expired")
+                .build()
+        }
+
+        return response
+    }
+}
+
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
@@ -109,11 +156,13 @@ object NetworkModule {
     @Singleton
     fun provideOkHttpClient(
         authInterceptor: Interceptor,
-        dynamicBaseUrlInterceptor: DynamicBaseUrlInterceptor
+        dynamicBaseUrlInterceptor: DynamicBaseUrlInterceptor,
+        authResponseInterceptor: AuthResponseInterceptor
     ): OkHttpClient {
         return OkHttpClient.Builder()
             .addInterceptor(dynamicBaseUrlInterceptor)  // 先添加动态URL拦截器
             .addInterceptor(authInterceptor)
+            .addInterceptor(authResponseInterceptor)  // 添加401响应拦截器
             .apply {
                 if (BuildConfig.DEBUG) {
                     addInterceptor(
@@ -127,6 +176,21 @@ object NetworkModule {
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideAuthResponseInterceptor(
+        tokenManager: TokenManager,
+        sessionManager: SessionManager
+    ): AuthResponseInterceptor {
+        return AuthResponseInterceptor(tokenManager, sessionManager)
+    }
+
+    @Provides
+    @Singleton
+    fun provideSessionManager(): SessionManager {
+        return SessionManager()
     }
 
     @Provides

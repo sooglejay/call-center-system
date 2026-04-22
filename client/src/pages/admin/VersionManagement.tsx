@@ -234,18 +234,28 @@ export default function VersionManagement() {
     {
       title: '操作',
       key: 'action',
-      width: 100,
+      width: 160,
       render: (_: any, record: VersionInfo) => (
-        record.is_active !== 1 && (
+        <Space>
           <Button
-            type="text"
-            danger
-            icon={<DeleteOutlined />}
-            onClick={() => handleDelete(record)}
+            type="link"
+            icon={<DownloadOutlined />}
+            href={record.apk_url}
+            target="_blank"
           >
-            删除
+            下载
           </Button>
-        )
+          {record.is_active !== 1 && (
+            <Button
+              type="text"
+              danger
+              icon={<DeleteOutlined />}
+              onClick={() => handleDelete(record)}
+            >
+              删除
+            </Button>
+          )}
+        </Space>
       )
     }
   ];
