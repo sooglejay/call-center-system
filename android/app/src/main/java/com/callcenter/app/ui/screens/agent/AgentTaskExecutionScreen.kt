@@ -150,13 +150,6 @@ fun AgentTaskExecutionScreen(
         viewModel.loadTaskDetail(taskId)
     }
 
-    // 当自动拨号的已拨打数量变化时，刷新任务详情以更新客户列表
-    LaunchedEffect(dialedCount) {
-        if (dialedCount > 0) {
-            viewModel.loadTaskDetail(taskId)
-        }
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
