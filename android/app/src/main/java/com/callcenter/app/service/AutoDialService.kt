@@ -1294,6 +1294,10 @@ class AutoDialService : Service() {
             // 保存进度（每拨打一个客户前保存）
             saveProgress()
 
+            // 重置无障碍服务的录音状态（确保每次新通话都能自动点击录音按钮）
+            AutoSpeakerAccessibilityService.resetRecordingState()
+            DebugLogger.log("[ProcessQueue] 已重置无障碍服务录音状态")
+
             // 拨打电话
             DebugLogger.log("[ProcessQueue] 开始拨号...")
             var callFailed = false
@@ -1797,8 +1801,30 @@ class AutoDialService : Service() {
                                     }
 
                                     // 如果有音频文件，进行关键词识别
-                                    val audioFilePath = audioResult?.audioFilePath
+                                    var audioFilePath = audioResult?.audioFilePath
                                     DebugLogger.log("[KeywordDetect] 音频文件路径: $audioFilePath")
+                                    
+                                    // 如果没有音频文件（可能是因为录音能量太低），尝试从系统录音目录读取
+                                    if (audioFilePath.isNullOrBlank()) {
+                                        DebugLogger.log("[KeywordDetect] 尝试从系统录音目录查找录音文件...")
+                                        val callStartTime = offHookStartTime // 通话开始时间
+                                        val systemRecording = CallRecordingManager.findLatestSystemRecording(
+                                            _currentCustomer.value?.phone,
+                                            callStartTime
+                                        )
+                                        if (systemRecording != null) {
+                                            audioFilePath = systemRecording.absolutePath
+                                            DebugLogger.log("[KeywordDetect] ✓ 找到系统录音: $audioFilePath")
+                                            DebugLogger.log("[KeywordDetect] 文件大小: ${systemRecording.length()} bytes")
+                                            FloatingCustomerService.addCallStateHistory(
+                                                "发现系统录音",
+                                                _currentCustomer.value?.phone,
+                                                _currentCustomer.value?.name
+                                            )
+                                        } else {
+                                            DebugLogger.log("[KeywordDetect] ✗ 未找到系统录音文件")
+                                        }
+                                    }
                                     
                                     if (!audioFilePath.isNullOrBlank()) {
                                         DebugLogger.logSeparator("关键词识别")
@@ -1865,7 +1891,11 @@ class AutoDialService : Service() {
                                         }
                                     } else {
                                         DebugLogger.log("[KeywordDetect] ✗ 无音频文件，跳过关键词识别")
-                                        DebugLogger.log("[KeywordDetect] 可能原因: 未开启关键词检测功能 或 录音失败")
+                                        DebugLogger.log("[KeywordDetect] 可能原因:")
+                                        DebugLogger.log("[KeywordDetect]   1. 未开启关键词检测功能")
+                                        DebugLogger.log("[KeywordDetect]   2. 录音失败（Android 10+ 限制）")
+                                        DebugLogger.log("[KeywordDetect]   3. 系统录音目录未找到或无权限")
+                                        DebugLogger.log("[KeywordDetect] 提示: 请确保手机已开启系统通话录音功能")
                                     }
                                 } catch (e: Exception) {
                                     Log.e(TAG, "停止音频能量分析异常: ${e.message}")

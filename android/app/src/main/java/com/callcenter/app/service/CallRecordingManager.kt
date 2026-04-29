@@ -21,6 +21,8 @@ import java.util.Locale
  *
  * 说明：不同 ROM 对通话录音支持差异很大，这里采用多音频源回退策略，
  * 优先尝试双向通话相关音频源，失败后再回退到更通用的音频源。
+ * 
+ * 对于无法直接录音的设备（Android 10+），支持读取系统自带的通话录音文件。
  */
 class CallRecordingManager(
     private val context: Context
@@ -34,6 +36,72 @@ class CallRecordingManager(
             val callId: Int,
             val phoneNumber: String?,
             val durationSeconds: Int?
+        )
+
+        // 系统通话录音目录（各厂商不同）
+        // 注意：Android 11+ 使用 scoped storage，部分路径可能需要特殊权限
+        private val SYSTEM_RECORDING_PATHS = listOf(
+            // ===== 小米 MIUI =====
+            "/sdcard/MIUI/sound_recorder/call_rec/",
+            "/sdcard/MIUI/music_recorder/call/",
+            
+            // ===== Google Pixel (原生 Android) =====
+            "/sdcard/Recordings/Call Recordings/",
+            "/sdcard/Recordings/Call/",
+            "/sdcard/Music/Recordings/Call Recordings/",
+            
+            // ===== 华为/荣耀 =====
+            "/sdcard/HWCallRecorder/",
+            "/sdcard/sounds/callrecorder/",
+            "/sdcard/Sounds/CallRecorder/",
+            
+            // ===== OPPO =====
+            "/sdcard/PhoneRecord/",
+            "/sdcard/phone_record/",
+            "/sdcard/Recordings/PhoneRecord/",
+            
+            // ===== Vivo =====
+            "/sdcard/Record/Call/",
+            "/sdcard/录音/通话录音/",
+            
+            // ===== 三星 =====
+            "/sdcard/Voice Recorder/",
+            "/sdcard/Sounds/Call recordings/",
+            
+            // ===== 一加 =====
+            "/sdcard/Recordings/CallRecordings/",
+            "/sdcard/record/CallRecord/",
+            
+            // ===== 魅族 =====
+            "/sdcard/Recorder/CallRecording/",
+            
+            // ===== 索尼 =====
+            "/sdcard/Music/Recordings/Voice Call/",
+            
+            // ===== LG =====
+            "/sdcard/Sounds/Call/",
+            
+            // ===== 摩托罗拉 =====
+            "/sdcard/Recordings/Call Recordings/",
+            
+            // ===== 联想 =====
+            "/sdcard/LenovoRecord/call/",
+            
+            // ===== 中兴 =====
+            "/sdcard/record/call/",
+            
+            // ===== 通用/其他 =====
+            "/sdcard/call_recording/",
+            "/sdcard/CallRecordings/",
+            "/sdcard/CallRecord/",
+            "/sdcard/callrecordings/",
+            "/sdcard/Recordings/",
+            "/sdcard/Recording/Call/",
+            
+            // ===== 第三方录音应用 =====
+            "/sdcard/CallRecorder/",
+            "/sdcard/AutoCallRecorder/",
+            "/sdcard/CallRecord/"
         )
 
         fun getRecordingDirectory(context: Context): File {
@@ -51,14 +119,83 @@ class CallRecordingManager(
             return phoneNumber?.replace(Regex("[^0-9+]"), "")?.ifBlank { "unknown" } ?: "unknown"
         }
 
+        /**
+         * 扫描系统通话录音目录，找到最新的录音文件
+         * @param phoneNumber 电话号码（用于匹配）
+         * @param afterTime 查找此时间之后的录音（毫秒时间戳）
+         * @return 找到的最新录音文件，如果没找到返回 null
+         */
+        fun findLatestSystemRecording(phoneNumber: String?, afterTime: Long = 0): File? {
+            val normalizedPhone = normalizePhoneNumber(phoneNumber)
+            
+            Log.d(TAG, "开始扫描系统录音目录，号码: $normalizedPhone, 时间限制: $afterTime")
+            
+            val allRecordings = mutableListOf<File>()
+            
+            for (path in SYSTEM_RECORDING_PATHS) {
+                val dir = File(path)
+                if (dir.exists() && dir.isDirectory) {
+                    Log.d(TAG, "扫描目录: $path")
+                    dir.listFiles()?.forEach { file ->
+                        if (file.isFile && isAudioFile(file)) {
+                            // 检查文件修改时间
+                            if (afterTime > 0 && file.lastModified() < afterTime) {
+                                return@forEach
+                            }
+                            
+                            // 检查文件名是否包含电话号码
+                            val fileName = file.name.lowercase()
+                            val phoneDigits = normalizedPhone.takeLast(8) // 取后8位匹配
+                            
+                            if (fileName.contains(phoneDigits.lowercase()) || phoneNumber == null) {
+                                allRecordings.add(file)
+                                Log.d(TAG, "找到匹配录音: ${file.absolutePath}, 时间: ${file.lastModified()}")
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // 返回最新的录音文件
+            return allRecordings.maxByOrNull { it.lastModified() }.also {
+                Log.d(TAG, "共找到 ${allRecordings.size} 个匹配录音，最新: ${it?.absolutePath}")
+            }
+        }
+        
+        /**
+         * 获取所有可用的系统录音目录
+         */
+        fun getAvailableSystemRecordingDirectories(): List<File> {
+            return SYSTEM_RECORDING_PATHS.mapNotNull { path ->
+                val dir = File(path)
+                if (dir.exists() && dir.isDirectory) dir else null
+            }
+        }
+        
+        /**
+         * 检查文件是否是音频文件
+         */
+        private fun isAudioFile(file: File): Boolean {
+            val extension = file.extension.lowercase()
+            return extension in listOf("mp3", "m4a", "aac", "wav", "amr", "ogg", "3gp", "mp4")
+        }
+
         fun listRecordingsForPhone(context: Context, phoneNumber: String?): List<File> {
             val normalizedPhone = normalizePhoneNumber(phoneNumber)
             val prefix = "call_${normalizedPhone}_"
-            return getRecordingDirectory(context)
+            
+            // 同时扫描应用目录和系统目录
+            val appRecordings = getRecordingDirectory(context)
                 .listFiles()
                 ?.filter { it.isFile && it.name.startsWith(prefix) && it.extension.equals("m4a", ignoreCase = true) }
-                ?.sortedByDescending { it.lastModified() }
                 ?: emptyList()
+            
+            val systemRecordings = findLatestSystemRecording(phoneNumber)
+                ?.let { listOf(it) }
+                ?: emptyList()
+            
+            return (appRecordings + systemRecordings)
+                .sortedByDescending { it.lastModified() }
         }
 
         fun getRecordingDurationSeconds(file: File): Int? {
