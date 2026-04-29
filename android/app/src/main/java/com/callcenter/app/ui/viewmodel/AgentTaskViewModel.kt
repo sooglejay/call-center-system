@@ -14,6 +14,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -39,6 +40,9 @@ class AgentTaskViewModel @Inject constructor(
 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
+    
+    // 当前加载任务详情的 Job，用于取消重复请求
+    private var loadTaskJob: kotlinx.coroutines.Job? = null
 
     /**
      * 加载我的任务列表
@@ -66,7 +70,10 @@ class AgentTaskViewModel @Inject constructor(
      * 加载任务详情
      */
     fun loadTaskDetail(taskId: Int) {
-        viewModelScope.launch {
+        // 取消之前的加载任务
+        loadTaskJob?.cancel()
+        
+        loadTaskJob = viewModelScope.launch {
             _isLoading.value = true
             _error.value = null
 
@@ -82,7 +89,10 @@ class AgentTaskViewModel @Inject constructor(
                     _task.value = filteredTask
                 },
                 onFailure = { exception ->
-                    _error.value = exception.message ?: "加载任务详情失败"
+                    // 只在协程没有被取消时才设置错误
+                    if (isActive) {
+                        _error.value = exception.message ?: "加载任务详情失败"
+                    }
                 }
             )
 

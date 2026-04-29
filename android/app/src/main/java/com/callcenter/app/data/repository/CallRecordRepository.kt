@@ -8,6 +8,8 @@ import com.callcenter.app.data.model.AddCallNoteRequest
 import com.callcenter.app.data.model.CallRecord
 import com.callcenter.app.data.model.CallRecordingUploadResponse
 import com.callcenter.app.service.CallRecordingManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
@@ -131,8 +133,8 @@ class CallRecordRepository @Inject constructor(
         }
     }
 
-    suspend fun uploadPendingRecordings(): Result<Pair<Int, Int>> {
-        return try {
+    suspend fun uploadPendingRecordings(): Result<Pair<Int, Int>> = withContext(Dispatchers.IO) {
+        try {
             val pendingUploads = CallRecordingManager.listPendingUploads(context)
             var successCount = 0
             var failedCount = 0

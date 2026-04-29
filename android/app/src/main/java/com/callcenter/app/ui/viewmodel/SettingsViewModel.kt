@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 @HiltViewModel
@@ -258,12 +260,12 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
-     * 导出日志到文件
+     * 导出日志到文件（异步）
      */
-    fun exportLogs(context: android.content.Context): java.io.File? {
+    suspend fun exportLogs(context: android.content.Context): java.io.File? = withContext(Dispatchers.IO) {
         _isExportingLogs.value = true
 
-        return try {
+        try {
             val fileName = "callcenter_log_${System.currentTimeMillis()}.txt"
             val file = java.io.File(context.getExternalFilesDir(null), fileName)
 
@@ -291,50 +293,54 @@ class SettingsViewModel @Inject constructor(
             _isExportingLogs.value = true
 
             try {
-                // 关键字过滤
-                val keywords = listOf(
-                    "CallStateMonitor",
-                    "CallHelper",
-                    "AutoDial",
-                    "CallAudioState"
-                )
+                // 在IO线程执行文件操作
+                val result = withContext(Dispatchers.IO) {
+                    // 关键字过滤
+                    val keywords = listOf(
+                        "CallStateMonitor",
+                        "CallHelper",
+                        "AutoDial",
+                        "CallAudioState"
+                    )
 
-                // 读取 logcat
-                val logs = mutableListOf<String>()
-                val process = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-v", "time"))
-                val reader = java.io.BufferedReader(java.io.InputStreamReader(process.inputStream))
+                    // 读取 logcat
+                    val logs = mutableListOf<String>()
+                    val process = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-v", "time"))
+                    val reader = java.io.BufferedReader(java.io.InputStreamReader(process.inputStream))
 
-                var line: String?
-                while (reader.readLine().also { line = it } != null) {
-                    if (keywords.any { keyword -> line!!.contains(keyword, ignoreCase = true) }) {
-                        logs.add(line!!)
-                    }
-                }
-                reader.close()
-                process.destroy()
-
-                if (logs.isEmpty()) {
-                    onResult(false, "没有找到相关日志")
-                    return@launch
-                }
-
-                // 写入到 Uri
-                context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                    java.io.PrintWriter(java.io.OutputStreamWriter(outputStream)).use { writer ->
-                        writer.println("# Logcat 日志导出")
-                        writer.println("# 导出时间: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())}")
-                        writer.println("# 日志数量: ${logs.size}")
-                        writer.println("# 关键字: ${keywords.joinToString(", ")}")
-                        writer.println("# " + "=".repeat(80))
-                        writer.println()
-
-                        logs.forEach { log ->
-                            writer.println(log)
+                    var line: String?
+                    while (reader.readLine().also { line = it } != null) {
+                        if (keywords.any { keyword -> line!!.contains(keyword, ignoreCase = true) }) {
+                            logs.add(line!!)
                         }
                     }
+                    reader.close()
+                    process.destroy()
+
+                    if (logs.isEmpty()) {
+                        return@withContext Pair(false, "没有找到相关日志")
+                    }
+
+                    // 写入到 Uri
+                    context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                        java.io.PrintWriter(java.io.OutputStreamWriter(outputStream)).use { writer ->
+                            writer.println("# Logcat 日志导出")
+                            writer.println("# 导出时间: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())}")
+                            writer.println("# 日志数量: ${logs.size}")
+                            writer.println("# 关键字: ${keywords.joinToString(", ")}")
+                            writer.println("# " + "=".repeat(80))
+                            writer.println()
+
+                            logs.forEach { log ->
+                                writer.println(log)
+                            }
+                        }
+                    }
+
+                    Pair(true, "成功导出 ${logs.size} 条日志")
                 }
 
-                onResult(true, "成功导出 ${logs.size} 条日志")
+                onResult(result.first, result.second)
             } catch (e: Exception) {
                 e.printStackTrace()
                 onResult(false, "导出失败: ${e.message}")

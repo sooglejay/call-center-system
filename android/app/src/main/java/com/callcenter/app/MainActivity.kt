@@ -6,8 +6,6 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -43,8 +41,6 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var callRecordRepository: CallRecordRepository
-
-    private val mainHandler = Handler(Looper.getMainLooper())
 
     // 权限申请回调
     private val permissionLauncher = registerForActivityResult(

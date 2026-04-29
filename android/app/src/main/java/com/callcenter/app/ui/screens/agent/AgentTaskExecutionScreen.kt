@@ -24,6 +24,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
@@ -923,7 +925,7 @@ private fun CustomerFilterTabsWithCallStatus(
                 .fillMaxWidth()
                 .padding(8.dp)
         ) {
-            // 第一行Tab: 全部 | 待拨打 | 已接听 | 语音信箱 | 响铃未接
+            // 第一行Tab: 全部 | 待拨打
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
@@ -948,14 +950,15 @@ private fun CustomerFilterTabsWithCallStatus(
                     isSelected = selectedTab == 1,
                     onClick = { onTabSelected(1) }
                 )
+            }
 
-                Divider(
-                    modifier = Modifier
-                        .width(1.dp)
-                        .height(40.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-
+            // 第二行Tab: 已接听 | 语音信箱 | 响铃未接
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
                 FilterTabItem(
                     label = "已接听",
                     count = connectedCount,
@@ -976,15 +979,14 @@ private fun CustomerFilterTabsWithCallStatus(
                     isSelected = selectedTab == 3,
                     onClick = { onTabSelected(3) }
                 )
-            }
 
-            // 第二行Tab: 响铃未接
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp),
-                horizontalArrangement = Arrangement.Center
-            ) {
+                Divider(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .height(40.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
+
                 FilterTabItem(
                     label = "响铃未接",
                     count = unansweredCount,
@@ -1394,11 +1396,19 @@ private fun TaskCustomerCard(
     var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showRecordingDialog by remember { mutableStateOf(false) }
-    var recordings by remember(customer.phone, customer.calledAt, customer.callTime, customer.callResult) {
-        mutableStateOf(CallRecordingManager.listRecordingsForPhone(context, customer.phone))
-    }
+    var recordings by remember { mutableStateOf<List<File>>(emptyList()) }
+    var isLoadingRecordings by remember { mutableStateOf(false) }
     var currentPlayingPath by remember { mutableStateOf<String?>(null) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+
+    // 异步加载录音列表（避免主线程阻塞）
+    LaunchedEffect(customer.phone, customer.calledAt, customer.callTime, customer.callResult) {
+        isLoadingRecordings = true
+        recordings = withContext(Dispatchers.IO) {
+            CallRecordingManager.listRecordingsForPhone(context, customer.phone)
+        }
+        isLoadingRecordings = false
+    }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -1481,8 +1491,14 @@ private fun TaskCustomerCard(
                 Spacer(modifier = Modifier.height(8.dp))
                 FilledTonalButton(
                     onClick = {
-                        recordings = CallRecordingManager.listRecordingsForPhone(context, customer.phone)
-                        showRecordingDialog = true
+                        // 异步刷新录音列表
+                        kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
+                            val newRecordings = CallRecordingManager.listRecordingsForPhone(context, customer.phone)
+                            withContext(Dispatchers.Main) {
+                                recordings = newRecordings
+                                showRecordingDialog = true
+                            }
+                        }
                     }
                 ) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -1760,16 +1776,19 @@ private fun TaskCustomerCard(
                                                 try {
                                                     val player = MediaPlayer().apply {
                                                         setDataSource(context, Uri.fromFile(file))
-                                                        prepare()
+                                                        setOnPreparedListener {
+                                                            // 异步准备完成后开始播放
+                                                            start()
+                                                            currentPlayingPath = file.absolutePath
+                                                        }
                                                         setOnCompletionListener {
                                                             currentPlayingPath = null
                                                             runCatching { it.release() }
                                                             mediaPlayer = null
                                                         }
-                                                        start()
+                                                        prepareAsync()  // 使用异步准备，避免阻塞主线程
                                                     }
                                                     mediaPlayer = player
-                                                    currentPlayingPath = file.absolutePath
                                                 } catch (e: Exception) {
                                                     Toast.makeText(context, "播放录音失败: ${e.message}", Toast.LENGTH_LONG).show()
                                                 }

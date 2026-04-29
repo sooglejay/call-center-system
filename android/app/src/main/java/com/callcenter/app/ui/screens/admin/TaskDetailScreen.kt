@@ -675,17 +675,23 @@ private fun TaskCustomerItem(customer: TaskCustomer) {
                                             if (mediaPlayer == null) {
                                                 val player = MediaPlayer().apply {
                                                     setDataSource(context, Uri.parse(customer.recordingUrl))
-                                                    prepare()
+                                                    setOnPreparedListener {
+                                                        // 异步准备完成后开始播放
+                                                        start()
+                                                        isPlaying = true
+                                                    }
                                                     setOnCompletionListener {
                                                         isPlaying = false
                                                         runCatching { it.release() }
                                                         mediaPlayer = null
                                                     }
+                                                    prepareAsync()  // 使用异步准备，避免阻塞主线程
                                                 }
                                                 mediaPlayer = player
+                                            } else {
+                                                mediaPlayer?.start()
+                                                isPlaying = true
                                             }
-                                            mediaPlayer?.start()
-                                            isPlaying = true
                                         }
                                     } catch (e: Exception) {
                                         isPlaying = false
