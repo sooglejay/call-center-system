@@ -115,220 +115,82 @@ class CallResultClassifier(
 ) {
     companion object {
         private const val TAG = "CallResultClassifier"
-
-        // 第一层阈值配置
-        // 注意：语音信箱通常播报 15-30 秒，阈值设置需避免误判
-        const val VOICEMAIL_THRESHOLD_MIN = 3000L    // 语音信箱最小阈值：3秒（极短通话）
-        const val VOICEMAIL_THRESHOLD_MAX = 10000L   // 语音信箱最大阈值：10秒
-        const val CONNECTED_THRESHOLD = 20000L       // 用户接听阈值：20秒（超过此时长认为是真人接听）
-
-        // 响铃相关阈值
-        const val QUICK_TRANSFER_THRESHOLD = 5000L   // 快速转接阈值：5秒
-        const val NORMAL_ALERTING_MIN = 5000L        // 正常响铃最小时间：5秒
     }
 
     /**
-     * 检查是否启用了关键词检测
+     * 检查是否启用了录音识别
      */
     suspend fun isKeywordDetectionEnabled(): Boolean {
-        return featureToggleManager.isEnabled(FeatureToggle.AI_KEYWORD_DETECTION)
+        return featureToggleManager.isEnabled(FeatureToggle.VOICE_RECOGNITION_DETECTION)
     }
     
     /**
      * 分类通话结果
      * 
+     * 只使用录音识别结果判断通话类型
+     * 
      * @param context 通话上下文信息
      * @return 通话结果
      */
     suspend fun classify(context: CallContext): CallResult {
-        Log.d(TAG, "========== 开始分层判断通话结果 ==========")
+        Log.d(TAG, "========== 开始判断通话结果 ==========")
         Log.d(TAG, "通话上下文: offhookDuration=${context.offhookDuration}ms, " +
-                "alertingDuration=${context.alertingDuration}ms, " +
-                "hasActiveState=${context.hasActiveState}, " +
-                "audioEnergyPattern=${context.audioEnergyPattern}, " +
                 "keywordCallType=${context.keywordCallType}, " +
                 "detectedKeywords=${context.detectedKeywords}")
         
-        // 检查是否启用智能通话结果识别
-        val smartDetectionEnabled = featureToggleManager.isEnabled(
-            FeatureToggle.SMART_CALL_RESULT_DETECTION
+        // 检查是否启用录音识别
+        val voiceRecognitionEnabled = featureToggleManager.isEnabled(
+            FeatureToggle.VOICE_RECOGNITION_DETECTION
         )
         
-        Log.d(TAG, "功能开关状态: smartDetection=$smartDetectionEnabled")
+        Log.d(TAG, "功能开关状态: voiceRecognition=$voiceRecognitionEnabled")
         
-        if (!smartDetectionEnabled) {
+        if (!voiceRecognitionEnabled) {
             // 使用传统判断方式（简单的时长阈值）
-            Log.d(TAG, "智能检测未启用，使用传统判断方式")
+            Log.d(TAG, "录音识别未启用，使用传统判断方式")
             return classifyLegacy(context)
         }
         
-        // 第一层：时长判断
-        Log.d(TAG, "--- 第一层：时长判断 ---")
-        val layer1Result = classifyByDuration(context)
-        if (layer1Result != null) {
-            Log.d(TAG, "第一层判断完成: type=${layer1Result.type}, confidence=${layer1Result.confidence}, reason=${layer1Result.reason}")
-            return layer1Result
-        }
-        Log.d(TAG, "第一层无法确定，进入第二层")
-        
-        // 第二层：音频能量分析（如果启用）
-        val audioAnalysisEnabled = featureToggleManager.isEnabled(
-            FeatureToggle.AUDIO_ENERGY_ANALYSIS
-        )
-        Log.d(TAG, "--- 第二层：音频能量分析 (enabled=$audioAnalysisEnabled, pattern=${context.audioEnergyPattern}) ---")
-        
-        if (audioAnalysisEnabled && context.audioEnergyPattern != AudioEnergyPattern.UNKNOWN) {
-            val layer2Result = classifyByAudioEnergy(context)
-            if (layer2Result != null) {
-                Log.d(TAG, "第二层判断完成: type=${layer2Result.type}, confidence=${layer2Result.confidence}, reason=${layer2Result.reason}")
-                return layer2Result
+        // 使用录音识别结果判断
+        Log.d(TAG, "--- 录音识别判断 (keywordCallType=${context.keywordCallType}, keywords=${context.detectedKeywords}) ---")
+
+        // 检查是否已进入 OFFHOOK 状态
+        val hasOffhook = context.offhookDuration > 0
+
+        // 检查 keywordCallType 是否为有效值（VOICEMAIL/HUMAN）
+        if (context.keywordCallType != KeywordCallType.UNKNOWN) {
+            val result = classifyByKeywords(context)
+            if (result != null) {
+                Log.d(TAG, "录音识别判断完成: type=${result.type}, confidence=${result.confidence}, reason=${result.reason}")
+                return result
             }
         } else {
-            Log.d(TAG, "第二层跳过: enabled=$audioAnalysisEnabled, pattern=${context.audioEnergyPattern}")
+            Log.d(TAG, "录音识别跳过: keywordCallType=${context.keywordCallType}")
         }
-        
-        // 第三层：AI关键词识别（如果启用）
-        val aiDetectionEnabled = featureToggleManager.isEnabled(
-            FeatureToggle.AI_KEYWORD_DETECTION
-        )
-        Log.d(TAG, "--- 第三层：AI关键词识别 (enabled=$aiDetectionEnabled, keywordCallType=${context.keywordCallType}, keywords=${context.detectedKeywords}) ---")
 
-        // 修改判断条件：检查 keywordCallType 是否为有效值（VOICEMAIL/HUMAN/IVR），或 keywords 不为空
-        if (aiDetectionEnabled && context.keywordCallType != KeywordCallType.UNKNOWN) {
-            val layer3Result = classifyByKeywords(context)
-            if (layer3Result != null) {
-                Log.d(TAG, "第三层判断完成: type=${layer3Result.type}, confidence=${layer3Result.confidence}, reason=${layer3Result.reason}")
-                return layer3Result
-            }
+        // 根据 OFFHOOK 状态返回默认结果
+        if (hasOffhook) {
+            // OFFHOOK 状态下没识别到文本，默认为语音信箱
+            Log.d(TAG, "========== OFFHOOK状态但未识别到文本，默认返回 VOICEMAIL（语音信箱）==========")
+            return CallResult(
+                type = CallResultType.VOICEMAIL,
+                confidence = 0.60f,
+                reason = "OFFHOOK状态下未识别到语音文本，默认为语音信箱",
+                layer = 1
+            )
         } else {
-            Log.d(TAG, "第三层跳过: enabled=$aiDetectionEnabled, keywordCallType=${context.keywordCallType}")
+            // 没有 OFFHOOK，确实是响铃未接听
+            Log.d(TAG, "========== 未进入OFFHOOK状态，返回 NO_ANSWER（响铃未接听）==========")
+            return CallResult.NO_ANSWER.copy(
+                confidence = 0.50f,
+                reason = "未进入OFFHOOK状态，响铃未接听",
+                layer = 1
+            )
         }
-
-        // 无法确定，返回 NO_ANSWER（响铃未接听）
-        Log.d(TAG, "========== 无法自动判断为已接听或语音信箱，返回 NO_ANSWER（响铃未接听）==========")
-        return CallResult.NO_ANSWER.copy(
-            confidence = 0.50f,
-            reason = "无法自动判断，默认为响铃未接听",
-            layer = 3
-        )
     }
     
     /**
-     * 第一层：基于时长的快速判断
-     */
-    private fun classifyByDuration(context: CallContext): CallResult? {
-        val offhookDuration = context.offhookDuration
-        val alertingDuration = context.alertingDuration
-        
-        // 高置信度判断：极短通话
-        if (offhookDuration < VOICEMAIL_THRESHOLD_MIN) {
-            return CallResult(
-                type = CallResultType.VOICEMAIL,
-                confidence = 0.95f,
-                reason = "OFFHOOK时长<3秒，极可能是语音信箱",
-                layer = 1
-            )
-        }
-        
-        // 高置信度判断：较长通话
-        if (offhookDuration > CONNECTED_THRESHOLD) {
-            return CallResult(
-                type = CallResultType.CONNECTED,
-                confidence = 0.90f,
-                reason = "OFFHOOK时长>20秒，极可能是用户接听",
-                layer = 1
-            )
-        }
-        
-        // 快速转接特征：响铃很短就接通
-        if (alertingDuration < QUICK_TRANSFER_THRESHOLD && 
-            alertingDuration > 0 &&
-            offhookDuration < VOICEMAIL_THRESHOLD_MAX) {
-            return CallResult(
-                type = CallResultType.VOICEMAIL,
-                confidence = 0.80f,
-                reason = "响铃时间<5秒且OFFHOOK<8秒，可能是语音信箱",
-                layer = 1
-            )
-        }
-        
-        // 正常响铃 + 中等时长：可能是用户接听
-        if (alertingDuration >= NORMAL_ALERTING_MIN &&
-            offhookDuration >= VOICEMAIL_THRESHOLD_MAX) {
-            return CallResult(
-                type = CallResultType.CONNECTED,
-                confidence = 0.75f,
-                reason = "正常响铃时间且OFFHOOK>=8秒，可能是用户接听",
-                layer = 1
-            )
-        }
-
-        // Root 设备精确状态检测
-        context.rootDetectedState?.let { state ->
-            return when (state) {
-                RootCallEndState.VOICEMAIL_DETECTED -> CallResult(
-                    type = CallResultType.VOICEMAIL,
-                    confidence = 0.95f,
-                    reason = "Root检测到语音信箱",
-                    layer = 1
-                )
-                RootCallEndState.NORMAL_CLEARING -> {
-                    // 正常挂断，需要结合时长判断
-                    if (context.hasActiveState) {
-                        CallResult(
-                            type = CallResultType.CONNECTED,
-                            confidence = 0.90f,
-                            reason = "Root检测到ACTIVE状态",
-                            layer = 1
-                        )
-                    } else {
-                        null
-                    }
-                }
-                else -> null
-            }
-        }
-        
-        // 中间区间：需要进一步判断
-        return null
-    }
-    
-    /**
-     * 第二层：音频能量分析
-     */
-    private fun classifyByAudioEnergy(context: CallContext): CallResult? {
-        return when (context.audioEnergyPattern) {
-            AudioEnergyPattern.STEADY -> CallResult(
-                type = CallResultType.VOICEMAIL,
-                confidence = 0.85f,
-                reason = "音频能量平稳，单向播放特征",
-                layer = 2
-            )
-            AudioEnergyPattern.FLUCTUATING -> CallResult(
-                type = CallResultType.CONNECTED,
-                confidence = 0.85f,
-                reason = "音频能量波动，双向对话特征",
-                layer = 2
-            )
-            AudioEnergyPattern.MODERATE -> {
-                // 中等波动，结合其他因素判断
-                if (context.offhookDuration > 10000) {
-                    CallResult(
-                        type = CallResultType.CONNECTED,
-                        confidence = 0.70f,
-                        reason = "中等能量波动且时长>10秒",
-                        layer = 2
-                    )
-                } else {
-                    null
-                }
-            }
-            AudioEnergyPattern.UNKNOWN -> null
-        }
-    }
-
-    /**
-     * 第三层：AI关键词识别
+     * 录音识别判断
      */
     private fun classifyByKeywords(context: CallContext): CallResult? {
         val keywordCallType = context.keywordCallType ?: return null
@@ -363,18 +225,19 @@ class CallResultClassifier(
      * 传统判断方式（功能开关关闭时使用）
      */
     private fun classifyLegacy(context: CallContext): CallResult {
-        // 使用时长阈值判断
+        // 使用时长阈值判断（默认20秒）
+        val thresholdMs = 20000L
         return when {
-            context.offhookDuration < CONNECTED_THRESHOLD -> CallResult(
+            context.offhookDuration < thresholdMs -> CallResult(
                 type = CallResultType.VOICEMAIL,
                 confidence = 0.60f,
-                reason = "传统判断：OFFHOOK<${CONNECTED_THRESHOLD/1000}秒",
+                reason = "传统判断：OFFHOOK<20秒",
                 layer = 0
             )
             else -> CallResult(
                 type = CallResultType.CONNECTED,
                 confidence = 0.70f,
-                reason = "传统判断：OFFHOOK>=${CONNECTED_THRESHOLD/1000}秒",
+                reason = "传统判断：OFFHOOK>=20秒",
                 layer = 0
             )
         }

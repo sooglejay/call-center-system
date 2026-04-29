@@ -27,6 +27,7 @@ import com.callcenter.app.data.model.AgentRanking
 import com.callcenter.app.data.model.CallRecord
 import com.callcenter.app.data.model.DashboardStats
 import com.callcenter.app.util.VersionInfoUtil
+import com.callcenter.app.ui.util.rememberDebounceOnClick
 import com.callcenter.app.ui.viewmodel.DashboardViewModel
 import com.callcenter.app.ui.viewmodel.MyStatsViewModel
 
@@ -119,7 +120,7 @@ fun DashboardScreen(
             TopAppBar(
                 title = { Text(VersionInfoUtil.getTitleWithVersion(context, "管理仪表盘")) },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = rememberDebounceOnClick() { onNavigateBack() }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                     }
                 },

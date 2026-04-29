@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.callcenter.app.ui.viewmodel.AuthViewModel
 import com.callcenter.app.util.Constants
+import com.callcenter.app.ui.util.rememberDebounceOnClick
 
 @Composable
 fun LoginScreen(
@@ -164,6 +165,12 @@ fun LoginScreen(
                     modifier = Modifier.fillMaxWidth(0.9f)
                 ) {
                     savedAccounts.forEach { (savedUser, savedPass) ->
+                        val onSelectAccount = rememberDebounceOnClick() {
+                            username = savedUser
+                            password = savedPass
+                            showAccountDropdown = false
+                            focusManager.clearFocus() // 隐藏键盘
+                        }
                         DropdownMenuItem(
                             text = {
                                 Row(
@@ -199,12 +206,7 @@ fun LoginScreen(
                                     }
                                 }
                             },
-                            onClick = {
-                                username = savedUser
-                                password = savedPass
-                                showAccountDropdown = false
-                                focusManager.clearFocus() // 隐藏键盘
-                            }
+                            onClick = onSelectAccount
                         )
                     }
                 }
@@ -278,11 +280,13 @@ fun LoginScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             // 登录按钮
+            val onLoginClick = rememberDebounceOnClick() {
+                focusManager.clearFocus()
+                viewModel.login(username.trim(), password.trim(), serverUrl.trim())
+            }
+
             Button(
-                onClick = {
-                    focusManager.clearFocus()
-                    viewModel.login(username.trim(), password.trim(), serverUrl.trim())
-                },
+                onClick = onLoginClick,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp),

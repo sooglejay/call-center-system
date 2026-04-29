@@ -22,6 +22,10 @@ import com.callcenter.app.data.model.UpdateTaskCustomerStatusRequest
 import com.callcenter.app.data.local.preferences.AutoDialProgressManager
 import com.callcenter.app.data.local.preferences.AutoDialProgress
 import com.callcenter.app.data.local.preferences.TokenManager
+import com.callcenter.app.data.local.preferences.FeatureToggle
+import com.callcenter.app.data.local.preferences.FeatureToggleManager
+import com.callcenter.app.data.local.preferences.AppConfig
+import com.callcenter.app.data.local.preferences.AppConfigManager
 import com.callcenter.app.data.repository.CallRecordRepository
 import com.callcenter.app.data.repository.TaskRepository
 import com.callcenter.app.ui.activity.PermissionRequestActivity
@@ -32,7 +36,6 @@ import com.callcenter.app.util.DebugLogger
 import com.callcenter.app.util.FloatingWindowManager
 import com.callcenter.app.util.UserNotifier
 import com.callcenter.app.util.call.AudioEnergyAnalyzer
-import com.callcenter.app.util.call.AudioEnergyPattern
 import com.callcenter.app.util.call.CallContext
 import com.callcenter.app.util.call.CallResultClassifier
 import com.callcenter.app.util.call.CallResultType
@@ -161,6 +164,12 @@ class AutoDialService : Service() {
 
     @Inject
     lateinit var callResultClassifier: CallResultClassifier
+
+    @Inject
+    lateinit var featureToggleManager: FeatureToggleManager
+
+    @Inject
+    lateinit var appConfigManager: AppConfigManager
 
     private var job: Job? = null
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -1562,11 +1571,8 @@ class AutoDialService : Service() {
         var hasAlertingState = false
         var hasActiveState = false
 
-        // 音频能量分析器
+        // 录音识别器
         var audioEnergyAnalyzer: AudioEnergyAnalyzer? = null
-        var audioEnergyPattern = AudioEnergyPattern.UNKNOWN
-
-        // 关键词检测器
         var keywordDetector: KeywordDetector? = null
         var detectedKeywords = emptyList<String>()
         var keywordCallType: KeywordCallType? = null
@@ -1636,33 +1642,29 @@ class AutoDialService : Service() {
                             delay(300)  // 缩短延迟到300ms
                             enableSpeakerphoneWithRetry()
 
-                            // 启动音频能量分析（同时保存音频数据用于关键词识别）
+                            // 启动录音识别
                             serviceScope.launch {
                                 try {
-                                    DebugLogger.logSeparator("音频能量分析启动")
-                                    DebugLogger.log("[AudioAnalysis] 创建 AudioEnergyAnalyzer 实例")
+                                    DebugLogger.logSeparator("录音识别启动")
+                                    DebugLogger.log("[RecordDetect] 创建录音识别实例")
                                     audioEnergyAnalyzer = AudioEnergyAnalyzer(this@AutoDialService)
                                     
                                     // 检查是否启用了关键词检测功能
                                     val keywordDetectionEnabled = try {
                                         val enabled = callResultClassifier.isKeywordDetectionEnabled()
-                                        DebugLogger.log("[AudioAnalysis] 关键词检测功能开关: $enabled")
+                                        DebugLogger.log("[RecordDetect] 录音识别功能开关: $enabled")
                                         enabled
                                     } catch (e: Exception) {
-                                        DebugLogger.log("[AudioAnalysis] 检查关键词检测功能异常: ${e.message}")
+                                        DebugLogger.log("[RecordDetect] 检查功能开关异常: ${e.message}")
                                         false
                                     }
                                     
-                                    // 设置是否保存音频数据
-                                    audioEnergyAnalyzer?.setSaveAudioData(keywordDetectionEnabled)
-                                    DebugLogger.log("[AudioAnalysis] 保存音频数据: $keywordDetectionEnabled")
-                                    
                                     // 检查录音权限
                                     val hasRecordPermission = audioEnergyAnalyzer?.hasRecordPermission() ?: false
-                                    DebugLogger.log("[AudioAnalysis] 录音权限: $hasRecordPermission")
+                                    DebugLogger.log("[RecordDetect] 录音权限: $hasRecordPermission")
                                     
                                     if (!hasRecordPermission) {
-                                        DebugLogger.log("[AudioAnalysis] ✗ 无录音权限，无法进行音频分析")
+                                        DebugLogger.log("[RecordDetect] ✗ 无录音权限，无法进行录音识别")
                                         FloatingCustomerService.addCallStateHistory(
                                             "无录音权限",
                                             _currentCustomer.value?.phone,
@@ -1672,31 +1674,25 @@ class AutoDialService : Service() {
                                         return@launch
                                     }
                                     
-                                    // ⚠️ 重要：等待免提开启后再开始录音
-                                    // 免提未开启时录音会录不到对方声音
-                                    DebugLogger.log("[AudioAnalysis] 等待免提开启...")
-                                    DebugLogger.log("[AudioAnalysis] InCallService 是否激活: ${AutoSpeakerInCallService.isServiceActive}")
+                                    // 等待免提开启后再开始录音
+                                    DebugLogger.log("[RecordDetect] 等待免提开启...")
+                                    DebugLogger.log("[RecordDetect] InCallService 是否激活: ${AutoSpeakerInCallService.isServiceActive}")
                                     
                                     var speakerWaitCount = 0
                                     val maxSpeakerWait = 20 // 最多等待 2 秒
                                     while (!audioEnergyAnalyzer!!.isSpeakerphoneOn() && speakerWaitCount < maxSpeakerWait) {
                                         delay(100)
                                         speakerWaitCount++
-                                        // 每 500ms 打印一次状态
                                         if (speakerWaitCount % 5 == 0) {
-                                            DebugLogger.log("[AudioAnalysis] 免提等待中... (${speakerWaitCount * 100}ms, speakerOn=${audioEnergyAnalyzer!!.isSpeakerphoneOn()})")
+                                            DebugLogger.log("[RecordDetect] 免提等待中... (${speakerWaitCount * 100}ms)")
                                         }
                                     }
                                     
                                     val speakerOn = audioEnergyAnalyzer!!.isSpeakerphoneOn()
                                     if (speakerOn) {
-                                        DebugLogger.log("[AudioAnalysis] ✓ 免提已开启 (等待了 ${speakerWaitCount * 100}ms)")
+                                        DebugLogger.log("[RecordDetect] ✓ 免提已开启 (等待了 ${speakerWaitCount * 100}ms)")
                                     } else {
-                                        DebugLogger.log("[AudioAnalysis] ✗✗✗ 免提等待超时！将无法录制通话声音")
-                                        DebugLogger.log("[AudioAnalysis] 可能原因:")
-                                        DebugLogger.log("[AudioAnalysis]   1. 应用未设为默认电话应用")
-                                        DebugLogger.log("[AudioAnalysis]   2. InCallService 未启动")
-                                        DebugLogger.log("[AudioAnalysis]   3. 系统禁用了免提")
+                                        DebugLogger.log("[RecordDetect] ✗ 免提等待超时！将无法录制通话声音")
                                         FloatingCustomerService.addCallStateHistory(
                                             "免提未开启",
                                             _currentCustomer.value?.phone,
@@ -1705,32 +1701,37 @@ class AutoDialService : Service() {
                                     }
                                     
                                     // 启动音频采集
-                                    DebugLogger.log("[AudioAnalysis] 开始启动音频采集...")
+                                    DebugLogger.log("[RecordDetect] 开始启动录音...")
                                     val started = audioEnergyAnalyzer?.start() ?: false
                                     
                                     if (started) {
-                                        Log.d(TAG, "音频能量分析已启动")
-                                        DebugLogger.log("[AudioAnalysis] ✓ 音频能量分析启动成功")
+                                        Log.d(TAG, "录音识别已启动")
+                                        DebugLogger.log("[RecordDetect] ✓ 录音识别启动成功")
                                         FloatingCustomerService.addCallStateHistory(
-                                            "音频分析中",
+                                            "录音识别中",
                                             _currentCustomer.value?.phone,
                                             _currentCustomer.value?.name
                                         )
                                         
-                                        // ====== 实时语音识别：区分语音信箱和真人接听 ======
-                                        // 启动实时识别，如果在6秒内识别到文本（长度>5），则判定为真人
-                                        // 如果6秒内未识别到任何文本，则判定为语音信箱
+                                        // 实时语音识别：区分语音信箱和真人接听
+                                        // 如果在配置的时间内识别到文本（长度超过阈值），则判定为真人
+                                        // 如果超时仍未识别到任何文本，则判定为语音信箱
                                         if (keywordDetectionEnabled && audioEnergyAnalyzer != null) {
                                             serviceScope.launch {
                                                 try {
                                                     DebugLogger.log("[RealTimeDetect] ========== 开始实时语音识别 ==========")
+                                                    
+                                                    // 从配置读取超时时间和文本长度阈值
+                                                    val timeoutSeconds = appConfigManager.getValue(AppConfig.REALTIME_RECOGNITION_TIMEOUT)
+                                                    val textLengthThreshold = appConfigManager.getValue(AppConfig.TEXT_LENGTH_THRESHOLD)
+                                                    val maxCheckTime = timeoutSeconds * 1000L
+                                                    DebugLogger.log("[RealTimeDetect] 配置: 超时=${timeoutSeconds}秒, 文本长度阈值=$textLengthThreshold")
                                                     
                                                     // 初始化关键词检测器
                                                     if (keywordDetector == null) {
                                                         keywordDetector = KeywordDetector(this@AutoDialService)
                                                     }
                                                     
-                                                    val maxCheckTime = 6000L // 最多检查6秒
                                                     val checkInterval = 1000L // 每秒检查一次
                                                     val startTime = System.currentTimeMillis()
                                                     var detectedAsHuman = false
@@ -1757,10 +1758,10 @@ class AutoDialService : Service() {
                                                         val elapsed = System.currentTimeMillis() - startTime
                                                         DebugLogger.log("[RealTimeDetect] ${elapsed}ms: 识别文本长度=$textLength")
                                                         
-                                                        // 如果识别到文本（长度 > 5），判定为真人
-                                                        if (textLength > 5) {
+                                                        // 如果识别到文本长度超过阈值，判定为真人
+                                                        if (textLength > textLengthThreshold) {
                                                             detectedAsHuman = true
-                                                            DebugLogger.log("[RealTimeDetect] ✓✓✓ 检测到文本长度>$5，判定为真人接听！")
+                                                            DebugLogger.log("[RealTimeDetect] ✓✓✓ 检测到文本长度>$textLengthThreshold，判定为真人接听！")
                                                             DebugLogger.log("[RealTimeDetect] 识别耗时: ${elapsed}ms")
                                                             
                                                             // 立即更新状态
@@ -1776,7 +1777,7 @@ class AutoDialService : Service() {
                                                         }
                                                     }
                                                     
-                                                    // 如果6秒后仍未识别到文本，判定为语音信箱
+                                                    // 如果超时仍未识别到文本，判定为语音信箱
                                                     if (!detectedAsHuman) {
                                                         val totalTime = System.currentTimeMillis() - startTime
                                                         DebugLogger.log("[RealTimeDetect] ✗ ${totalTime}ms内未识别到文本，判定为语音信箱")
@@ -1789,6 +1790,28 @@ class AutoDialService : Service() {
                                                             _currentCustomer.value?.phone,
                                                             _currentCustomer.value?.name
                                                         )
+                                                        
+                                                        // 检查是否开启了语音信箱自动挂断功能
+                                                        try {
+                                                            val autoHangupEnabled = featureToggleManager.isEnabled(FeatureToggle.AUTO_HANGUP_ON_VOICEMAIL)
+                                                            if (autoHangupEnabled) {
+                                                                DebugLogger.log("[VoicemailAutoHangup] 检测到语音信箱，自动挂断并拨打下一个")
+                                                                FloatingCustomerService.addCallStateHistory(
+                                                                    "自动挂断语音信箱",
+                                                                    _currentCustomer.value?.phone,
+                                                                    _currentCustomer.value?.name
+                                                                )
+                                                                
+                                                                // 挂断当前电话
+                                                                hangupCurrentCall()
+                                                                
+                                                                // 标记为语音信箱
+                                                                lastResolvedCallResult = "语音信箱"
+                                                                autoMarkCallStatus("voicemail", "语音信箱自动挂断")
+                                                            }
+                                                        } catch (e: Exception) {
+                                                            DebugLogger.log("[VoicemailAutoHangup] 检查开关失败: ${e.message}")
+                                                        }
                                                     }
                                                     
                                                     DebugLogger.log("[RealTimeDetect] ========== 实时识别结束 ==========")
@@ -1809,9 +1832,8 @@ class AutoDialService : Service() {
                                         audioEnergyAnalyzer = null
                                     }
                                 } catch (e: Exception) {
-                                    Log.e(TAG, "启动音频能量分析异常: ${e.message}")
-                                    DebugLogger.log("[AudioAnalysis] ✗ 启动异常: ${e.message}")
-                                    DebugLogger.log("[AudioAnalysis] 异常堆栈: ${e.stackTraceToString().take(500)}")
+                                    Log.e(TAG, "启动录音识别异常: ${e.message}")
+                                    DebugLogger.log("[RecordDetect] ✗ 启动异常: ${e.message}")
                                     audioEnergyAnalyzer = null
                                 }
                             }
@@ -1851,138 +1873,18 @@ class AutoDialService : Service() {
                                     DebugLogger.log("[WaitCall] ✓ 立即标记 lastCallWasConnected=true, callDuration=${callDuration}ms")
                                 }
 
-                                // 停止音频能量分析并获取结果
-                                DebugLogger.logSeparator("停止音频能量分析")
-                                Log.d(TAG, "开始停止音频能量分析...")
-                                DebugLogger.log("[AudioAnalysis] 停止音频能量分析...")
+                                // 停止录音识别
+                                DebugLogger.logSeparator("停止录音识别")
+                                Log.d(TAG, "开始停止录音识别...")
+                                DebugLogger.log("[RecordDetect] 停止录音识别...")
                                 
                                 try {
-                                    val audioResult = audioEnergyAnalyzer?.stopAndAnalyze()
-                                    audioEnergyPattern = audioResult?.pattern ?: AudioEnergyPattern.UNKNOWN
-                                    
-                                    // 详细记录音频分析结果
-                                    DebugLogger.log("[AudioAnalysis] ========== 音频分析结果 ==========")
-                                    DebugLogger.log("[AudioAnalysis] 模式: $audioEnergyPattern")
-                                    DebugLogger.log("[AudioAnalysis] 置信度: ${audioResult?.confidence}")
-                                    DebugLogger.log("[AudioAnalysis] 平均能量: ${audioResult?.averageEnergy}")
-                                    DebugLogger.log("[AudioAnalysis] 能量变化次数: ${audioResult?.energyChanges}")
-                                    DebugLogger.log("[AudioAnalysis] 分析时长: ${audioResult?.durationMs}ms")
-                                    DebugLogger.log("[AudioAnalysis] 原因: ${audioResult?.reason}")
-                                    DebugLogger.log("[AudioAnalysis] 音频文件: ${audioResult?.audioFilePath}")
-                                    
-                                    Log.d(TAG, "音频能量分析结果: pattern=$audioEnergyPattern, confidence=${audioResult?.confidence}, reason=${audioResult?.reason}")
-                                    
-                                    if (audioResult != null && audioEnergyPattern != AudioEnergyPattern.UNKNOWN) {
-                                        FloatingCustomerService.addCallStateHistory(
-                                            "音频分析: ${audioEnergyPattern.name}",
-                                            _currentCustomer.value?.phone,
-                                            _currentCustomer.value?.name
-                                        )
-                                    } else {
-                                        DebugLogger.log("[AudioAnalysis] ✗ 音频分析结果无效或未知")
-                                    }
-
-                                    // 如果有音频文件，进行关键词识别
-                                    var audioFilePath = audioResult?.audioFilePath
-                                    DebugLogger.log("[KeywordDetect] 音频文件路径: $audioFilePath")
-                                    
-                                    // 如果没有音频文件（可能是因为录音能量太低），尝试从系统录音目录读取
-                                    if (audioFilePath.isNullOrBlank()) {
-                                        DebugLogger.log("[KeywordDetect] 尝试从系统录音目录查找录音文件...")
-                                        val callStartTime = offHookStartTime // 通话开始时间
-                                        val systemRecording = CallRecordingManager.findLatestSystemRecording(
-                                            _currentCustomer.value?.phone,
-                                            callStartTime
-                                        )
-                                        if (systemRecording != null) {
-                                            audioFilePath = systemRecording.absolutePath
-                                            DebugLogger.log("[KeywordDetect] ✓ 找到系统录音: $audioFilePath")
-                                            DebugLogger.log("[KeywordDetect] 文件大小: ${systemRecording.length()} bytes")
-                                            FloatingCustomerService.addCallStateHistory(
-                                                "发现系统录音",
-                                                _currentCustomer.value?.phone,
-                                                _currentCustomer.value?.name
-                                            )
-                                        } else {
-                                            DebugLogger.log("[KeywordDetect] ✗ 未找到系统录音文件")
-                                        }
-                                    }
-                                    
-                                    if (!audioFilePath.isNullOrBlank()) {
-                                        DebugLogger.logSeparator("关键词识别")
-                                        try {
-                                            keywordDetector = KeywordDetector(this@AutoDialService)
-                                            
-                                            // 检查模型是否可用
-                                            val modelInit = keywordDetector?.init() ?: false
-                                            val modelAvailable = keywordDetector?.isModelAvailable() ?: false
-                                            val availableModels = keywordDetector?.getAvailableModels() ?: emptyList()
-                                            
-                                            DebugLogger.log("[KeywordDetect] 模型初始化: $modelInit")
-                                            DebugLogger.log("[KeywordDetect] 模型可用: $modelAvailable")
-                                            DebugLogger.log("[KeywordDetect] 可用模型列表: $availableModels")
-                                            
-                                            if (modelInit && modelAvailable) {
-                                                Log.d(TAG, "开始从音频文件识别关键词: $audioFilePath")
-                                                DebugLogger.log("[KeywordDetect] 开始识别音频文件: $audioFilePath")
-                                                DebugLogger.log("[KeywordDetect] 音频文件大小: ${File(audioFilePath).length()} bytes")
-                                                
-                                                FloatingCustomerService.addCallStateHistory(
-                                                    "关键词识别中",
-                                                    _currentCustomer.value?.phone,
-                                                    _currentCustomer.value?.name
-                                                )
-                                                
-                                                val keywordResult = keywordDetector?.recognizeFromFile(audioFilePath)
-                                                detectedKeywords = keywordResult?.keywords ?: emptyList()
-                                                keywordCallType = keywordResult?.callType
-                                                
-                                                // 详细记录关键词识别结果
-                                                DebugLogger.log("[KeywordDetect] ========== 关键词识别结果 ==========")
-                                                DebugLogger.log("[KeywordDetect] 检测到关键词: ${keywordResult?.detected}")
-                                                DebugLogger.log("[KeywordDetect] 通话类型: $keywordCallType")
-                                                DebugLogger.log("[KeywordDetect] 关键词列表: $detectedKeywords")
-                                                DebugLogger.log("[KeywordDetect] 置信度: ${keywordResult?.confidence}")
-                                                DebugLogger.log("[KeywordDetect] 完整文本: ${keywordResult?.fullText}")
-                                                DebugLogger.log("[KeywordDetect] 原因: ${keywordResult?.reason}")
-                                                
-                                                Log.d(TAG, "关键词检测结果: type=$keywordCallType, keywords=$detectedKeywords, text=${keywordResult?.fullText}")
-                                                
-                                                if (keywordResult != null && keywordResult.detected) {
-                                                    FloatingCustomerService.addCallStateHistory(
-                                                        "关键词: ${keywordResult.keywords.joinToString()}",
-                                                        _currentCustomer.value?.phone,
-                                                        _currentCustomer.value?.name
-                                                    )
-                                                } else {
-                                                    DebugLogger.log("[KeywordDetect] ✗ 未检测到有效关键词")
-                                                }
-                                            } else {
-                                                Log.d(TAG, "Vosk模型不可用，跳过关键词识别")
-                                                DebugLogger.log("[KeywordDetect] ✗ Vosk模型不可用，跳过关键词识别")
-                                                DebugLogger.log("[KeywordDetect] 提示: 请在权限测试页面下载语音识别模型")
-                                            }
-                                        } catch (e: Exception) {
-                                            Log.e(TAG, "关键词识别异常: ${e.message}")
-                                            DebugLogger.log("[KeywordDetect] ✗ 关键词识别异常: ${e.message}")
-                                            DebugLogger.log("[KeywordDetect] 异常堆栈: ${e.stackTraceToString().take(500)}")
-                                        } finally {
-                                            keywordDetector?.release()
-                                            keywordDetector = null
-                                            DebugLogger.log("[KeywordDetect] 关键词检测器已释放")
-                                        }
-                                    } else {
-                                        DebugLogger.log("[KeywordDetect] ✗ 无音频文件，跳过关键词识别")
-                                        DebugLogger.log("[KeywordDetect] 可能原因:")
-                                        DebugLogger.log("[KeywordDetect]   1. 未开启关键词检测功能")
-                                        DebugLogger.log("[KeywordDetect]   2. 录音失败（Android 10+ 限制）")
-                                        DebugLogger.log("[KeywordDetect]   3. 系统录音目录未找到或无权限")
-                                        DebugLogger.log("[KeywordDetect] 提示: 请确保手机已开启系统通话录音功能")
-                                    }
+                                    // 停止录音
+                                    audioEnergyAnalyzer?.stopAndAnalyze()
+                                    DebugLogger.log("[RecordDetect] ✓ 录音识别已停止")
                                 } catch (e: Exception) {
-                                    Log.e(TAG, "停止音频能量分析异常: ${e.message}")
-                                    DebugLogger.log("[AudioAnalysis] ✗ 停止音频分析异常: ${e.message}")
-                                    DebugLogger.log("[AudioAnalysis] 异常堆栈: ${e.stackTraceToString().take(500)}")
+                                    Log.e(TAG, "停止录音识别异常: ${e.message}")
+                                    DebugLogger.log("[RecordDetect] ✗ 停止录音识别异常: ${e.message}")
                                 }
                                 audioEnergyAnalyzer = null
 
@@ -1990,26 +1892,13 @@ class AutoDialService : Service() {
                                 DebugLogger.logSeparator("智能分类判断")
                                 Log.d(TAG, "开始智能分类判断...")
                                 
-                                val alertingDuration = if (hasAlertingState && alertingStartTime > 0) {
-                                    offHookStartTime - alertingStartTime
-                                } else 0
-                                
                                 DebugLogger.log("[Classify] ========== 分类参数 ==========")
                                 DebugLogger.log("[Classify] 通话时长(offhookDuration): $callDuration ms")
-                                DebugLogger.log("[Classify] 响铃时长(alertingDuration): $alertingDuration ms")
-                                DebugLogger.log("[Classify] 是否有ACTIVE状态: $hasActiveState")
-                                DebugLogger.log("[Classify] 是否有ALERTING状态: $hasAlertingState")
-                                DebugLogger.log("[Classify] 音频能量模式: $audioEnergyPattern")
                                 DebugLogger.log("[Classify] 关键词类型: $keywordCallType")
                                 DebugLogger.log("[Classify] 检测到的关键词: $detectedKeywords")
-                                Log.d(TAG, "分类参数: offhookDuration=$callDuration, hasActiveState=$hasActiveState, audioEnergyPattern=$audioEnergyPattern")
                                 
                                 val callResult = determineCallResult(
                                     offhookDuration = callDuration,
-                                    alertingDuration = alertingDuration,
-                                    hasActiveState = hasActiveState,
-                                    hasAlertingState = hasAlertingState,
-                                    audioEnergyPattern = audioEnergyPattern,
                                     detectedKeywords = detectedKeywords,
                                     keywordCallType = keywordCallType
                                 )
@@ -2180,22 +2069,13 @@ class AutoDialService : Service() {
      */
     private suspend fun determineCallResult(
         offhookDuration: Long,
-        alertingDuration: Long,
-        hasActiveState: Boolean,
-        hasAlertingState: Boolean,
-        audioEnergyPattern: AudioEnergyPattern = AudioEnergyPattern.UNKNOWN,
         detectedKeywords: List<String> = emptyList(),
         keywordCallType: KeywordCallType? = null
     ): Pair<Boolean, String> {
         // 构建通话上下文
         val context = CallContext(
             offhookDuration = offhookDuration,
-            alertingDuration = alertingDuration,
             totalDuration = offhookDuration,
-            hasActiveState = hasActiveState,
-            hasAlertingState = hasAlertingState,
-            audioEnergyPattern = audioEnergyPattern,
-            rootDetectedState = null, // Root状态由 RootCallStateDetector 单独处理
             detectedKeywords = detectedKeywords,
             keywordCallType = keywordCallType
         )
@@ -2203,7 +2083,7 @@ class AutoDialService : Service() {
         // 使用分类器判断
         val result = callResultClassifier.classify(context)
 
-        Log.d(TAG, "智能分类结果: type=${result.type}, confidence=${result.confidence}, reason=${result.reason}, layer=${result.layer}, audioPattern=$audioEnergyPattern, keywords=$detectedKeywords")
+        Log.d(TAG, "智能分类结果: type=${result.type}, confidence=${result.confidence}, reason=${result.reason}, keywords=$detectedKeywords")
 
         return when (result.type) {
             CallResultType.CONNECTED -> {

@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.callcenter.app.data.local.preferences.FeatureToggle
 import com.callcenter.app.data.local.preferences.ToggleCategory
+import com.callcenter.app.ui.util.rememberDebounceOnClick
 import com.callcenter.app.ui.viewmodel.FeatureToggleViewModel
 import com.callcenter.app.ui.viewmodel.SettingsViewModel
 import com.callcenter.app.util.VersionInfoUtil
@@ -56,7 +57,7 @@ fun FeatureToggleScreen(
             TopAppBar(
                 title = { Text(VersionInfoUtil.getTitleWithVersion(context, "功能开关")) },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = rememberDebounceOnClick() { onNavigateBack() }) {
                         Icon(Icons.Default.ArrowBack, "返回")
                     }
                 },

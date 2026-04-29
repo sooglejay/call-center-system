@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.callcenter.app.util.VersionInfoUtil
+import com.callcenter.app.ui.util.rememberDebounceOnClick
 import com.callcenter.app.ui.viewmodel.CallSettingsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -49,7 +50,7 @@ fun CallSettingsScreen(
             TopAppBar(
                 title = { Text(VersionInfoUtil.getTitleWithVersion(context, "通话设置")) },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = rememberDebounceOnClick() { onNavigateBack() }) {
                         Icon(Icons.Default.ArrowBack, "返回")
                     }
                 },

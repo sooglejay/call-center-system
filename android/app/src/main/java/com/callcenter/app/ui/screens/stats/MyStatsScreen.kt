@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.callcenter.app.data.model.Stats
 import com.callcenter.app.util.VersionInfoUtil
+import com.callcenter.app.ui.util.rememberDebounceOnClick
 import com.callcenter.app.ui.viewmodel.MyStatsViewModel
 
 /**
@@ -44,7 +45,7 @@ fun MyStatsScreen(
             TopAppBar(
                 title = { Text(VersionInfoUtil.getTitleWithVersion(context, "我的统计")) },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = rememberDebounceOnClick() { onNavigateBack() }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                     }
                 },

@@ -25,6 +25,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.callcenter.app.data.model.Stats
 import com.callcenter.app.data.model.User
 import com.callcenter.app.util.VersionInfoUtil
+import com.callcenter.app.ui.util.rememberDebounceOnClick
 import com.callcenter.app.ui.viewmodel.AgentDetailViewModel
 
 /**
@@ -92,7 +93,7 @@ fun AgentDetailScreen(
             TopAppBar(
                 title = { Text(VersionInfoUtil.getTitleWithVersion(context, if (isNewAgent) "添加客服" else "客服详情")) },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = rememberDebounceOnClick() { onNavigateBack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 },

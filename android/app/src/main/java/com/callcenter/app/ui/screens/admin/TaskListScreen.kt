@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.callcenter.app.data.model.Task
 import com.callcenter.app.util.VersionInfoUtil
+import com.callcenter.app.ui.util.rememberDebounceOnClick
 import com.callcenter.app.ui.viewmodel.TaskListViewModel
 
 /**
@@ -55,7 +56,7 @@ fun TaskListScreen(
             TopAppBar(
                 title = { Text(VersionInfoUtil.getTitleWithVersion(context, "任务管理")) },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = rememberDebounceOnClick() { onNavigateBack() }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                     }
                 },

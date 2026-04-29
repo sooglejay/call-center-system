@@ -41,6 +41,7 @@ import com.callcenter.app.data.model.Task
 import com.callcenter.app.data.model.TaskCustomer
 import com.callcenter.app.service.AutoDialService
 import com.callcenter.app.service.CallRecordingManager
+import com.callcenter.app.ui.util.rememberDebounceOnClick
 import com.callcenter.app.ui.viewmodel.AgentTaskViewModel
 import com.callcenter.app.ui.viewmodel.AutoDialViewModel
 import com.callcenter.app.ui.viewmodel.AutoDialConfig
@@ -151,7 +152,7 @@ fun AgentTaskExecutionScreen(
             TopAppBar(
                 title = { Text(VersionInfoUtil.getTitleWithVersion(context, "任务执行")) },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = rememberDebounceOnClick { onNavigateBack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
                     }
                 },
@@ -1210,7 +1211,7 @@ fun AgentCreateRetryTaskScreen(
             TopAppBar(
                 title = { Text("创建任务") },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = rememberDebounceOnClick { onNavigateBack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 }
@@ -1225,7 +1226,7 @@ fun AgentCreateRetryTaskScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     OutlinedButton(
-                        onClick = onNavigateBack,
+                        onClick = rememberDebounceOnClick { onNavigateBack() },
                         modifier = Modifier.weight(1f)
                     ) {
                         Text("取消")

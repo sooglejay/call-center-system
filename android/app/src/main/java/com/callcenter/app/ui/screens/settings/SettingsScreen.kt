@@ -32,6 +32,7 @@ import com.callcenter.app.util.DebugLogger
 import com.callcenter.app.util.DefaultDialerHelper
 import com.callcenter.app.util.UpdateState
 import com.callcenter.app.util.VersionInfoUtil
+import com.callcenter.app.ui.util.rememberDebounceOnClick
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -136,7 +137,7 @@ fun SettingsScreen(
             TopAppBar(
                 title = { Text(VersionInfoUtil.getTitleWithVersion(context, "设置")) },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = rememberDebounceOnClick() { onNavigateBack() }) {
                         Icon(Icons.Default.ArrowBack, "返回")
                     }
                 }
@@ -273,6 +274,13 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             // 切换账号和退出登录按钮
+            val onSwitchAccountClick = rememberDebounceOnClick() { 
+                showSwitchAccountConfirmDialog = true 
+            }
+            val onLogoutClick = rememberDebounceOnClick() { 
+                showLogoutConfirmDialog = true 
+            }
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -281,7 +289,7 @@ fun SettingsScreen(
             ) {
                 // 切换账号按钮
                 OutlinedButton(
-                    onClick = { showSwitchAccountConfirmDialog = true },
+                    onClick = onSwitchAccountClick,
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = MaterialTheme.colorScheme.primary
@@ -294,7 +302,7 @@ fun SettingsScreen(
 
                 // 退出登录按钮
                 Button(
-                    onClick = { showLogoutConfirmDialog = true },
+                    onClick = onLogoutClick,
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.error
@@ -582,6 +590,8 @@ private fun SettingsItem(
     subtitle: String,
     onClick: () -> Unit
 ) {
+    val debouncedOnClick = rememberDebounceOnClick() { onClick() }
+
     ListItem(
         headlineContent = { Text(title) },
         supportingContent = { Text(subtitle) },
@@ -591,7 +601,7 @@ private fun SettingsItem(
         trailingContent = {
             Icon(Icons.Default.ChevronRight, null)
         },
-        modifier = Modifier.clickable(onClick = onClick)
+        modifier = Modifier.clickable(onClick = debouncedOnClick)
     )
 }
 
@@ -710,6 +720,8 @@ private fun VersionSettingsItem(
     currentVersionCode: Int,
     onClick: () -> Unit
 ) {
+    val debouncedOnClick = rememberDebounceOnClick() { onClick() }
+
     ListItem(
         headlineContent = { 
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -758,7 +770,7 @@ private fun VersionSettingsItem(
                 Icon(Icons.Default.ChevronRight, null)
             }
         },
-        modifier = Modifier.clickable(onClick = onClick)
+        modifier = Modifier.clickable(onClick = debouncedOnClick)
     )
 }
 

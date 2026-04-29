@@ -27,6 +27,7 @@ import com.callcenter.app.data.model.CreateTaskRequest
 import com.callcenter.app.data.model.Customer
 import com.callcenter.app.data.model.User
 import com.callcenter.app.util.VersionInfoUtil
+import com.callcenter.app.ui.util.rememberDebounceOnClick
 import com.callcenter.app.ui.viewmodel.CreateTaskViewModel
 
 /**
@@ -98,7 +99,7 @@ fun CreateTaskScreen(
             TopAppBar(
                 title = { Text(VersionInfoUtil.getTitleWithVersion(context, "创建任务")) },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = rememberDebounceOnClick() { onNavigateBack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 }

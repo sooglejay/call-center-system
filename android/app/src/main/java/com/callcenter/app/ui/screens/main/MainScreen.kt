@@ -50,6 +50,7 @@ import com.callcenter.app.util.CallHelper
 import com.callcenter.app.util.VersionInfoUtil
 import com.callcenter.app.util.FloatingWindowManager
 import com.callcenter.app.util.AutoFloatingWindow
+import com.callcenter.app.ui.util.rememberDebounceOnClick
 
 /**
  * 主页面 - 重新设计
@@ -768,9 +769,11 @@ private fun QuickActionButton(
     containerColor: Color? = null,
     onClick: () -> Unit
 ) {
+    val debouncedOnClick = rememberDebounceOnClick() { onClick() }
+
     Card(
         modifier = modifier,
-        onClick = onClick,
+        onClick = debouncedOnClick,
         colors = CardDefaults.cardColors(
             containerColor = containerColor ?: MaterialTheme.colorScheme.surface
         )
@@ -804,11 +807,13 @@ private fun TaskItem(
     task: Task,
     onClick: () -> Unit
 ) {
+    val debouncedOnClick = rememberDebounceOnClick() { onClick() }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
-        onClick = onClick
+        onClick = debouncedOnClick
     ) {
         Row(
             modifier = Modifier
@@ -1059,11 +1064,13 @@ private fun AgentTaskItem(
         (task.completedCount * 100 / task.customerCount)
     } else 0
 
+    val debouncedOnClick = rememberDebounceOnClick() { onClick() }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
-        onClick = onClick
+        onClick = debouncedOnClick
     ) {
         Column(
             modifier = Modifier
@@ -1852,11 +1859,14 @@ private fun AgentTaskItemWithProgress(
         (task.completedCount * 100 / task.customerCount)
     } else 0
 
+    val debouncedOnClick = rememberDebounceOnClick() { onClick() }
+    val debouncedStartDial = rememberDebounceOnClick() { onStartDial() }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
-        onClick = onClick
+        onClick = debouncedOnClick
     ) {
         Column(
             modifier = Modifier
@@ -1968,7 +1978,7 @@ private fun AgentTaskItemWithProgress(
                     // 开始拨号按钮 - 根据实际进度判断是否已完成
                     if (!isAutoDialing && !(task.customerCount > 0 && task.calledCount >= task.customerCount)) {
                         TextButton(
-                            onClick = onStartDial,
+                            onClick = debouncedStartDial,
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                         ) {
                             Icon(
@@ -2874,6 +2884,13 @@ private fun ProfileTab(
         Spacer(modifier = Modifier.height(24.dp))
 
         // 切换账号和退出登录按钮
+        val onSwitchAccountClick = rememberDebounceOnClick() { 
+            showSwitchAccountConfirmDialog = true 
+        }
+        val onLogoutClick = rememberDebounceOnClick() { 
+            showLogoutConfirmDialog = true 
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -2882,7 +2899,7 @@ private fun ProfileTab(
         ) {
             // 切换账号按钮
             OutlinedButton(
-                onClick = { showSwitchAccountConfirmDialog = true },
+                onClick = onSwitchAccountClick,
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.outlinedButtonColors(
                     contentColor = MaterialTheme.colorScheme.primary
@@ -2895,7 +2912,7 @@ private fun ProfileTab(
 
             // 退出登录按钮
             Button(
-                onClick = { showLogoutConfirmDialog = true },
+                onClick = onLogoutClick,
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.error
@@ -3176,6 +3193,8 @@ private fun SettingsItem(
     subtitle: String,
     onClick: () -> Unit
 ) {
+    val debouncedOnClick = rememberDebounceOnClick() { onClick() }
+
     ListItem(
         headlineContent = { Text(title) },
         supportingContent = { Text(subtitle) },
@@ -3185,7 +3204,7 @@ private fun SettingsItem(
         trailingContent = {
             Icon(Icons.Default.ChevronRight, null)
         },
-        modifier = Modifier.clickable(onClick = onClick)
+        modifier = Modifier.clickable(onClick = debouncedOnClick)
     )
 }
 
@@ -3243,12 +3262,15 @@ fun CustomerItem(
     onClick: () -> Unit,
     onLongClick: () -> Unit = {}
 ) {
+    val debouncedOnClick = rememberDebounceOnClick() { onClick() }
+    val debouncedOnCall = rememberDebounceOnClick() { onCall() }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
             .combinedClickable(
-                onClick = onClick,
+                onClick = debouncedOnClick,
                 onLongClick = onLongClick
             ),
         colors = CardDefaults.cardColors(
@@ -3337,7 +3359,7 @@ fun CustomerItem(
 
             // 非多选模式下显示拨打电话按钮
             if (!isMultiSelectMode && customer.status == "pending") {
-                IconButton(onClick = onCall) {
+                IconButton(onClick = debouncedOnCall) {
                     Icon(Icons.Default.Phone, "拨打电话", tint = MaterialTheme.colorScheme.primary)
                 }
             }
@@ -3476,6 +3498,8 @@ private fun TaskListItem(
         (task.completedCount * 100 / task.customerCount)
     } else 0
 
+    val debouncedOnClick = rememberDebounceOnClick() { onClick() }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -3485,7 +3509,7 @@ private fun TaskListItem(
         ),
         shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
-        onClick = onClick
+        onClick = debouncedOnClick
     ) {
         Row(
             modifier = Modifier

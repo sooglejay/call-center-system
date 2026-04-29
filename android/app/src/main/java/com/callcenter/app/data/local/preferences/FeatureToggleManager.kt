@@ -30,53 +30,28 @@ enum class FeatureToggle(
     val category: ToggleCategory
 ) {
     /**
-     * 智能通话结果识别
-     * 使用分层判断策略，更准确地区分"用户接听"和"语音信箱"
+     * 录音识别功能
+     * 通过实时语音识别判断通话类型
      */
-    SMART_CALL_RESULT_DETECTION(
-        key = "smart_call_result_detection",
-        defaultEnabled = true,  // 默认开启新功能
-        displayName = "智能通话结果识别",
-        description = "使用分层判断策略，更准确地区分\"用户接听\"和\"语音信箱\"。关闭后将使用传统的时长阈值判断。",
-        version = "v1.9.32",
+    VOICE_RECOGNITION_DETECTION(
+        key = "voice_recognition_detection",
+        defaultEnabled = true,  // 默认开启
+        displayName = "录音识别",
+        description = "通过实时语音识别判断通话类型：识别到文本长度超过阈值则为真人接听，超时未识别则为语音信箱。",
+        version = "v1.9.43",
         category = ToggleCategory.CALL_DETECTION
     ),
     
     /**
-     * 音频能量分析（第二层判断）
-     * 依赖录音权限，分析通话音频能量模式
+     * 检测到语音信箱自动挂断并拨打下一个
      */
-    AUDIO_ENERGY_ANALYSIS(
-        key = "audio_energy_analysis",
-        defaultEnabled = false,  // 默认关闭，需要录音权限
-        displayName = "音频能量分析",
-        description = "通过分析通话音频能量模式，识别单向播放（语音信箱）和双向对话。需要录音权限。",
-        version = "v1.9.32",
-        category = ToggleCategory.CALL_DETECTION
-    ),
-    
-    /**
-     * 预留：AI关键词识别（第三层判断）
-     */
-    AI_KEYWORD_DETECTION(
-        key = "ai_keyword_detection",
-        defaultEnabled = false,  // 默认关闭，需要额外资源
-        displayName = "AI关键词识别",
-        description = "通过语音识别检测关键词，判断通话类型。实验性功能，可能影响性能。",
-        version = "v1.9.32",
-        category = ToggleCategory.CALL_DETECTION
-    ),
-    
-    /**
-     * 预留：Root精确状态检测
-     */
-    ROOT_CALL_STATE_DETECTION(
-        key = "root_call_state_detection",
-        defaultEnabled = true,  // Root设备默认开启
-        displayName = "Root精确状态检测",
-        description = "通过读取RIL日志获取更精确的通话状态。仅Root设备可用。",
-        version = "v1.9.30",
-        category = ToggleCategory.CALL_DETECTION
+    AUTO_HANGUP_ON_VOICEMAIL(
+        key = "auto_hangup_on_voicemail",
+        defaultEnabled = true,  // 默认开启
+        displayName = "语音信箱自动挂断",
+        description = "当检测到语音信箱时，自动挂断并拨打下一个客户。如果没有下一个客户，则停止自动拨号。",
+        version = "v1.9.43",
+        category = ToggleCategory.AUTO_DIAL
     );
 
     // 转换为 Preferences Key
@@ -95,6 +70,10 @@ enum class ToggleCategory(
     CALL_DETECTION(
         displayName = "通话识别",
         description = "通话状态检测相关功能"
+    ),
+    AUTO_DIAL(
+        displayName = "自动拨号",
+        description = "自动拨号相关功能"
     ),
     UI_EXPERIMENT(
         displayName = "界面体验",
@@ -116,15 +95,15 @@ enum class ToggleCategory(
  * 使用方式：
  * ```kotlin
  * // 检查开关状态
- * val isEnabled = featureToggleManager.isEnabled(FeatureToggle.SMART_CALL_RESULT_DETECTION)
+ * val isEnabled = featureToggleManager.isEnabled(FeatureToggle.VOICE_RECOGNITION_DETECTION)
  * 
  * // 监听开关状态变化
- * featureToggleManager.getToggleFlow(FeatureToggle.SMART_CALL_RESULT_DETECTION).collect { enabled ->
+ * featureToggleManager.getToggleFlow(FeatureToggle.VOICE_RECOGNITION_DETECTION).collect { enabled ->
  *     // 处理状态变化
  * }
  * 
  * // 设置开关状态
- * featureToggleManager.setEnabled(FeatureToggle.SMART_CALL_RESULT_DETECTION, false)
+ * featureToggleManager.setEnabled(FeatureToggle.VOICE_RECOGNITION_DETECTION, false)
  * ```
  */
 class FeatureToggleManager(private val context: Context) {

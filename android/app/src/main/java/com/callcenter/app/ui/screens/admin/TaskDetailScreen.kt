@@ -31,6 +31,7 @@ import com.callcenter.app.data.model.Task
 import com.callcenter.app.data.model.TaskCustomer
 import com.callcenter.app.data.model.User
 import com.callcenter.app.util.VersionInfoUtil
+import com.callcenter.app.ui.util.rememberDebounceOnClick
 import com.callcenter.app.ui.viewmodel.TaskDetailViewModel
 import com.callcenter.app.ui.viewmodel.CreateTaskViewModel
 
@@ -70,7 +71,7 @@ fun TaskDetailScreen(
             TopAppBar(
                 title = { Text(VersionInfoUtil.getTitleWithVersion(context, "任务详情")) },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = rememberDebounceOnClick() { onNavigateBack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 }
