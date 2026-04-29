@@ -191,16 +191,17 @@ class CallResultClassifier(
         val aiDetectionEnabled = featureToggleManager.isEnabled(
             FeatureToggle.AI_KEYWORD_DETECTION
         )
-        Log.d(TAG, "--- 第三层：AI关键词识别 (enabled=$aiDetectionEnabled, keywords=${context.detectedKeywords}) ---")
+        Log.d(TAG, "--- 第三层：AI关键词识别 (enabled=$aiDetectionEnabled, keywordCallType=${context.keywordCallType}, keywords=${context.detectedKeywords}) ---")
 
-        if (aiDetectionEnabled && context.detectedKeywords.isNotEmpty()) {
+        // 修改判断条件：检查 keywordCallType 是否为有效值（VOICEMAIL/HUMAN/IVR），或 keywords 不为空
+        if (aiDetectionEnabled && context.keywordCallType != KeywordCallType.UNKNOWN) {
             val layer3Result = classifyByKeywords(context)
             if (layer3Result != null) {
                 Log.d(TAG, "第三层判断完成: type=${layer3Result.type}, confidence=${layer3Result.confidence}, reason=${layer3Result.reason}")
                 return layer3Result
             }
         } else {
-            Log.d(TAG, "第三层跳过: enabled=$aiDetectionEnabled, keywords=${context.detectedKeywords}")
+            Log.d(TAG, "第三层跳过: enabled=$aiDetectionEnabled, keywordCallType=${context.keywordCallType}")
         }
 
         // 无法确定，返回 NO_ANSWER（响铃未接听）
@@ -342,8 +343,8 @@ class CallResultClassifier(
             )
             KeywordCallType.HUMAN -> CallResult(
                 type = CallResultType.CONNECTED,
-                confidence = 0.90f,
-                reason = "检测到真人接听关键词: ${keywords.joinToString()}",
+                confidence = 0.85f,
+                reason = if (keywords.isNotEmpty()) "检测到真人接听关键词: ${keywords.joinToString()}" else "识别文本长度>5，判定为真人接听",
                 layer = 3
             )
             KeywordCallType.IVR -> CallResult(

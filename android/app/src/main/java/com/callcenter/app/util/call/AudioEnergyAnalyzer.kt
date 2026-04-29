@@ -108,6 +108,11 @@ class AudioEnergyAnalyzer(private val context: Context) {
     }
 
     /**
+     * 检查是否正在录音
+     */
+    fun isRecording(): Boolean = isRecording.get()
+
+    /**
      * 检查免提是否开启
      */
     fun isSpeakerphoneOn(): Boolean {
@@ -276,6 +281,30 @@ class AudioEnergyAnalyzer(private val context: Context) {
             fileOutputStream = null
         }
     }
+
+    /**
+     * 获取当前已录制的 PCM 数据（用于实时识别）
+     * 
+     * @return 当前已录制的 PCM 数据，如果文件不存在或无法读取返回 null
+     */
+    fun getCurrentPcmData(): ByteArray? {
+        if (!saveAudioData || audioFile == null || !audioFile!!.exists()) {
+            return null
+        }
+
+        return try {
+            // 读取文件当前内容
+            audioFile!!.readBytes()
+        } catch (e: Exception) {
+            Log.e(TAG, "读取当前 PCM 数据失败: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * 获取音频文件路径
+     */
+    fun getAudioFilePath(): String? = audioFile?.absolutePath
 
     /**
      * 采样循环

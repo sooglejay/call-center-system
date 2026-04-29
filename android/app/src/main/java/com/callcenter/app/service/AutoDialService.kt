@@ -1716,6 +1716,88 @@ class AutoDialService : Service() {
                                             _currentCustomer.value?.phone,
                                             _currentCustomer.value?.name
                                         )
+                                        
+                                        // ====== 实时语音识别：区分语音信箱和真人接听 ======
+                                        // 启动实时识别，如果在6秒内识别到文本（长度>5），则判定为真人
+                                        // 如果6秒内未识别到任何文本，则判定为语音信箱
+                                        if (keywordDetectionEnabled && audioEnergyAnalyzer != null) {
+                                            serviceScope.launch {
+                                                try {
+                                                    DebugLogger.log("[RealTimeDetect] ========== 开始实时语音识别 ==========")
+                                                    
+                                                    // 初始化关键词检测器
+                                                    if (keywordDetector == null) {
+                                                        keywordDetector = KeywordDetector(this@AutoDialService)
+                                                    }
+                                                    
+                                                    val maxCheckTime = 6000L // 最多检查6秒
+                                                    val checkInterval = 1000L // 每秒检查一次
+                                                    val startTime = System.currentTimeMillis()
+                                                    var detectedAsHuman = false
+                                                    
+                                                    while (System.currentTimeMillis() - startTime < maxCheckTime) {
+                                                        delay(checkInterval)
+                                                        
+                                                        // 检查是否还在录音
+                                                        if (audioEnergyAnalyzer == null || !audioEnergyAnalyzer!!.isRecording()) {
+                                                            DebugLogger.log("[RealTimeDetect] 录音已停止，结束检测")
+                                                            break
+                                                        }
+                                                        
+                                                        // 获取当前 PCM 数据
+                                                        val pcmData = audioEnergyAnalyzer?.getCurrentPcmData()
+                                                        if (pcmData == null || pcmData.size < 32000) { // 至少1秒的数据
+                                                            val elapsed = System.currentTimeMillis() - startTime
+                                                            DebugLogger.log("[RealTimeDetect] 等待更多音频数据... (${elapsed}ms, size=${pcmData?.size ?: 0})")
+                                                            continue
+                                                        }
+                                                        
+                                                        // 快速检查文本长度
+                                                        val textLength = keywordDetector?.quickCheckTextLength(pcmData) ?: 0
+                                                        val elapsed = System.currentTimeMillis() - startTime
+                                                        DebugLogger.log("[RealTimeDetect] ${elapsed}ms: 识别文本长度=$textLength")
+                                                        
+                                                        // 如果识别到文本（长度 > 5），判定为真人
+                                                        if (textLength > 5) {
+                                                            detectedAsHuman = true
+                                                            DebugLogger.log("[RealTimeDetect] ✓✓✓ 检测到文本长度>$5，判定为真人接听！")
+                                                            DebugLogger.log("[RealTimeDetect] 识别耗时: ${elapsed}ms")
+                                                            
+                                                            // 立即更新状态
+                                                            keywordCallType = KeywordCallType.HUMAN
+                                                            detectedKeywords = listOf("实时识别文本长度>$textLength")
+                                                            
+                                                            FloatingCustomerService.addCallStateHistory(
+                                                                "识别为真人",
+                                                                _currentCustomer.value?.phone,
+                                                                _currentCustomer.value?.name
+                                                            )
+                                                            break
+                                                        }
+                                                    }
+                                                    
+                                                    // 如果6秒后仍未识别到文本，判定为语音信箱
+                                                    if (!detectedAsHuman) {
+                                                        val totalTime = System.currentTimeMillis() - startTime
+                                                        DebugLogger.log("[RealTimeDetect] ✗ ${totalTime}ms内未识别到文本，判定为语音信箱")
+                                                        
+                                                        keywordCallType = KeywordCallType.VOICEMAIL
+                                                        detectedKeywords = emptyList()
+                                                        
+                                                        FloatingCustomerService.addCallStateHistory(
+                                                            "识别为语音信箱",
+                                                            _currentCustomer.value?.phone,
+                                                            _currentCustomer.value?.name
+                                                        )
+                                                    }
+                                                    
+                                                    DebugLogger.log("[RealTimeDetect] ========== 实时识别结束 ==========")
+                                                    
+                                                } catch (e: Exception) {
+                                                    DebugLogger.log("[RealTimeDetect] ✗ 实时识别异常: ${e.message}")
+                                                }
+                                            }
+                                        }
                                     } else {
                                         Log.w(TAG, "音频能量分析启动失败")
                                         DebugLogger.log("[AudioAnalysis] ✗ 音频能量分析启动失败")

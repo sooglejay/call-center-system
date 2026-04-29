@@ -176,6 +176,10 @@ class KeywordDetector(
         )
 
         private const val MIN_TEXT_LENGTH = 1
+
+        // 文本长度阈值：当识别出的文本长度 > 此值时，认为是真人接听
+        // 实测发现：语音信箱几乎无法识别出文本（长度=0），而真人接听能识别出有意义的内容
+        private const val TEXT_LENGTH_THRESHOLD_FOR_HUMAN = 5
     }
 
     private val models = mutableMapOf<String, Model>()
@@ -440,14 +444,18 @@ class KeywordDetector(
 
     /**
      * 分析关键词并返回结果
-     * 
-     * 简化策略：只识别语音信箱和IVR，不识别真人接听
-     * - 语音信箱：标准录音，口音清晰，识别准确率高
-     * - 真人接听：口音多样，难以准确识别，交给时长/音频能量判断
+     *
+     * 优化策略：
+     * 1. 语音信箱：识别出语音信箱关键词 → VOICEMAIL
+     * 2. IVR：识别出IVR关键词 → IVR
+     * 3. 真人接听：文本长度 > 5 → CONNECTED
+     * 4. 未知：文本长度 <= 5 → UNKNOWN
+     *
+     * 关键发现：语音信箱几乎无法识别出任何文本（长度=0），而真人接听能识别出有意义的内容
      */
     private fun analyzeKeywords(fullText: String): KeywordResult {
         DebugLogger.log("[KeywordDetect] 开始分析关键词，文本长度: ${fullText.length}")
-        
+
         if (fullText.length < MIN_TEXT_LENGTH) {
             DebugLogger.log("[KeywordDetect] ✗ 识别文本过短: ${fullText.length} < $MIN_TEXT_LENGTH")
             return KeywordResult(
@@ -462,16 +470,16 @@ class KeywordDetector(
 
         // 优先检测语音信箱关键词（重点目标）
         val voicemailFound = findKeywords(fullText, VOICEMAIL_KEYWORDS)
-        
+
         DebugLogger.log("[KeywordDetect] ========== 关键词分析 ==========")
         DebugLogger.log("[KeywordDetect] 语音信箱关键词: $voicemailFound")
-        
+
         // 如果检测到语音信箱关键词，直接返回
         if (voicemailFound.isNotEmpty()) {
             val confidence = calculateConfidence(voicemailFound, fullText)
             DebugLogger.log("[KeywordDetect] ✓ 检测到语音信箱关键词，置信度: $confidence")
             DebugLogger.log("[KeywordDetect] 最终结果: VOICEMAIL, detected=true, keywords=$voicemailFound")
-            
+
             return KeywordResult(
                 detected = true,
                 keywords = voicemailFound,
@@ -485,12 +493,12 @@ class KeywordDetector(
         // 检测 IVR 语音导航关键词
         val ivrFound = findKeywords(fullText, IVR_KEYWORDS)
         DebugLogger.log("[KeywordDetect] IVR关键词: $ivrFound")
-        
+
         if (ivrFound.isNotEmpty()) {
             val confidence = calculateConfidence(ivrFound, fullText)
             DebugLogger.log("[KeywordDetect] ✓ 检测到IVR关键词，置信度: $confidence")
             DebugLogger.log("[KeywordDetect] 最终结果: IVR, detected=true, keywords=$ivrFound")
-            
+
             return KeywordResult(
                 detected = true,
                 keywords = ivrFound,
@@ -501,11 +509,27 @@ class KeywordDetector(
             )
         }
 
-        // 未检测到关键词，返回 UNKNOWN
-        // 让其他判断方式（时长、音频能量）来决定是否是真人接听
-        DebugLogger.log("[KeywordDetect] 未检测到语音信箱或IVR关键词")
+        // 关键优化：文本长度 > 5，认为是真人接听
+        // 实测发现：语音信箱识别出的文本长度几乎都是0，而真人接听能识别出有意义的文本
+        if (fullText.length > TEXT_LENGTH_THRESHOLD_FOR_HUMAN) {
+            DebugLogger.log("[KeywordDetect] ✓ 识别文本长度 > $TEXT_LENGTH_THRESHOLD_FOR_HUMAN，判定为真人接听")
+            DebugLogger.log("[KeywordDetect] 最终结果: HUMAN, detected=true, 文本长度=${fullText.length}")
+
+            return KeywordResult(
+                detected = true,
+                keywords = emptyList(),
+                fullText = fullText,
+                confidence = 0.85f,
+                callType = KeywordCallType.HUMAN,
+                reason = "识别文本长度>${TEXT_LENGTH_THRESHOLD_FOR_HUMAN}，可能是真人接听"
+            )
+        }
+
+        // 文本长度较短，返回 UNKNOWN
+        // 让其他判断方式（时长、音频能量）来决定
+        DebugLogger.log("[KeywordDetect] 未检测到关键词，文本长度较短")
         DebugLogger.log("[KeywordDetect] 最终结果: UNKNOWN，将由时长/音频能量判断")
-        
+
         return KeywordResult(
             detected = false,
             keywords = emptyList(),
@@ -537,6 +561,47 @@ class KeywordDetector(
         if (keywords.isEmpty()) return 0f
         val keywordRatio = keywords.size.toFloat() / (text.length / 10f + 1)
         return minOf(0.95f, 0.5f + keywordRatio * 0.3f)
+    }
+
+    /**
+     * 快速检查音频数据是否能识别出文本（用于实时判断）
+     * 
+     * @param pcmData PCM 音频数据（16kHz, 16bit, mono）
+     * @return 识别出的文本长度，如果无法识别返回 0
+     */
+    fun quickCheckTextLength(pcmData: ByteArray): Int {
+        if (pcmData.size < 3200) { // 至少 100ms 的数据
+            return 0
+        }
+
+        // 初始化模型
+        if (models.isEmpty()) {
+            init()
+        }
+
+        // 使用第一个可用模型进行快速识别
+        val model = models.values.firstOrNull() ?: return 0
+        
+        return try {
+            val recognizer = Recognizer(model, 16000f)
+            val shortBuffer = ShortArray(pcmData.size / 2)
+            ByteBuffer.wrap(pcmData)
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .asShortBuffer()
+                .get(shortBuffer)
+
+            val text = StringBuilder()
+            if (recognizer.acceptWaveForm(shortBuffer, shortBuffer.size)) {
+                text.append(parseResultText(recognizer.result))
+            }
+            text.append(parseResultText(recognizer.finalResult))
+            
+            recognizer.close()
+            text.toString().trim().length
+        } catch (e: Exception) {
+            Log.e(TAG, "快速检查失败: ${e.message}")
+            0
+        }
     }
 
     /**
