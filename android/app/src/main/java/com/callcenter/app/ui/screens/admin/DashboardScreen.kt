@@ -61,6 +61,59 @@ fun DashboardScreen(
         }
     }
 
+    // 日志上传描述对话框状态
+    var showLogUploadDialog by remember { mutableStateOf(false) }
+    var logDescription by remember { mutableStateOf("") }
+
+    // 日志上传描述对话框
+    if (showLogUploadDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showLogUploadDialog = false
+                logDescription = ""
+            },
+            title = { Text("上传日志") },
+            text = {
+                Column {
+                    Text(
+                        text = "请输入日志描述（可选）：",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = logDescription,
+                        onValueChange = { logDescription = it },
+                        placeholder = { Text("例如：遇到登录问题") },
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 3
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLogUploadDialog = false
+                        myStatsViewModel.uploadDeviceLogs(context, logDescription)
+                        logDescription = ""
+                    },
+                    enabled = !isUploadingLogs
+                ) {
+                    Text(if (isUploadingLogs) "上传中..." else "确认上传")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showLogUploadDialog = false
+                        logDescription = ""
+                    }
+                ) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -128,7 +181,7 @@ fun DashboardScreen(
                         onNavigateToAgents = onNavigateToAgents,
                         onNavigateToTasks = onNavigateToTasks,
                         onNavigateToCustomers = onNavigateToCustomers,
-                        onUploadLogs = { myStatsViewModel.uploadDeviceLogs(context) },
+                        onUploadLogs = { showLogUploadDialog = true },
                         isUploadingLogs = isUploadingLogs
                     )
                 }

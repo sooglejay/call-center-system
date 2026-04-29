@@ -9,6 +9,7 @@ import com.callcenter.app.data.model.Task
 import com.callcenter.app.data.model.UpdateTaskCustomerStatusRequest
 import com.callcenter.app.data.repository.CallRecordRepository
 import com.callcenter.app.data.repository.TaskRepository
+import com.callcenter.app.service.AutoDialService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -195,6 +196,8 @@ class AgentTaskViewModel @Inject constructor(
             )
             result.fold(
                 onSuccess = {
+                    // 清除之前的错误
+                    _error.value = null
                     // 直接更新本地数据，而不是重新加载整个任务
                     _task.value = _task.value?.copy(
                         customers = _task.value?.customers?.map { customer ->
@@ -249,6 +252,30 @@ class AgentTaskViewModel @Inject constructor(
                     _isLoading.value = false
                 }
             )
+        }
+    }
+
+    /**
+     * 开始监听客户状态更新事件
+     * 用于自动拨号时实时更新 UI
+     */
+    fun observeCustomerStatusUpdates() {
+        viewModelScope.launch {
+            AutoDialService.customerStatusUpdate.collect { event ->
+                // 更新本地客户状态
+                _task.value = _task.value?.copy(
+                    customers = _task.value?.customers?.map { customer ->
+                        if (customer.id == event.customerId) {
+                            customer.copy(
+                                callStatus = event.callStatus,
+                                callResult = event.callResult ?: customer.callResult
+                            )
+                        } else {
+                            customer
+                        }
+                    } ?: emptyList()
+                )
+            }
         }
     }
 }

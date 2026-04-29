@@ -90,14 +90,14 @@ data class CallResult(
     companion object {
         val CONNECTED = CallResult(CallResultType.CONNECTED, 0f, "", 0)
         val VOICEMAIL = CallResult(CallResultType.VOICEMAIL, 0f, "", 0)
-        val UNKNOWN = CallResult(CallResultType.UNKNOWN, 0f, "需要手动确认", 0)
+        val NO_ANSWER = CallResult(CallResultType.NO_ANSWER, 0f, "响铃未接听", 0)
     }
 }
 
 enum class CallResultType {
-    CONNECTED,   // 用户接听
-    VOICEMAIL,   // 语音信箱
-    UNKNOWN      // 未知，需手动标记
+    CONNECTED,   // 真人已接听
+    NO_ANSWER,   // 响铃未接听（包括对方正忙、对方拒接、无人接听、对方关机等）
+    VOICEMAIL    // 语音信箱播报
 }
 
 /**
@@ -120,7 +120,7 @@ class CallResultClassifier(
         // 注意：语音信箱通常播报 15-30 秒，阈值设置需避免误判
         const val VOICEMAIL_THRESHOLD_MIN = 3000L    // 语音信箱最小阈值：3秒（极短通话）
         const val VOICEMAIL_THRESHOLD_MAX = 10000L   // 语音信箱最大阈值：10秒
-        const val CONNECTED_THRESHOLD = 60000L       // 用户接听阈值：60秒（避免语音信箱误判）
+        const val CONNECTED_THRESHOLD = 20000L       // 用户接听阈值：20秒（超过此时长认为是真人接听）
 
         // 响铃相关阈值
         const val QUICK_TRANSFER_THRESHOLD = 5000L   // 快速转接阈值：5秒
@@ -203,9 +203,13 @@ class CallResultClassifier(
             Log.d(TAG, "第三层跳过: enabled=$aiDetectionEnabled, keywords=${context.detectedKeywords}")
         }
 
-        // 无法确定，返回 UNKNOWN 让用户手动标记
-        Log.d(TAG, "========== 无法自动判断，返回 UNKNOWN ==========")
-        return CallResult.UNKNOWN.copy(layer = 3)
+        // 无法确定，返回 NO_ANSWER（响铃未接听）
+        Log.d(TAG, "========== 无法自动判断为已接听或语音信箱，返回 NO_ANSWER（响铃未接听）==========")
+        return CallResult.NO_ANSWER.copy(
+            confidence = 0.50f,
+            reason = "无法自动判断，默认为响铃未接听",
+            layer = 3
+        )
     }
     
     /**

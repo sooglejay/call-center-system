@@ -31,6 +31,7 @@ import com.callcenter.app.ui.navigation.AppNavigation
 import com.callcenter.app.ui.theme.CallCenterTheme
 import com.callcenter.app.ui.viewmodel.UpdateViewModel
 import com.callcenter.app.data.repository.CallRecordRepository
+import com.callcenter.app.util.DebugLogger
 import com.callcenter.app.util.FloatingWindowManager
 import com.callcenter.app.util.RootUtil
 import dagger.hilt.android.AndroidEntryPoint
@@ -52,11 +53,7 @@ class MainActivity : ComponentActivity() {
         val deniedPermissions = permissions.filter { !it.value }.keys
         if (deniedPermissions.isNotEmpty()) {
             // 有权限被拒绝
-            Toast.makeText(
-                this,
-                "部分通话权限被拒绝",
-                Toast.LENGTH_LONG
-            ).show()
+            DebugLogger.log("通话权限被拒绝：" + deniedPermissions.joinToString { it })
         }
     }
 

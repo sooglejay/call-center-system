@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Table, Button, Modal, Form, Input, Select, Popconfirm, message, Tag, Tooltip, Space } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, KeyOutlined, FileTextOutlined } from '@ant-design/icons';
-import { userApi, logsApi } from '../../services/api';
+import { PlusOutlined, EditOutlined, DeleteOutlined, KeyOutlined } from '@ant-design/icons';
+import { userApi } from '../../services/api';
 import type { User } from '../../services/api';
 
 export default function UserManagement() {
@@ -175,33 +175,6 @@ export default function UserManagement() {
     });
   };
 
-  // 下载用户设备日志
-  const handleDownloadLog = async (user: User) => {
-    try {
-      message.loading({ content: `正在下载 ${user.real_name || user.username} 的设备日志...`, key: 'downloadLog' });
-
-      const blob = await logsApi.downloadLog(user.id);
-
-      // 创建下载链接
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `user_${user.id}_${user.username}_logs.txt`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-
-      message.success({ content: '日志下载成功', key: 'downloadLog' });
-    } catch (error: any) {
-      if (error.response?.status === 404) {
-        message.warning({ content: '该用户暂无设备日志', key: 'downloadLog' });
-      } else {
-        message.error({ content: error.response?.data?.error || '下载日志失败', key: 'downloadLog' });
-      }
-    }
-  };
-
   const columns = [
     { title: '用户名', dataIndex: 'username', key: 'username' },
     { title: '姓名', dataIndex: 'real_name', key: 'real_name' },
@@ -253,11 +226,6 @@ export default function UserManagement() {
         <div style={{ display: 'flex', gap: 8 }}>
           <Button icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
           <Button icon={<KeyOutlined />} onClick={() => openResetPassword(record.id)}>重置密码</Button>
-          <Tooltip title="下载设备日志">
-            <Button icon={<FileTextOutlined />} onClick={() => handleDownloadLog(record)}>
-              日志
-            </Button>
-          </Tooltip>
           <Popconfirm title="确定删除吗？" onConfirm={() => handleDelete(record.id)}>
             <Button danger icon={<DeleteOutlined />}>删除</Button>
           </Popconfirm>

@@ -715,20 +715,23 @@ export default function CustomerManagement() {
     interested: '有意向'
   };
 
+  // 简化为三种通话状态：已接听、语音信箱、响铃未接
   const callStatusLabels: Record<string, string> = {
     pending: '待拨打',
     ringing: '响铃中',
     connected: '已接听',
     voicemail: '语音信箱',
+    // 以下状态统一归为响铃未接
     unanswered: '响铃未接',
-    rejected: '对方拒接',
-    busy: '对方忙线',
-    power_off: '关机/停机',
-    no_answer: '无人接听',
-    ivr: 'IVR语音',
-    other: '其他',
-    failed: '拨打失败',
-    completed: '已完成'
+    rejected: '响铃未接',
+    busy: '响铃未接',
+    power_off: '响铃未接',
+    no_answer: '响铃未接',
+    ivr: '响铃未接',
+    other: '响铃未接',
+    failed: '响铃未接',
+    completed: '响铃未接',
+    called: '响铃未接'
   };
 
   const columns = [
@@ -954,25 +957,16 @@ export default function CustomerManagement() {
               { value: 'interested', label: '有意向' }
             ]}
           />
-          <Select 
-            placeholder="通话状态" 
-            allowClear 
+          <Select
+            placeholder="通话状态"
+            allowClear
             style={{ width: 120 }}
             onChange={setFilterCallStatus}
             options={[
               { value: 'pending', label: '待拨打' },
               { value: 'connected', label: '已接听' },
               { value: 'voicemail', label: '语音信箱' },
-              { value: 'unanswered', label: '响铃未接' },
-              { value: 'rejected', label: '对方拒接' },
-              { value: 'busy', label: '对方忙线' },
-              { value: 'power_off', label: '关机/停机' },
-              { value: 'no_answer', label: '无人接听' },
-              { value: 'ivr', label: 'IVR语音' },
-              { value: 'failed', label: '拨打失败' },
-              { value: 'completed', label: '已完成' },
-              { value: 'called', label: '其他已拨打' },              
-              { value: 'other', label: '其他' }
+              { value: 'unanswered', label: '响铃未接' }
             ]}
           />
           <Select 

@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Table, Button, Modal, Form, Input, Select, DatePicker, message, Tag, Tabs, Badge, Checkbox, Space, Divider, Typography, Empty, Alert, Progress, Card, Descriptions, Tooltip, Statistic, Row, Col, Dropdown } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, TeamOutlined, ScheduleOutlined, InfoCircleOutlined, EyeOutlined, PhoneOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined, MessageOutlined, MinusCircleOutlined, DownloadOutlined, FileExcelOutlined, FileTextOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, TeamOutlined, ScheduleOutlined, InfoCircleOutlined, EyeOutlined, PhoneOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined, MessageOutlined, DownloadOutlined, FileExcelOutlined, FileTextOutlined } from '@ant-design/icons';
 import { taskApi, userApi, customerApi } from '../../services/api';
 import type { Task, User, Customer } from '../../services/api';
 import dayjs from 'dayjs';
@@ -407,7 +407,7 @@ export default function TaskManagement() {
     message.success(`已导出 ${customers.length} 条客户数据`);
   };
 
-  // 获取拨打状态文本
+  // 获取拨打状态文本（简化为三种状态）
   const getCallStatusText = (status: string, callResult?: string): string => {
     if (callResult) {
       const resultMap: Record<string, string> = {
@@ -415,20 +415,21 @@ export default function TaskManagement() {
         'connected': '已接听',
         '语音信箱': '语音信箱',
         'voicemail': '语音信箱',
+        // 以下状态统一归为响铃未接
         '响铃未接': '响铃未接',
         'unanswered': '响铃未接',
-        '对方拒接': '对方拒接',
-        'rejected': '对方拒接',
-        '对方忙线': '对方忙线',
-        'busy': '对方忙线',
-        '关机/停机': '关机/停机',
-        'power_off': '关机/停机',
-        '无人接听': '无人接听',
-        'no_answer': '无人接听',
-        'IVR语音': 'IVR语音',
-        'ivr': 'IVR语音',
-        '其他': '其他',
-        'other': '其他'
+        '对方拒接': '响铃未接',
+        'rejected': '响铃未接',
+        '对方忙线': '响铃未接',
+        'busy': '响铃未接',
+        '关机/停机': '响铃未接',
+        'power_off': '响铃未接',
+        '无人接听': '响铃未接',
+        'no_answer': '响铃未接',
+        'IVR语音': '响铃未接',
+        'ivr': '响铃未接',
+        '其他': '响铃未接',
+        'other': '响铃未接'
       };
       if (resultMap[callResult]) {
         return resultMap[callResult];
@@ -437,10 +438,11 @@ export default function TaskManagement() {
 
     const statusMap: Record<string, string> = {
       'pending': '待拨打',
-      'called': '已拨打',
       'connected': '已接听',
-      'completed': '已完成',
-      'failed': '拨打失败'
+      // 以下状态统一归为响铃未接
+      'called': '响铃未接',
+      'completed': '响铃未接',
+      'failed': '响铃未接'
     };
     return statusMap[status] || '待拨打';
   };
@@ -495,22 +497,20 @@ export default function TaskManagement() {
       return;
     }
     
-    // 根据筛选状态生成默认任务名
+    // 根据筛选状态生成默认任务名（简化为三种状态）
     const filterLabelMap: Record<string, string> = {
       'all': '全部',
       'pending': '待拨打',
       'connected': '已接听',
       'voicemail': '语音信箱',
+      // 以下状态统一归为响铃未接
       'unanswered': '响铃未接',
-      'rejected': '对方拒接',
-      'busy': '对方忙线',
-      'power_off': '关机停机',
-      'no_answer': '无人接听',
-      'ivr': 'IVR语音',
-      'failed': '拨打失败',
-      'completed': '已完成',
-      'called': '已拨打',
-      'other': '其他'
+      'rejected': '响铃未接',
+      'busy': '响铃未接',
+      'power_off': '响铃未接',
+      'no_answer': '响铃未接',
+      'ivr': '响铃未接',
+      'failed': '响铃未接'
     };
     
     const filterLabel = filterLabelMap[customerCallStatusFilter] || '筛选';
@@ -564,43 +564,29 @@ export default function TaskManagement() {
       const status = customer.call_status || 'pending';
       const result = customer.call_result;
 
-      if (customerCallStatusFilter === 'called') {
-        // "其他已拨打" 包括 called 和 completed 状态
-        return status === 'called' || status === 'completed';
-      }
-
       if (customerCallStatusFilter === 'pending') {
         // 待拨打：call_status 为 pending
         return status === 'pending';
       }
 
-      if (customerCallStatusFilter === 'completed') {
-        // 已完成：call_status 为 completed
-        return status === 'completed';
-      }
-
-      if (customerCallStatusFilter === 'failed') {
-        // 拨打失败：call_status 为 failed
-        return status === 'failed';
-      }
-
-      // 其他筛选器根据 call_result 匹配
+      // 其他筛选器根据 call_result 匹配（简化为三种状态）
       // 需要同时满足：已拨打（status != pending）且 call_result 匹配
       if (status === 'pending') {
         return false;
       }
 
-      // 根据 call_result 匹配各种状态
+      // 根据 call_result 匹配各种状态，统一归为三种
       const resultMap: Record<string, string[]> = {
         'connected': ['已接听', 'connected'],
         'voicemail': ['语音信箱', 'voicemail'],
-        'unanswered': ['响铃未接', 'unanswered'],
-        'rejected': ['对方拒接', 'rejected'],
-        'busy': ['对方忙线', 'busy'],
-        'power_off': ['关机/停机', 'power_off'],
-        'no_answer': ['无人接听', 'no_answer'],
-        'ivr': ['IVR语音', 'ivr'],
-        'other': ['其他', 'other']
+        // 以下状态统一归为响铃未接
+        'unanswered': ['响铃未接', 'unanswered', '对方拒接', 'rejected', '对方忙线', 'busy', '关机/停机', 'power_off', '无人接听', 'no_answer', 'IVR语音', 'ivr', '其他', 'other'],
+        'rejected': ['响铃未接', 'unanswered', '对方拒接', 'rejected'],
+        'busy': ['响铃未接', 'unanswered', '对方忙线', 'busy'],
+        'power_off': ['响铃未接', 'unanswered', '关机/停机', 'power_off'],
+        'no_answer': ['响铃未接', 'unanswered', '无人接听', 'no_answer'],
+        'ivr': ['响铃未接', 'unanswered', 'IVR语音', 'ivr'],
+        'other': ['响铃未接', 'unanswered', '其他', 'other']
       };
 
       const validResults = resultMap[customerCallStatusFilter];
@@ -629,45 +615,47 @@ export default function TaskManagement() {
     return <Tag color={config.color}>{config.text}</Tag>;
   };
 
-  // 拨打状态标签 - 与 Android 端对齐
+  // 拨打状态标签 - 与 Android 端对齐（简化为三种状态）
   const renderCallStatusTag = (status: string, callResult?: string) => {
-    // 优先根据 call_result 显示更详细的状态
+    // 优先根据 call_result 显示状态（简化为三种）
     if (callResult) {
       const resultConfig: Record<string, { color: string; text: string; icon: React.ReactNode }> = {
         '已接听': { color: 'success', text: '已接听', icon: <CheckCircleOutlined /> },
         'connected': { color: 'success', text: '已接听', icon: <CheckCircleOutlined /> },
         '语音信箱': { color: 'blue', text: '语音信箱', icon: <MessageOutlined /> },
         'voicemail': { color: 'blue', text: '语音信箱', icon: <MessageOutlined /> },
+        // 以下状态统一归为响铃未接
         '响铃未接': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
         'unanswered': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
-        '对方拒接': { color: 'red', text: '对方拒接', icon: <CloseCircleOutlined /> },
-        'rejected': { color: 'red', text: '对方拒接', icon: <CloseCircleOutlined /> },
-        '对方忙线': { color: 'orange', text: '对方忙线', icon: <ClockCircleOutlined /> },
-        'busy': { color: 'orange', text: '对方忙线', icon: <ClockCircleOutlined /> },
-        '关机/停机': { color: 'default', text: '关机/停机', icon: <CloseCircleOutlined /> },
-        'power_off': { color: 'default', text: '关机/停机', icon: <CloseCircleOutlined /> },
-        '无人接听': { color: 'default', text: '无人接听', icon: <ClockCircleOutlined /> },
-        'no_answer': { color: 'default', text: '无人接听', icon: <ClockCircleOutlined /> },
-        'IVR语音': { color: 'cyan', text: 'IVR语音', icon: <MessageOutlined /> },
-        'ivr': { color: 'cyan', text: 'IVR语音', icon: <MessageOutlined /> },
-        '其他': { color: 'default', text: '其他', icon: <MinusCircleOutlined /> },
-        'other': { color: 'default', text: '其他', icon: <MinusCircleOutlined /> }
+        '对方拒接': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
+        'rejected': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
+        '对方忙线': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
+        'busy': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
+        '关机/停机': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
+        'power_off': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
+        '无人接听': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
+        'no_answer': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
+        'IVR语音': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
+        'ivr': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
+        '其他': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
+        'other': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> }
       };
       const config = resultConfig[callResult];
       if (config) {
         return <Tag color={config.color} icon={config.icon}>{config.text}</Tag>;
       }
     }
-    
-    // 根据 call_status 显示基础状态
+
+    // 根据 call_status 显示基础状态（简化为三种通话状态）
     const statusConfig: Record<string, { color: string; text: string; icon: React.ReactNode }> = {
       pending: { color: 'default', text: '待拨打', icon: <ClockCircleOutlined /> },
-      called: { color: 'processing', text: '已拨打', icon: <PhoneOutlined /> },
       connected: { color: 'success', text: '已接听', icon: <CheckCircleOutlined /> },
       voicemail: { color: 'blue', text: '语音信箱', icon: <MessageOutlined /> },
       unanswered: { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
-      failed: { color: 'error', text: '拨打失败', icon: <CloseCircleOutlined /> },
-      completed: { color: 'success', text: '已完成', icon: <CheckCircleOutlined /> }
+      // 以下状态统一归为响铃未接
+      called: { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
+      failed: { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
+      completed: { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> }
     };
     const config = statusConfig[status] || statusConfig.pending;
     return <Tag color={config.color} icon={config.icon}>{config.text}</Tag>;
@@ -1199,16 +1187,7 @@ export default function TaskManagement() {
                       { value: 'pending', label: '待拨打' },
                       { value: 'connected', label: '已接听' },
                       { value: 'voicemail', label: '语音信箱' },
-                      { value: 'unanswered', label: '响铃未接' },
-                      { value: 'rejected', label: '对方拒接' },
-                      { value: 'busy', label: '对方忙线' },
-                      { value: 'power_off', label: '关机/停机' },
-                      { value: 'no_answer', label: '无人接听' },
-                      { value: 'ivr', label: 'IVR语音' },
-                      { value: 'failed', label: '拨打失败' },
-                      { value: 'completed', label: '已完成' },
-                      { value: 'called', label: '其他已拨打' },              
-                      { value: 'other', label: '其他' }
+                      { value: 'unanswered', label: '响铃未接' }
                     ]}
                   />
                   <Tooltip title={`用当前筛选的 ${filteredCustomers.length} 个客户创建新任务`}>

@@ -683,7 +683,7 @@ private fun ExpandedFloatingPanel(
                     }
                 }
 
-                // 右侧：折叠按钮、停止拨号按钮和关闭按钮
+                // 右侧：折叠按钮和停止拨号按钮
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // 折叠按钮
                     Column(
@@ -708,7 +708,7 @@ private fun ExpandedFloatingPanel(
                         )
                     }
                     
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     
                     // 停止拨号按钮
                     Column(
@@ -721,49 +721,21 @@ private fun ExpandedFloatingPanel(
                                     action = AutoDialService.ACTION_STOP
                                 }
                                 context.startService(intent)
-                                onClose()
+                                onClose()  // 同时关闭悬浮窗
                             },
                             modifier = Modifier.size(32.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Stop,
-                                contentDescription = "停止拨号",
+                                contentDescription = "停止",
                                 modifier = Modifier.size(20.dp),
                                 tint = MaterialTheme.colorScheme.error
                             )
                         }
                         Text(
-                            text = "停止拨号",
+                            text = "停止",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.error,
-                            fontSize = 9.sp
-                        )
-                    }
-                    
-                    Spacer(modifier = Modifier.width(4.dp))
-                    
-                    // 关闭悬浮窗按钮
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        IconButton(
-                            onClick = {
-                                // 关闭悬浮窗
-                                onClose()
-                            },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "关闭",
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Text(
-                            text = "关闭",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 9.sp
                         )
                     }

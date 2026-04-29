@@ -71,7 +71,10 @@ class StatsRepository @Inject constructor(
     /**
      * 上传设备日志
      */
-    suspend fun uploadDeviceLogs(filePart: MultipartBody.Part): Response<LogUploadResponse> {
-        return apiService.uploadDeviceLogs(filePart)
+    suspend fun uploadDeviceLogs(
+        filePart: MultipartBody.Part,
+        description: okhttp3.RequestBody? = null
+    ): Response<LogUploadResponse> {
+        return apiService.uploadDeviceLogs(filePart, description)
     }
 }

@@ -223,15 +223,15 @@ export const versionApi = {
 export const logsApi = {
   // 获取所有用户日志列表
   getLogsList: () => api.get('/logs/list'),
-  // 获取指定用户的日志信息
-  getLogInfo: (userId: number) => api.get(`/logs/user/${userId}/info`),
-  // 下载指定用户的日志（返回 Blob）
-  downloadLog: async (userId: number): Promise<Blob> => {
-    const response = await api.get(`/logs/user/${userId}`, {
+  // 下载指定日志文件（返回 Blob）
+  downloadLog: async (fileName: string): Promise<Blob> => {
+    const response = await api.get(`/logs/file/${fileName}`, {
       responseType: 'blob'
     });
     return response.data;
-  }
+  },
+  // 删除所有日志
+  deleteAllLogs: () => api.delete('/logs/all')
 };
 
 import type { User, Customer, CallRecord, Task, AgentConfig, SystemConfig, Stats, DashboardStats, AgentRanking } from '../types';

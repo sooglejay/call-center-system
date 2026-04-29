@@ -44,6 +44,7 @@ export default function AdminLayout() {
     { key: '/admin/stats', icon: <BarChartOutlined />, label: '监控统计' },
     { key: '/admin/data-permission', icon: <DatabaseOutlined />, label: '数据权限' },
     { key: '/admin/version', icon: <MobileOutlined />, label: 'App版本' },
+    { key: '/admin/logs', icon: <FileTextOutlined />, label: '日志管理' },
     { key: '/admin/config', icon: <SettingOutlined />, label: '系统配置' },
     { key: '/admin/twilio-test', icon: <PhoneOutlined />, label: 'Twilio测试' },
   ];

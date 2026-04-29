@@ -11,6 +11,7 @@ import SystemConfig from './pages/admin/SystemConfig';
 import TwilioTest from './pages/admin/TwilioTest';
 import DataPermission from './pages/admin/DataPermission';
 import VersionManagement from './pages/admin/VersionManagement';
+import LogsManagement from './pages/admin/LogsManagement';
 import AgentDashboard from './pages/agent/Dashboard';
 import AgentTaskList from './pages/agent/AgentTaskList';
 import AgentTaskExecution from './pages/agent/AgentTaskExecution';
@@ -78,6 +79,7 @@ function App() {
           <Route path="twilio-test" element={<TwilioTest />} />
           <Route path="data-permission" element={<DataPermission />} />
           <Route path="version" element={<VersionManagement />} />
+          <Route path="logs" element={<LogsManagement />} />
         </Route>
 
         {/* 客服路由 - 使用 /agent 前缀 */}

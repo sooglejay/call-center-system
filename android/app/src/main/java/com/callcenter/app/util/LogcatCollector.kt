@@ -15,18 +15,18 @@ import java.util.*
  *
  * 功能：
  * - 收集设备 logcat 日志
- * - 限制日志文件大小（默认 8MB）
- * - 使用循环缓冲区，新日志追加到文件头部
+ * - 限制日志文件大小（默认 3MB）
+ * - 使用 LRU 策略，新日志追加到文件头部，超过限制时删除旧日志
  */
 object LogcatCollector {
     private const val TAG = "LogcatCollector"
-    
-    // 最大日志文件大小（8MB）
+
+    // 最大日志文件大小（8MB，比服务端 10MB 小，留出缓冲空间）
     private const val MAX_LOG_SIZE = 8 * 1024 * 1024L
-    
+
     // 日志文件名
     private const val LOG_FILE_NAME = "device_logs.txt"
-    
+
     // 时间格式
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault())
     
@@ -65,9 +65,10 @@ object LogcatCollector {
                 append("\n")
                 append(existingLogs)
             }
-            
-            // 如果超过大小限制，截断旧日志
+
+            // LRU 策略：如果超过大小限制，保留最新的日志（头部），删除旧日志（尾部）
             val finalLogs = if (combinedLogs.length > MAX_LOG_SIZE) {
+                Log.w(TAG, "日志文件超过限制 ${combinedLogs.length} > $MAX_LOG_SIZE，应用 LRU 截断")
                 combinedLogs.take(MAX_LOG_SIZE.toInt())
             } else {
                 combinedLogs

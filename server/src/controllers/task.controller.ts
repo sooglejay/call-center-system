@@ -531,8 +531,8 @@ export const updateTaskCustomerInfo = async (req: Request, res: Response) => {
     const { id, customerId } = req.params;
     const { name, phone, company } = req.body;
     
-    // 验证必填字段
-    if (!phone) {
+    // 验证：如果要更新电话号码，则不能为空
+    if (phone !== undefined && !phone) {
       return res.status(400).json({ error: '电话号码不能为空' });
     }
     

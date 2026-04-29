@@ -223,17 +223,31 @@ fun AutoFloatingWindow(
                 previousCustomer = currentCustomer
             } else {
                 // App在后台
-                // 规则2：仅在开始拨打电话时（currentCustomer从null变为有值）显示悬浮窗
                 val isStartingCall = currentCustomer != null && previousCustomer == null
+                val customerChanged = currentCustomer != null && previousCustomer != null && currentCustomer != previousCustomer
                 
                 if (isStartingCall && !FloatingWindowManager.isShowing.value) {
+                    // 首次显示悬浮窗
                     Log.d("AutoFloatingWindow", "开始拨打电话，显示悬浮窗")
                     FloatingWindowManager.showFloatingWindow(
                         context = context,
                         customer = currentCustomer,
                         dialedCount = dialedCount,
-                        totalCount = currentCustomer?.let { dialedCount + 1 } ?: dialedCount,
+                        totalCount = AutoDialService.totalCount.value,
                         isCalling = true
+                    )
+                } else if (customerChanged && FloatingWindowManager.isShowing.value) {
+                    // 客户变化时更新悬浮窗
+                    Log.d("AutoFloatingWindow", "客户变化，更新悬浮窗")
+                    FloatingWindowManager.updateCustomer(
+                        context = context,
+                        customer = currentCustomer,
+                        isCalling = true
+                    )
+                    FloatingWindowManager.updateProgress(
+                        context = context,
+                        dialedCount = dialedCount,
+                        totalCount = AutoDialService.totalCount.value
                     )
                 }
                 

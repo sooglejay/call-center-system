@@ -171,16 +171,26 @@ private fun TaskDetailContent(
 ) {
     val customers = task.customers ?: emptyList()
 
-    // 按通话状态分组（与客服视角对齐）
+    // 按通话状态分组（简化为三种状态：已接听、语音信箱、响铃未接）
     val pendingCustomers = customers.filter { it.callStatus == "pending" }
     val connectedCustomers = customers.filter { it.callStatus == "connected" || it.callResult == "已接听" }
     val voicemailCustomers = customers.filter { it.callStatus == "voicemail" || it.callResult == "语音信箱" }
-    val unansweredCustomers = customers.filter { it.callStatus == "unanswered" || it.callResult == "响铃未接" }
-    val rejectedCustomers = customers.filter { it.callStatus == "rejected" || it.callResult == "对方拒接" }
-    val busyCustomers = customers.filter { it.callStatus == "busy" || it.callResult == "对方忙线" }
-    val powerOffCustomers = customers.filter { it.callStatus == "power_off" || it.callResult == "关机/停机" || it.callResult == "对方关机" }
-    val noAnswerCustomers = customers.filter { it.callStatus == "no_answer" || it.callResult == "无人接听" }
-    val ivrCustomers = customers.filter { it.callStatus == "ivr" || it.callResult == "IVR语音" }
+    // 响铃未接：合并对方拒接、对方忙线、对方关机、无人接听、IVR语音等所有未接通状态
+    val unansweredCustomers = customers.filter {
+        it.callStatus == "unanswered" ||
+        it.callStatus == "rejected" ||
+        it.callStatus == "busy" ||
+        it.callStatus == "power_off" ||
+        it.callStatus == "no_answer" ||
+        it.callStatus == "ivr" ||
+        it.callResult == "响铃未接" ||
+        it.callResult == "对方拒接" ||
+        it.callResult == "对方忙线" ||
+        it.callResult == "关机/停机" ||
+        it.callResult == "对方关机" ||
+        it.callResult == "无人接听" ||
+        it.callResult == "IVR语音"
+    }
     val otherCalledCustomers = customers.filter {
         (it.callStatus == "called" || it.callStatus == "completed") &&
         it.callResult != "已接听" &&
@@ -194,19 +204,14 @@ private fun TaskDetailContent(
         it.callResult != "IVR语音"
     }
 
-    // 根据选中的Tab过滤客户列表
+    // 根据选中的Tab过滤客户列表（简化为三种状态）
     val displayedCustomers = when (selectedTab) {
         0 -> customers // 全部
         1 -> pendingCustomers // 待拨打
         2 -> connectedCustomers // 已接听
         3 -> voicemailCustomers // 语音信箱
-        4 -> unansweredCustomers // 响铃未接
-        5 -> rejectedCustomers // 拒接
-        6 -> busyCustomers // 忙线
-        7 -> powerOffCustomers // 关机/停机
-        8 -> noAnswerCustomers // 无人接听
-        9 -> ivrCustomers // IVR语音
-        10 -> otherCalledCustomers // 其他
+        4 -> unansweredCustomers // 响铃未接（包含拒接、忙线、关机、无人接听、IVR等）
+        5 -> otherCalledCustomers // 其他
         else -> customers
     }
 
@@ -238,11 +243,6 @@ private fun TaskDetailContent(
                 connectedCount = connectedCustomers.size,
                 voicemailCount = voicemailCustomers.size,
                 unansweredCount = unansweredCustomers.size,
-                rejectedCount = rejectedCustomers.size,
-                busyCount = busyCustomers.size,
-                powerOffCount = powerOffCustomers.size,
-                noAnswerCount = noAnswerCustomers.size,
-                ivrCount = ivrCustomers.size,
                 otherCount = otherCalledCustomers.size,
                 selectedTab = selectedTab,
                 onTabSelected = onTabSelected
@@ -257,12 +257,7 @@ private fun TaskDetailContent(
                 2 -> "已接听"
                 3 -> "语音信箱"
                 4 -> "响铃未接"
-                5 -> "拒接"
-                6 -> "忙线"
-                7 -> "关机/停机"
-                8 -> "无人接听"
-                9 -> "IVR语音"
-                10 -> "其他"
+                5 -> "其他"
                 else -> "全部客户"
             }
             Text(
@@ -809,19 +804,14 @@ private fun TaskPriorityChip(priority: String) {
 
 @Composable
 private fun CallStatusChip(status: String) {
+    // 简化为三种状态显示：已接听、语音信箱、响铃未接
     val (color, text, icon) = when (status) {
         "pending" -> Triple(Color(0xFF9E9E9E), "待拨打", Icons.Default.Schedule)
-        "called" -> Triple(Color(0xFFFF9800), "已拨打", Icons.Default.Phone)
         "connected" -> Triple(Color(0xFF4CAF50), "已接听", Icons.Default.CheckCircle)
-        "completed" -> Triple(Color(0xFF4CAF50), "已完成", Icons.Default.CheckCircle)
-        "failed" -> Triple(Color(0xFFE91E63), "未接通", Icons.Default.Close)
         "voicemail" -> Triple(Color(0xFF9C27B0), "语音信箱", Icons.Default.Voicemail)
-        "unanswered" -> Triple(Color(0xFFFF5722), "响铃未接", Icons.Default.PhoneMissed)
-        "rejected" -> Triple(Color(0xFFE91E63), "拒接", Icons.Default.Block)
-        "busy" -> Triple(Color(0xFFFF9800), "忙线", Icons.Default.PhoneInTalk)
-        "power_off" -> Triple(Color(0xFF607D8B), "关机/停机", Icons.Default.PhoneDisabled)
-        "no_answer" -> Triple(Color(0xFFFF9800), "无人接听", Icons.Default.PhonePaused)
-        "ivr" -> Triple(Color(0xFF00BCD4), "IVR语音", Icons.Default.RecordVoiceOver)
+        // 以下状态统一归为响铃未接
+        "called", "completed", "failed", "unanswered", "rejected", "busy", "power_off", "no_answer", "ivr" ->
+            Triple(Color(0xFFFF5722), "响铃未接", Icons.Default.PhoneMissed)
         else -> Triple(Color(0xFF9E9E9E), "待拨打", Icons.Default.Schedule)
     }
 
@@ -859,11 +849,6 @@ private fun CustomerFilterTabs(
     connectedCount: Int,
     voicemailCount: Int,
     unansweredCount: Int,
-    rejectedCount: Int,
-    busyCount: Int,
-    powerOffCount: Int,
-    noAnswerCount: Int,
-    ivrCount: Int,
     otherCount: Int,
     selectedTab: Int,
     onTabSelected: (Int) -> Unit
@@ -931,7 +916,7 @@ private fun CustomerFilterTabs(
                 )
             }
 
-            // 第二行Tab: 响铃未接 | 拒接 | 忙线 | 关机/停机
+            // 第二行Tab: 响铃未接 | 其他
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -953,81 +938,10 @@ private fun CustomerFilterTabs(
                 )
 
                 FilterTabItem(
-                    label = "拒接",
-                    count = rejectedCount,
-                    isSelected = selectedTab == 5,
-                    onClick = { onTabSelected(5) }
-                )
-
-                HorizontalDivider(
-                    modifier = Modifier
-                        .width(1.dp)
-                        .height(40.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-
-                FilterTabItem(
-                    label = "忙线",
-                    count = busyCount,
-                    isSelected = selectedTab == 6,
-                    onClick = { onTabSelected(6) }
-                )
-
-                HorizontalDivider(
-                    modifier = Modifier
-                        .width(1.dp)
-                        .height(40.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-
-                FilterTabItem(
-                    label = "关机/停机",
-                    count = powerOffCount,
-                    isSelected = selectedTab == 7,
-                    onClick = { onTabSelected(7) }
-                )
-            }
-
-            // 第三行Tab: 无人接听 | IVR语音 | 其他
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                FilterTabItem(
-                    label = "无人接听",
-                    count = noAnswerCount,
-                    isSelected = selectedTab == 8,
-                    onClick = { onTabSelected(8) }
-                )
-
-                HorizontalDivider(
-                    modifier = Modifier
-                        .width(1.dp)
-                        .height(40.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-
-                FilterTabItem(
-                    label = "IVR语音",
-                    count = ivrCount,
-                    isSelected = selectedTab == 9,
-                    onClick = { onTabSelected(9) }
-                )
-
-                HorizontalDivider(
-                    modifier = Modifier
-                        .width(1.dp)
-                        .height(40.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-
-                FilterTabItem(
                     label = "其他",
                     count = otherCount,
-                    isSelected = selectedTab == 10,
-                    onClick = { onTabSelected(10) }
+                    isSelected = selectedTab == 5,
+                    onClick = { onTabSelected(5) }
                 )
             }
         }
@@ -1100,19 +1014,14 @@ private fun CreateRetryTaskDialog(
         filterCustomersByTab(customers, selectedTab)
     }
 
-    // 获取状态标签
+    // 获取状态标签（简化为三种状态）
     val statusLabel = remember(selectedTab) {
         when (selectedTab) {
             1 -> "待拨打"
             2 -> "已接听"
             3 -> "语音信箱"
             4 -> "响铃未接"
-            5 -> "拒接"
-            6 -> "忙线"
-            7 -> "关机/停机"
-            8 -> "无人接听"
-            9 -> "IVR语音"
-            10 -> "其他"
+            5 -> "其他"
             else -> "全部"
         }
     }
@@ -1305,20 +1214,31 @@ private fun CreateRetryTaskDialog(
 }
 
 /**
- * 根据Tab筛选客户
+ * 根据Tab筛选客户（简化为三种状态）
  */
 private fun filterCustomersByTab(customers: List<TaskCustomer>, tab: Int): List<TaskCustomer> {
     return when (tab) {
         1 -> customers.filter { it.callStatus == "pending" }
         2 -> customers.filter { it.callStatus == "connected" || it.callResult == "已接听" }
         3 -> customers.filter { it.callStatus == "voicemail" || it.callResult == "语音信箱" }
-        4 -> customers.filter { it.callStatus == "unanswered" || it.callResult == "响铃未接" }
-        5 -> customers.filter { it.callStatus == "rejected" || it.callResult == "对方拒接" }
-        6 -> customers.filter { it.callStatus == "busy" || it.callResult == "对方忙线" }
-        7 -> customers.filter { it.callStatus == "power_off" || it.callResult == "关机/停机" || it.callResult == "对方关机" }
-        8 -> customers.filter { it.callStatus == "no_answer" || it.callResult == "无人接听" }
-        9 -> customers.filter { it.callStatus == "ivr" || it.callResult == "IVR语音" }
-        10 -> customers.filter {
+        // 响铃未接：合并所有未接通状态
+        4 -> customers.filter {
+            it.callStatus == "unanswered" ||
+            it.callStatus == "rejected" ||
+            it.callStatus == "busy" ||
+            it.callStatus == "power_off" ||
+            it.callStatus == "no_answer" ||
+            it.callStatus == "ivr" ||
+            it.callResult == "响铃未接" ||
+            it.callResult == "对方拒接" ||
+            it.callResult == "对方忙线" ||
+            it.callResult == "关机/停机" ||
+            it.callResult == "对方关机" ||
+            it.callResult == "无人接听" ||
+            it.callResult == "IVR语音"
+        }
+        // 其他
+        5 -> customers.filter {
             (it.callStatus == "called" || it.callStatus == "completed") &&
             it.callResult != "已接听" &&
             it.callResult != "语音信箱" &&

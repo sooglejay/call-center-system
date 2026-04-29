@@ -400,7 +400,8 @@ interface ApiService {
     @Multipart
     @POST("logs/upload")
     suspend fun uploadDeviceLogs(
-        @Part file: MultipartBody.Part
+        @Part file: MultipartBody.Part,
+        @Part("description") description: okhttp3.RequestBody? = null
     ): Response<LogUploadResponse>
 }
 
@@ -410,5 +411,6 @@ interface ApiService {
 data class LogUploadResponse(
     val message: String,
     val file_size: Long,
-    val upload_time: String
+    val upload_time: String,
+    val description: String? = null
 )

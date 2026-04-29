@@ -86,7 +86,7 @@ class MyStatsViewModel @Inject constructor(
     /**
      * 上传设备日志
      */
-    fun uploadDeviceLogs(context: Context) {
+    fun uploadDeviceLogs(context: Context, description: String = "") {
         viewModelScope.launch {
             _isUploadingLogs.value = true
             _logUploadMessage.value = null
@@ -103,7 +103,7 @@ class MyStatsViewModel @Inject constructor(
                 Log.d(TAG, "日志文件大小: ${logFile.length()} 字节")
 
                 // 上传日志
-                val result = uploadLogFile(logFile)
+                val result = uploadLogFile(logFile, description)
 
                 result.fold(
                     onSuccess = { response ->
@@ -128,16 +128,34 @@ class MyStatsViewModel @Inject constructor(
     /**
      * 上传日志文件
      */
-    private suspend fun uploadLogFile(logFile: File): Result<LogUploadResponse> {
+    private suspend fun uploadLogFile(logFile: File, description: String): Result<LogUploadResponse> {
         return try {
             val requestBody = logFile.asRequestBody("text/plain".toMediaTypeOrNull())
             val part = MultipartBody.Part.createFormData("file", logFile.name, requestBody)
-            val response: Response<LogUploadResponse> = statsRepository.uploadDeviceLogs(part)
+
+            // 创建描述的 RequestBody
+            val descriptionBody = if (description.isNotEmpty()) {
+                okhttp3.RequestBody.create("text/plain".toMediaTypeOrNull(), description)
+            } else {
+                null
+            }
+
+            val response: Response<LogUploadResponse> = statsRepository.uploadDeviceLogs(part, descriptionBody)
 
             if (response.isSuccessful && response.body() != null) {
                 Result.success(response.body()!!)
             } else {
-                Result.failure(Exception("上传失败: ${response.code()}"))
+                // 处理错误响应
+                val errorBody = response.errorBody()?.string()
+                val errorMessage = if (response.code() == 413) {
+                    // 文件过大错误
+                    "日志文件过大，请升级App至最新版本"
+                } else if (errorBody?.contains("FILE_TOO_LARGE") == true) {
+                    "日志文件过大，请升级App至最新版本"
+                } else {
+                    "上传失败: ${response.code()}"
+                }
+                Result.failure(Exception(errorMessage))
             }
         } catch (e: Exception) {
             Result.failure(e)

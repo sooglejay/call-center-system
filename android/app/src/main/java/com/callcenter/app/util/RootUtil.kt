@@ -25,7 +25,7 @@ object RootUtil {
             process.waitFor() == 0
         } catch (e: Exception) {
             Log.e(TAG, "检查 root 权限失败: ${e.message}")
-            UserNotifier.showError("Root 权限检查失败: ${e.message}")
+//            UserNotifier.showError("Root 权限检查失败: ${e.message}")
             false
         }
     }

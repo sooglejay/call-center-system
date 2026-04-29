@@ -201,7 +201,7 @@ class RootCallStateDetector {
                 process.destroy()
             } catch (e: Exception) {
                 Log.e(TAG, "监控日志失败: ${e.message}")
-                notifyError("监控失败: ${e.message}")
+//                notifyError("监控失败: ${e.message}")
             }
         }
     }
