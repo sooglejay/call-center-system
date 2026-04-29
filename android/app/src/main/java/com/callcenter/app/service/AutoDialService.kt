@@ -1671,18 +1671,33 @@ class AutoDialService : Service() {
                                     // ⚠️ 重要：等待免提开启后再开始录音
                                     // 免提未开启时录音会录不到对方声音
                                     DebugLogger.log("[AudioAnalysis] 等待免提开启...")
+                                    DebugLogger.log("[AudioAnalysis] InCallService 是否激活: ${AutoSpeakerInCallService.isServiceActive}")
+                                    
                                     var speakerWaitCount = 0
                                     val maxSpeakerWait = 20 // 最多等待 2 秒
                                     while (!audioEnergyAnalyzer!!.isSpeakerphoneOn() && speakerWaitCount < maxSpeakerWait) {
                                         delay(100)
                                         speakerWaitCount++
+                                        // 每 500ms 打印一次状态
+                                        if (speakerWaitCount % 5 == 0) {
+                                            DebugLogger.log("[AudioAnalysis] 免提等待中... (${speakerWaitCount * 100}ms, speakerOn=${audioEnergyAnalyzer!!.isSpeakerphoneOn()})")
+                                        }
                                     }
                                     
                                     val speakerOn = audioEnergyAnalyzer!!.isSpeakerphoneOn()
                                     if (speakerOn) {
                                         DebugLogger.log("[AudioAnalysis] ✓ 免提已开启 (等待了 ${speakerWaitCount * 100}ms)")
                                     } else {
-                                        DebugLogger.log("[AudioAnalysis] ⚠️ 免提等待超时，尝试继续录音 (可能录不到声音)")
+                                        DebugLogger.log("[AudioAnalysis] ✗✗✗ 免提等待超时！将无法录制通话声音")
+                                        DebugLogger.log("[AudioAnalysis] 可能原因:")
+                                        DebugLogger.log("[AudioAnalysis]   1. 应用未设为默认电话应用")
+                                        DebugLogger.log("[AudioAnalysis]   2. InCallService 未启动")
+                                        DebugLogger.log("[AudioAnalysis]   3. 系统禁用了免提")
+                                        FloatingCustomerService.addCallStateHistory(
+                                            "免提未开启",
+                                            _currentCustomer.value?.phone,
+                                            _currentCustomer.value?.name
+                                        )
                                     }
                                     
                                     // 启动音频采集
