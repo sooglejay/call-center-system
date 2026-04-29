@@ -235,10 +235,15 @@ class AudioEnergyAnalyzer(private val context: Context) {
                 DebugLogger.log("[AudioEnergy] ✗ SecurityException: ${e.message}")
                 isRecording.set(false)
                 false
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // CancellationException 是协程取消的正常情况（如语音信箱检测后挂断电话）
+                Log.d(TAG, "音频采集被取消")
+                DebugLogger.log("[AudioEnergy] 音频采集被取消（正常情况）")
+                isRecording.set(false)
+                throw e  // 重新抛出，保持协程取消机制
             } catch (e: Exception) {
                 Log.e(TAG, "启动音频采集失败: ${e.message}")
                 DebugLogger.log("[AudioEnergy] ✗ 启动异常: ${e.message}")
-                DebugLogger.log("[AudioEnergy] 异常堆栈: ${e.stackTraceToString().take(500)}")
                 isRecording.set(false)
                 false
             }

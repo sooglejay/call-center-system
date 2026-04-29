@@ -22,7 +22,7 @@ import kotlinx.coroutines.sync.withLock
 /**
  * 默认防抖间隔时间（毫秒）
  */
-const val DEFAULT_DEBOUNCE_INTERVAL = 500L
+const val DEFAULT_DEBOUNCE_INTERVAL = 800L
 
 /**
  * 防抖点击状态管理
@@ -123,11 +123,14 @@ fun rememberDebounceOnClick(
 ): () -> Unit {
     val coroutineScope = remember { CoroutineScope(Dispatchers.Main) }
 
-    return remember(interval, onClick) {
+    // 使用 rememberUpdatedState 确保 onClick 是最新的，但不作为 remember 的 key
+    val currentOnClick = androidx.compose.runtime.rememberUpdatedState(onClick)
+
+    return remember(interval) {
         {
             coroutineScope.launch {
                 if (DebounceState.canClick(interval)) {
-                    onClick()
+                    currentOnClick.value()
                 }
             }
         }

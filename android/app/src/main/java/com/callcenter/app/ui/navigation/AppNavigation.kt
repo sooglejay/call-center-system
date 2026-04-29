@@ -47,6 +47,19 @@ import com.callcenter.app.util.SessionEvent
 import com.callcenter.app.util.SessionManager
 
 /**
+ * 安全返回扩展函数
+ * 只有当导航栈中有多于一个目的地时才执行返回操作
+ * 防止快速点击导致的白屏问题
+ */
+fun NavHostController.safeNavigateBack(): Boolean {
+    return if (currentBackStack.value.size > 1) {
+        popBackStack()
+    } else {
+        false
+    }
+}
+
+/**
  * 导航路由定义
  */
 sealed class Screen(val route: String) {
@@ -259,7 +272,7 @@ fun AppNavigation(
             val customerId = backStackEntry.arguments?.getInt("customerId") ?: 0
             CustomerDetailScreen(
                 customerId = customerId,
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack = { navController.safeNavigateBack() },
                 onNavigateToCallHistory = {
                     navController.navigate(Screen.CallHistory.createRoute(customerId))
                 }
@@ -277,7 +290,7 @@ fun AppNavigation(
         // ==================== 设置 ====================
         composable(Screen.Settings.route) {
             SettingsScreen(
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack = { navController.safeNavigateBack() },
                 onNavigateToCallSettings = {
                     navController.navigate(Screen.AutoDialSettings.route)
                 },
@@ -308,40 +321,40 @@ fun AppNavigation(
 
         composable(Screen.AutoDialSettings.route) {
             CallSettingsScreen(
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.safeNavigateBack() }
             )
         }
 
         composable(Screen.PermissionTest.route) {
             com.callcenter.app.ui.screens.settings.PermissionTestScreen(
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack = { navController.safeNavigateBack() },
                 onNavigateToFeatureToggles = { navController.navigate(Screen.FeatureToggles.route) }
             )
         }
 
         composable(Screen.FeatureToggles.route) {
             FeatureToggleScreen(
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.safeNavigateBack() }
             )
         }
 
         // ==================== 客服个人功能 ====================
         composable(Screen.MyStats.route) {
             MyStatsScreen(
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.safeNavigateBack() }
             )
         }
 
         composable(Screen.Help.route) {
             HelpScreen(
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.safeNavigateBack() }
             )
         }
 
         // 客服任务列表
         composable(Screen.AgentTaskList.route) {
             AgentTaskListScreen(
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack = { navController.safeNavigateBack() },
                 onTaskClick = { taskId ->
                     navController.navigate(Screen.AgentTaskExecution.createRoute(taskId))
                 }
@@ -356,7 +369,7 @@ fun AppNavigation(
             val taskId = backStackEntry.arguments?.getInt("taskId") ?: 0
             AgentTaskExecutionScreen(
                 taskId = taskId,
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack = { navController.safeNavigateBack() },
                 onNavigateToCreateRetryTask = { statusKey ->
                     navController.navigate(Screen.AgentCreateRetryTask.createRoute(taskId, statusKey))
                 }
@@ -375,9 +388,9 @@ fun AppNavigation(
             AgentCreateRetryTaskScreen(
                 taskId = taskId,
                 statusKey = statusKey,
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack = { navController.safeNavigateBack() },
                 onTaskCreated = {
-                    navController.popBackStack()
+                    navController.safeNavigateBack()
                     navController.navigate(Screen.AgentTaskList.route)
                 }
             )
@@ -386,7 +399,7 @@ fun AppNavigation(
         // ==================== 管理员功能 ====================
         composable(Screen.Dashboard.route) {
             DashboardScreen(
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack = { navController.safeNavigateBack() },
                 onNavigateToAgents = {
                     navController.navigate(Screen.AgentList.route)
                 },
@@ -404,7 +417,7 @@ fun AppNavigation(
 
         composable(Screen.AgentList.route) {
             AgentListScreen(
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack = { navController.safeNavigateBack() },
                 onNavigateToAgentDetail = { agentId ->
                     navController.navigate(Screen.AgentDetail.createRoute(agentId))
                 },
@@ -421,13 +434,13 @@ fun AppNavigation(
             val agentId = backStackEntry.arguments?.getInt("agentId") ?: 0
             AgentDetailScreen(
                 agentId = agentId,
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.safeNavigateBack() }
             )
         }
 
         composable(Screen.TaskList.route) {
             TaskListScreen(
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack = { navController.safeNavigateBack() },
                 onCreateTask = {
                     navController.navigate(Screen.CreateTask.route)
                 },
@@ -444,19 +457,19 @@ fun AppNavigation(
             val taskId = backStackEntry.arguments?.getInt("taskId") ?: 0
             TaskDetailScreen(
                 taskId = taskId,
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.safeNavigateBack() }
             )
         }
 
         composable(Screen.CreateTask.route) {
             CreateTaskScreen(
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.safeNavigateBack() }
             )
         }
 
         composable(Screen.AdminCustomerList.route) {
             AdminCustomerListScreen(
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack = { navController.safeNavigateBack() },
                 onCreateTask = { customerIds ->
                     // 导航到创建任务页面，带上客户ID
                     navController.navigate(Screen.CreateTask.route)

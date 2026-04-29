@@ -356,6 +356,9 @@ class AutoDialService : Service() {
             lastCallWasConnected = true
         }
         
+        // 标记已自动标记，避免 processQueue 中重复标记
+        hasAutoMarkedCurrentCall = true
+        
         val customer = _currentCustomer.value
         if (customer == null) {
             Log.w(TAG, "[AutoMark] 当前客户为空，无法标记")
@@ -618,10 +621,17 @@ class AutoDialService : Service() {
      */
     private fun hangupCurrentCall() {
         try {
-            // 使用反射调用 TelephonyService 挂断电话
-            val telephonyService = getSystemService(TELEPHONY_SERVICE) as TelephonyManager
+            // 优先使用 InCallService 挂断（最可靠）
+            if (AutoSpeakerInCallService.isServiceActive) {
+                val success = AutoSpeakerInCallService.disconnectCurrentCall()
+                if (success) {
+                    Log.d(TAG, "通过 InCallService 挂断电话成功")
+                    DebugLogger.log("[Hangup] ✓ 通过 InCallService 挂断电话")
+                    return
+                }
+            }
             
-            // 尝试通过广播挂断
+            // 备选方案：通过广播挂断
             val intent = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
                 putExtra(Intent.EXTRA_KEY_EVENT, android.view.KeyEvent(
                     android.view.KeyEvent.ACTION_DOWN,
@@ -630,9 +640,11 @@ class AutoDialService : Service() {
             }
             sendOrderedBroadcast(intent, null)
             
-            Log.d(TAG, "尝试挂断当前电话")
+            Log.d(TAG, "尝试通过广播挂断当前电话")
+            DebugLogger.log("[Hangup] 通过广播发送挂断命令")
         } catch (e: Exception) {
             Log.e(TAG, "挂断电话失败: ${e.message}")
+            DebugLogger.log("[Hangup] ✗ 挂断电话失败: ${e.message}")
             UserNotifier.showError("挂断电话失败: ${e.message}")
         }
     }
@@ -1807,7 +1819,7 @@ class AutoDialService : Service() {
                                                                 
                                                                 // 标记为语音信箱
                                                                 lastResolvedCallResult = "语音信箱"
-                                                                autoMarkCallStatus("voicemail", "语音信箱自动挂断")
+                                                                autoMarkCallStatus("voicemail", "语音信箱")
                                                             }
                                                         } catch (e: Exception) {
                                                             DebugLogger.log("[VoicemailAutoHangup] 检查开关失败: ${e.message}")
