@@ -80,6 +80,10 @@ class AudioEnergyAnalyzer(private val context: Context) {
         private const val ENERGY_CHANGE_THRESHOLD = 0.25f
         private const val STEADY_PATTERN_THRESHOLD = 0.18f  // 语音信箱更平稳
         private const val FLUCTUATING_PATTERN_THRESHOLD = 0.30f
+
+        // 【新增】启动缓冲期配置
+        private const val STARTUP_BUFFER_DURATION = 1000L  // 启动缓冲期 1秒
+        private const val DISCARD_INITIAL_SAMPLES = 10     // 丢弃前10个样本（1秒）
     }
 
     private var audioRecord: AudioRecord? = null
@@ -125,6 +129,25 @@ class AudioEnergyAnalyzer(private val context: Context) {
      */
     fun setSaveAudioData(save: Boolean) {
         saveAudioData = save
+    }
+
+    /**
+     * 获取当前平均能量（用于动态调整）
+     */
+    fun getCurrentAverageEnergy(): Float {
+        return if (energySamples.isNotEmpty()) {
+            energySamples.average().toFloat()
+        } else {
+            0f
+        }
+    }
+
+    /**
+     * 是否已过启动缓冲期
+     * 避免接通前的环境噪音导致误判
+     */
+    fun isPastStartupBuffer(): Boolean {
+        return getDurationMs() > STARTUP_BUFFER_DURATION
     }
 
     /**
@@ -319,6 +342,7 @@ class AudioEnergyAnalyzer(private val context: Context) {
         var sampleCount = 0
         var totalReadCount = 0L
         var lastLogTime = System.currentTimeMillis()
+        var isStartupBuffer = true  // 【新增】标记是否在启动缓冲期
 
         Log.d(TAG, "开始采样循环: bufferSize=${buffer.size}, saveAudioData=$saveAudioData")
 
@@ -330,6 +354,18 @@ class AudioEnergyAnalyzer(private val context: Context) {
                 if (readCount > 0) {
                     // 计算 RMS 能量
                     val energy = calculateRmsEnergy(buffer, readCount)
+
+                    // 【新增】启动缓冲期处理
+                    if (isStartupBuffer && sampleCount < DISCARD_INITIAL_SAMPLES) {
+                        // 前1秒的数据只用于校准，不保存
+                        sampleCount++
+                        if (sampleCount >= DISCARD_INITIAL_SAMPLES) {
+                            isStartupBuffer = false
+                            Log.d(TAG, "启动缓冲期结束，开始正式录音")
+                            DebugLogger.log("[AudioEnergy] ✓ 启动缓冲期结束，开始正式录音")
+                        }
+                        continue  // 跳过保存
+                    }
 
                     // 添加到样本列表
                     if (energySamples.size < MAX_ENERGY_SAMPLES) {

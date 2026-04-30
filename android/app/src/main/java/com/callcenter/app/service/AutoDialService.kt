@@ -621,7 +621,25 @@ class AutoDialService : Service() {
      */
     private fun hangupCurrentCall() {
         try {
-            // 优先使用 InCallService 挂断（最可靠）
+            // 方法1：使用 TelecomManager.endCall()（Android 5.0+，需要权限）
+            val telecomManager = getSystemService(android.content.Context.TELECOM_SERVICE) as? android.telecom.TelecomManager
+            if (telecomManager != null) {
+                try {
+                    // Android 5.0+ 的 endCall 方法，需要 CALL_PHONE 权限
+                    // 在 Android 9+ 可能需要 ANSWER_PHONE_CALLS 权限或默认拨号应用
+                    val endCallMethod = telecomManager.javaClass.getMethod("endCall")
+                    val result = endCallMethod.invoke(telecomManager) as? Boolean
+                    if (result == true) {
+                        Log.d(TAG, "通过 TelecomManager.endCall() 挂断电话成功")
+                        DebugLogger.log("[Hangup] ✓ 通过 TelecomManager.endCall() 挂断电话")
+                        return
+                    }
+                } catch (e: Exception) {
+                    DebugLogger.log("[Hangup] TelecomManager.endCall() 失败: ${e.message}")
+                }
+            }
+            
+            // 方法2：使用 InCallService 挂断（需要是默认拨号应用）
             if (AutoSpeakerInCallService.isServiceActive) {
                 val success = AutoSpeakerInCallService.disconnectCurrentCall()
                 if (success) {
@@ -631,7 +649,17 @@ class AutoDialService : Service() {
                 }
             }
             
-            // 备选方案：通过广播挂断
+            // 方法3：使用无障碍服务点击挂断按钮
+            if (AutoSpeakerAccessibilityService.isServiceEnabled) {
+                val success = AutoSpeakerAccessibilityService.hangupCall()
+                if (success) {
+                    Log.d(TAG, "通过无障碍服务挂断电话成功")
+                    DebugLogger.log("[Hangup] ✓ 通过无障碍服务挂断电话")
+                    return
+                }
+            }
+            
+            // 方法4：通过广播挂断（低版本 Android 可能有效）
             val intent = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
                 putExtra(Intent.EXTRA_KEY_EVENT, android.view.KeyEvent(
                     android.view.KeyEvent.ACTION_DOWN,
@@ -929,6 +957,14 @@ class AutoDialService : Service() {
                 DebugLogger.log("[stopAutoDial] 分类异常: ${e.message}")
             }
             DebugLogger.log("[stopAutoDial] performFinalCallClassificationSync 执行完成")
+        }
+        
+        // 如果当前正在通话中，先挂断电话
+        val callState = getCallState()
+        if (callState != TelephonyManager.CALL_STATE_IDLE) {
+            Log.d(TAG, "stopAutoDial: 当前正在通话中，先挂断电话")
+            DebugLogger.log("[stopAutoDial] 当前正在通话中，先挂断电话")
+            hangupCurrentCall()
         }
 
         // 最后再设置 isRunning = false，这样 UI 刷新时 API 已经完成了
@@ -1660,7 +1696,11 @@ class AutoDialService : Service() {
                                     DebugLogger.logSeparator("录音识别启动")
                                     DebugLogger.log("[RecordDetect] 创建录音识别实例")
                                     audioEnergyAnalyzer = AudioEnergyAnalyzer(this@AutoDialService)
-                                    
+
+                                    // 【修复】启用音频数据保存，用于实时识别和离线关键词检测
+                                    audioEnergyAnalyzer?.setSaveAudioData(true)
+                                    DebugLogger.log("[RecordDetect] ✓ 已启用音频数据保存")
+
                                     // 检查是否启用了关键词检测功能
                                     val keywordDetectionEnabled = try {
                                         val enabled = callResultClassifier.isKeywordDetectionEnabled()
@@ -1750,7 +1790,13 @@ class AutoDialService : Service() {
                                                     
                                                     while (System.currentTimeMillis() - startTime < maxCheckTime) {
                                                         delay(checkInterval)
-                                                        
+
+                                                        // 【新增】检查是否已过启动缓冲期
+                                                        if (audioEnergyAnalyzer != null && !audioEnergyAnalyzer!!.isPastStartupBuffer()) {
+                                                            DebugLogger.log("[RealTimeDetect] 启动缓冲期内，跳过检测...")
+                                                            continue
+                                                        }
+
                                                         // 检查是否还在录音
                                                         if (audioEnergyAnalyzer == null || !audioEnergyAnalyzer!!.isRecording()) {
                                                             DebugLogger.log("[RealTimeDetect] 录音已停止，结束检测")

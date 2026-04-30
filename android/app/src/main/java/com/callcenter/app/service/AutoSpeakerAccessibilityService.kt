@@ -17,6 +17,7 @@ import com.callcenter.app.util.DebugLogger
  * 通过无障碍服务监听通话状态，自动：
  * 1. 开启扬声器
  * 2. 点击录音按钮（启动通话录音）
+ * 3. 挂断电话（检测到语音信箱时）
  * 
  * 适用于无法成为默认拨号应用的设备（如 MIUI、Google Pixel）
  */
@@ -32,9 +33,36 @@ class AutoSpeakerAccessibilityService : AccessibilityService() {
         // 录音按钮是否已点击（防止重复点击）
         private var recordingButtonClicked = false
         
+        // 服务实例
+        private var instance: AutoSpeakerAccessibilityService? = null
+        
+        // 挂断按钮的文案关键词（content-desc / text 都会匹配）
+        private val HANGUP_KEYWORDS = listOf(
+            "挂断", "结束通话", "结束", "拒接",
+            "End call", "End", "Hang up", "Decline"
+        )
+        
+        // 挂断按钮常见 viewId（去掉包名前缀，做后缀匹配）
+        private val HANGUP_VIEW_ID_SUFFIXES = listOf(
+            "endButton", "end_call_button", "btn_endcall",
+            "btn_end_call", "btn_hangup", "end_call", "hangup_button",
+            "floating_end_call_action_button"
+        )
+        
         // 重置录音按钮状态（新通话开始时调用）
         fun resetRecordingState() {
             recordingButtonClicked = false
+        }
+        
+        /**
+         * 通过无障碍服务挂断电话
+         * @param maxRetry 重试次数（rootInActiveWindow 可能瞬时为 null）
+         * @param intervalMs 每次重试间隔
+         * @return 是否成功点击
+         */
+        fun hangupCall(maxRetry: Int = 5, intervalMs: Long = 150L): Boolean {
+            val service = instance ?: return false
+            return service.performHangup(maxRetry, intervalMs)
         }
     }
 
@@ -46,6 +74,7 @@ class AutoSpeakerAccessibilityService : AccessibilityService() {
         Log.d(TAG, "========== AccessibilityService 已连接 ==========")
         DebugLogger.log("[AccessibilityService] 服务已连接")
         isServiceEnabled = true
+        instance = this
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
     }
 
@@ -69,13 +98,11 @@ class AutoSpeakerAccessibilityService : AccessibilityService() {
                 
                 // 检查是否在通话中
                 if (isInCall()) {
-                    DebugLogger.log("[AccessibilityService] 检测到通话中，尝试开启扬声器")
                     enableSpeaker()
                     
                     // 自动点击录音按钮
                     if (!recordingButtonClicked) {
                         DebugLogger.log("[AccessibilityService] 尝试自动点击录音按钮")
-                        // 延迟一下等待界面加载完成
                         mainHandler.postDelayed({
                             clickRecordingButton()
                         }, 1000)
@@ -98,6 +125,7 @@ class AutoSpeakerAccessibilityService : AccessibilityService() {
         Log.d(TAG, "AccessibilityService 已销毁")
         DebugLogger.log("[AccessibilityService] 服务已销毁")
         isServiceEnabled = false
+        instance = null
     }
 
     /**
@@ -117,7 +145,6 @@ class AutoSpeakerAccessibilityService : AccessibilityService() {
      */
     private fun enableSpeaker() {
         try {
-            // 方法1：直接设置 AudioManager
             audioManager?.let { am ->
                 am.mode = AudioManager.MODE_IN_CALL
                 @Suppress("DEPRECATION")
@@ -130,22 +157,18 @@ class AutoSpeakerAccessibilityService : AccessibilityService() {
                     }
                     speakerDevice?.let { device ->
                         am.setCommunicationDevice(device)
-                        DebugLogger.log("[AccessibilityService] ✓ setCommunicationDevice")
                     }
                 }
                 
                 @Suppress("DEPRECATION")
                 if (am.isSpeakerphoneOn) {
-                    DebugLogger.log("[AccessibilityService] ✓ 扬声器已开启 (AudioManager)")
+                    DebugLogger.log("[AccessibilityService] ✓ 扬声器已开启")
                 } else {
-                    DebugLogger.log("[AccessibilityService] ✗ AudioManager 方式失败，尝试点击界面")
-                    // 方法2：尝试点击界面上的扬声器按钮
                     clickSpeakerButton()
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "开启扬声器失败: ${e.message}")
-            DebugLogger.log("[AccessibilityService] ✗ 开启扬声器失败: ${e.message}")
         }
     }
 
@@ -156,17 +179,12 @@ class AutoSpeakerAccessibilityService : AccessibilityService() {
         try {
             val rootNode = rootInActiveWindow ?: return
             
-            // 查找扬声器相关的按钮（多语言支持）
             val speakerKeywords = listOf(
-                // 简体中文
                 "扬声器", "免提", "扩音", "喇叭",
-                // 繁体中文
                 "揚聲器", "免提", "擴音", "喇叭",
-                // 英文
                 "speaker", "handsfree", "loud", "speakerphone"
             )
             
-            // 递归查找包含关键词的按钮
             findAndClickButton(rootNode, speakerKeywords, "扬声器")
             
         } catch (e: Exception) {
@@ -185,25 +203,15 @@ class AutoSpeakerAccessibilityService : AccessibilityService() {
                 return
             }
             
-            DebugLogger.log("[AccessibilityService] 开始查找录音按钮...")
-            dumpNodeHierarchy(rootNode, 0)  // 调试：打印节点层级
-            
-            // 查找录音相关的按钮（多语言支持）
             val recordingKeywords = listOf(
-                // 简体中文
                 "录音", "录制", "通话录音", "开始录音", "录音中",
-                // 繁体中文
                 "錄音", "錄製", "通話錄音", "開始錄音", "錄音中",
-                // 英文
                 "record", "recording", "call record", "start recording",
                 "rec", "voice record", "tape",
-                // 日文（部分手机可能使用）
                 "録音", "通話録音",
-                // 韩文
                 "녹음"
             )
             
-            // 递归查找包含关键词的按钮
             val found = findAndClickButton(rootNode, recordingKeywords, "录音")
             
             if (found) {
@@ -211,94 +219,171 @@ class AutoSpeakerAccessibilityService : AccessibilityService() {
                 DebugLogger.log("[AccessibilityService] ✓ 录音按钮已点击")
             } else {
                 DebugLogger.log("[AccessibilityService] ✗ 未找到录音按钮")
-                // 尝试通过描述查找
-                findAndClickButtonByDescription(rootNode, recordingKeywords, "录音")
             }
             
         } catch (e: Exception) {
             Log.e(TAG, "点击录音按钮失败: ${e.message}")
-            DebugLogger.log("[AccessibilityService] ✗ 点击录音按钮失败: ${e.message}")
         }
     }
-    
+
+    // ==================== 挂断电话相关方法 ====================
+
     /**
-     * 打印节点层级（调试用）
+     * 程序化挂断当前通话
      */
-    private fun dumpNodeHierarchy(node: AccessibilityNodeInfo, depth: Int) {
-        if (depth > 5) return  // 限制深度
+    private fun performHangup(maxRetry: Int = 5, intervalMs: Long = 150L): Boolean {
+        DebugLogger.log("[AccessibilityService] 开始执行挂断，最大重试次数: $maxRetry")
         
-        val indent = "  ".repeat(depth)
-        val text = node.text?.toString()?.take(30) ?: ""
-        val contentDesc = node.contentDescription?.toString()?.take(30) ?: ""
-        val className = node.className?.toString()?.substringAfterLast(".") ?: ""
-        
-        if (text.isNotBlank() || contentDesc.isNotBlank()) {
-            Log.d(TAG, "$indent [$className] text='$text' desc='$contentDesc' clickable=${node.isClickable}")
-        }
-        
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i)
-            if (child != null) {
-                dumpNodeHierarchy(child, depth + 1)
+        repeat(maxRetry) { attempt ->
+            val clicked = tryHangupOnce()
+            if (clicked) {
+                Log.i(TAG, "performHangup success on attempt ${attempt + 1}")
+                DebugLogger.log("[AccessibilityService] ✓ 挂断成功，第 ${attempt + 1} 次尝试")
+                return true
             }
+            Log.d(TAG, "performHangup attempt ${attempt + 1} failed, retrying...")
+            try { Thread.sleep(intervalMs) } catch (_: InterruptedException) {}
         }
+        
+        Log.w(TAG, "performHangup all attempts failed")
+        DebugLogger.log("[AccessibilityService] ✗ 所有挂断尝试失败")
+        return false
     }
+
+    private fun tryHangupOnce(): Boolean {
+        // 优先拿 active window，其次遍历 windows（分屏/悬浮窗场景）
+        val roots = collectRootNodes()
+        if (roots.isEmpty()) {
+            Log.d(TAG, "no root node available")
+            return false
+        }
+        
+        for (root in roots) {
+            val btn = findHangupNode(root) ?: continue
+            Log.i(TAG, "found hangup node: viewId=${btn.viewIdResourceName}, " +
+                       "desc=${btn.contentDescription}, text=${btn.text}")
+            DebugLogger.log("[AccessibilityService] 找到挂断按钮: id=${btn.viewIdResourceName}, desc=${btn.contentDescription}")
+            
+            if (clickNode(btn)) return true
+        }
+        return false
+    }
+
+    /** 收集所有候选根节点 */
+    private fun collectRootNodes(): List<AccessibilityNodeInfo> {
+        val list = mutableListOf<AccessibilityNodeInfo>()
+        rootInActiveWindow?.let { list.add(it) }
+        
+        // Android 5.0+，能拿到所有可交互窗口
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                windows?.forEach { w ->
+                    w.root?.let { r -> if (list.none { it == r }) list.add(r) }
+                }
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "windows API failed: $e")
+        }
+        return list
+    }
+
+    /** 递归查找挂断按钮 */
+    private fun findHangupNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        // 策略 A：按 viewId 后缀匹配（快）
+        for (suffix in HANGUP_VIEW_ID_SUFFIXES) {
+            val nodes = findByViewIdSuffix(root, suffix)
+            if (nodes.isNotEmpty()) return nodes.first()
+        }
+        
+        // 策略 B：按 content-description / text 关键字（最稳）
+        return findByKeyword(root)
+    }
+
+    private fun findByViewIdSuffix(root: AccessibilityNodeInfo, suffix: String): List<AccessibilityNodeInfo> {
+        val result = mutableListOf<AccessibilityNodeInfo>()
+        traverse(root) { node ->
+            val vid = node.viewIdResourceName ?: return@traverse false
+            if (vid.endsWith(":id/$suffix") || vid.endsWith("/$suffix")) {
+                result.add(node)
+            }
+            false
+        }
+        return result
+    }
+
+    private fun findByKeyword(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        var found: AccessibilityNodeInfo? = null
+        traverse(root) { node ->
+            val desc = node.contentDescription?.toString().orEmpty()
+            val text = node.text?.toString().orEmpty()
+            val hit = HANGUP_KEYWORDS.any { kw ->
+                desc.equals(kw, ignoreCase = true) || 
+                text.equals(kw, ignoreCase = true) ||
+                // 对"挂断" / "结束通话"这种精确文案可以放宽到 contains
+                (kw.length >= 2 && (desc.contains(kw) || text.contains(kw)))
+            }
+            if (hit) {
+                // 排除"接听"、"应答"之类的误匹配
+                val negative = listOf("接听", "接受", "应答", "Answer", "Accept")
+                if (negative.none { desc.contains(it) || text.contains(it) }) {
+                    found = node
+                    return@traverse true  // 找到就停
+                }
+            }
+            false
+        }
+        return found
+    }
+
+    /** 深度优先遍历，predicate 返回 true 则提前停止 */
+    private fun traverse(node: AccessibilityNodeInfo?, predicate: (AccessibilityNodeInfo) -> Boolean): Boolean {
+        if (node == null) return false
+        if (predicate(node)) return true
+        for (i in 0 until node.childCount) {
+            if (traverse(node.getChild(i), predicate)) return true
+        }
+        return false
+    }
+
+    /** 尝试点击节点，不可点击则向上找可点击的父节点 */
+    private fun clickNode(node: AccessibilityNodeInfo): Boolean {
+        var target: AccessibilityNodeInfo? = node
+        var hop = 0
+        while (target != null && !target.isClickable && hop < 5) {
+            target = target.parent
+            hop++
+        }
+        if (target == null) {
+            Log.w(TAG, "no clickable ancestor")
+            return false
+        }
+        val ok = target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        Log.i(TAG, "performAction CLICK result=$ok on ${target.viewIdResourceName}")
+        return ok
+    }
+
+    // ==================== 通用按钮查找方法 ====================
 
     /**
      * 递归查找并点击按钮
      */
     private fun findAndClickButton(node: AccessibilityNodeInfo, keywords: List<String>, buttonName: String): Boolean {
-        // 检查当前节点
         val text = node.text?.toString()?.lowercase() ?: ""
         val contentDescription = node.contentDescription?.toString()?.lowercase() ?: ""
         
         for (keyword in keywords) {
             if (text.contains(keyword.lowercase()) || contentDescription.contains(keyword.lowercase())) {
-                // 找到了按钮，尝试点击
-                val clicked = performClick(node)
-                if (clicked) {
-                    DebugLogger.log("[AccessibilityService] ✓ 点击${buttonName}按钮成功: text='$text' desc='$contentDescription'")
+                if (performClick(node)) {
+                    DebugLogger.log("[AccessibilityService] ✓ 点击${buttonName}按钮成功: text='$text'")
                     return true
                 }
             }
         }
         
-        // 递归查找子节点
         for (i in 0 until node.childCount) {
             val child = node.getChild(i)
-            if (child != null) {
-                if (findAndClickButton(child, keywords, buttonName)) {
-                    return true
-                }
-            }
-        }
-        
-        return false
-    }
-    
-    /**
-     * 通过描述查找并点击按钮
-     */
-    private fun findAndClickButtonByDescription(node: AccessibilityNodeInfo, keywords: List<String>, buttonName: String): Boolean {
-        val contentDescription = node.contentDescription?.toString()?.lowercase() ?: ""
-        
-        for (keyword in keywords) {
-            if (contentDescription.contains(keyword.lowercase())) {
-                val clicked = performClick(node)
-                if (clicked) {
-                    DebugLogger.log("[AccessibilityService] ✓ 通过描述点击${buttonName}按钮成功: desc='$contentDescription'")
-                    return true
-                }
-            }
-        }
-        
-        // 递归查找子节点
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i)
-            if (child != null) {
-                if (findAndClickButtonByDescription(child, keywords, buttonName)) {
-                    return true
-                }
+            if (child != null && findAndClickButton(child, keywords, buttonName)) {
+                return true
             }
         }
         
@@ -309,12 +394,10 @@ class AutoSpeakerAccessibilityService : AccessibilityService() {
      * 执行点击操作
      */
     private fun performClick(node: AccessibilityNodeInfo): Boolean {
-        // 如果节点可点击，直接点击
         if (node.isClickable) {
             return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         }
         
-        // 否则尝试点击父节点
         var parent = node.parent
         while (parent != null) {
             if (parent.isClickable) {

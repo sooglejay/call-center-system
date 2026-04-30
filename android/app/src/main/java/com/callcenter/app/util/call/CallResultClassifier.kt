@@ -41,7 +41,19 @@ data class CallContext(
     val detectedKeywords: List<String> = emptyList(),
 
     /** AI关键词检测到的通话类型 */
-    val keywordCallType: KeywordCallType? = null
+    val keywordCallType: KeywordCallType? = null,
+
+    /** 【新增】平均能量 */
+    val averageEnergy: Float = 0f,
+
+    /** 【新增】归一化标准差 */
+    val normalizedStdDev: Float = 0f,
+
+    /** 【新增】识别文本长度 */
+    val textLength: Int = 0,
+
+    /** 【新增】能量样本列表（用于对话检测） */
+    val energySamples: List<Float> = emptyList()
 )
 
 /**
@@ -127,16 +139,17 @@ class CallResultClassifier(
     /**
      * 分类通话结果
      * 
-     * 只使用录音识别结果判断通话类型
+     * 使用多维度综合评分判断通话类型
      * 
      * @param context 通话上下文信息
      * @return 通话结果
      */
     suspend fun classify(context: CallContext): CallResult {
-        Log.d(TAG, "========== 开始判断通话结果 ==========")
+        Log.d(TAG, "========== 开始多维度评分判断 ==========")
         Log.d(TAG, "通话上下文: offhookDuration=${context.offhookDuration}ms, " +
                 "keywordCallType=${context.keywordCallType}, " +
-                "detectedKeywords=${context.detectedKeywords}")
+                "averageEnergy=${context.averageEnergy}, " +
+                "textLength=${context.textLength}")
         
         // 检查是否启用录音识别
         val voiceRecognitionEnabled = featureToggleManager.isEnabled(
@@ -151,34 +164,10 @@ class CallResultClassifier(
             return classifyLegacy(context)
         }
         
-        // 使用录音识别结果判断
-        Log.d(TAG, "--- 录音识别判断 (keywordCallType=${context.keywordCallType}, keywords=${context.detectedKeywords}) ---")
-
         // 检查是否已进入 OFFHOOK 状态
         val hasOffhook = context.offhookDuration > 0
-
-        // 检查 keywordCallType 是否为有效值（VOICEMAIL/HUMAN）
-        if (context.keywordCallType != KeywordCallType.UNKNOWN) {
-            val result = classifyByKeywords(context)
-            if (result != null) {
-                Log.d(TAG, "录音识别判断完成: type=${result.type}, confidence=${result.confidence}, reason=${result.reason}")
-                return result
-            }
-        } else {
-            Log.d(TAG, "录音识别跳过: keywordCallType=${context.keywordCallType}")
-        }
-
-        // 根据 OFFHOOK 状态返回默认结果
-        if (hasOffhook) {
-            // OFFHOOK 状态下没识别到文本，默认为语音信箱
-            Log.d(TAG, "========== OFFHOOK状态但未识别到文本，默认返回 VOICEMAIL（语音信箱）==========")
-            return CallResult(
-                type = CallResultType.VOICEMAIL,
-                confidence = 0.60f,
-                reason = "OFFHOOK状态下未识别到语音文本，默认为语音信箱",
-                layer = 1
-            )
-        } else {
+        
+        if (!hasOffhook) {
             // 没有 OFFHOOK，确实是响铃未接听
             Log.d(TAG, "========== 未进入OFFHOOK状态，返回 NO_ANSWER（响铃未接听）==========")
             return CallResult.NO_ANSWER.copy(
@@ -187,6 +176,75 @@ class CallResultClassifier(
                 layer = 1
             )
         }
+        
+        // 【新增】使用多维度评分系统
+        Log.d(TAG, "--- 开始多维度评分 ---")
+        val scoreCalculator = CallScoreCalculator()
+        val scoreResult = scoreCalculator.calculate(
+            offhookDuration = context.offhookDuration,
+            averageEnergy = context.averageEnergy,
+            normalizedStdDev = context.normalizedStdDev,
+            keywordCallType = context.keywordCallType,
+            textLength = context.textLength,
+            energySamples = context.energySamples
+        )
+        
+        Log.d(TAG, "评分结果: 总分=${scoreResult.totalScore}, 决策=${scoreResult.decision}")
+        
+        return when (scoreResult.decision) {
+            CallDecision.HUMAN -> CallResult(
+                type = CallResultType.CONNECTED,
+                confidence = scoreResult.totalScore,
+                reason = scoreResult.reason,
+                layer = 3
+            )
+            CallDecision.VOICEMAIL -> CallResult(
+                type = CallResultType.VOICEMAIL,
+                confidence = 1f - scoreResult.totalScore,
+                reason = scoreResult.reason,
+                layer = 3
+            )
+            CallDecision.UNCERTAIN -> {
+                // 不确定时，使用降级策略
+                Log.d(TAG, "评分不确定，使用降级策略")
+                classifyFallback(context)
+            }
+        }
+    }
+    
+    /**
+     * 降级判断：当评分不确定时使用
+     */
+    private fun classifyFallback(context: CallContext): CallResult {
+        Log.d(TAG, "使用降级判断策略")
+        
+        // 降级策略1：使用通话时长
+        if (context.offhookDuration > 20000) {
+            return CallResult(
+                type = CallResultType.CONNECTED,
+                confidence = 0.65f,
+                reason = "评分不确定，降级判断：通话时长>20秒",
+                layer = 1
+            )
+        }
+        
+        // 降级策略2：使用挂断方信息
+        if (context.hangupInitiator == HangupInitiator.LOCAL) {
+            return CallResult(
+                type = CallResultType.CONNECTED,
+                confidence = 0.60f,
+                reason = "评分不确定，降级判断：本地挂断",
+                layer = 1
+            )
+        }
+        
+        // 降级策略3：默认判断
+        return CallResult(
+            type = CallResultType.VOICEMAIL,
+            confidence = 0.50f,
+            reason = "评分不确定，降级判断：默认为语音信箱",
+            layer = 1
+        )
     }
     
     /**
