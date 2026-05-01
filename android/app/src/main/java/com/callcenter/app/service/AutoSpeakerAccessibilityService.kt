@@ -188,22 +188,31 @@ class AutoSpeakerAccessibilityService : AccessibilityService() {
             DebugLogger.log("[AccessibilityService] 开始查找录音按钮...")
             dumpNodeHierarchy(rootNode, 0)  // 调试：打印节点层级
 
-            // 查找录音相关的按钮（多语言支持）
+            // 查找录音相关的按钮和开关（多语言支持）
             val recordingKeywords = listOf(
                 // 简体中文
                 "录音", "录制", "通话录音", "开始录音", "录音中",
+                "开启通话录音", "开启录音",
+                "自动通话录音", "自动录音",
+                "自动录制与非通讯录号码的通话",
                 // 繁体中文
                 "錄音", "錄製", "通話錄音", "開始錄音", "錄音中",
+                "開啟通話錄音", "開啟錄音",
+                "自動通話錄音", "自動錄音",
                 // 英文
                 "record", "recording", "call record", "start recording",
                 "rec", "voice record", "tape",
+                "turn on call recording", "enable call recording",
+                "auto call recording", "auto recording",
+                "automatically record calls",
+                "always record calls",
                 // 日文（部分手机可能使用）
                 "録音", "通話録音",
                 // 韩文
                 "녹음"
             )
 
-            // 递归查找包含关键词的按钮
+            // 递归查找包含关键词的按钮或开关
             var found = findAndClickButton(rootNode, recordingKeywords, "录音")
 
             if (found) {
@@ -225,17 +234,33 @@ class AutoSpeakerAccessibilityService : AccessibilityService() {
                         DebugLogger.log("[AccessibilityService] 等待菜单展开...")
                         Thread.sleep(500)
 
-                        // 重新获取根节点并查找录音按钮
+                        // 重新获取根节点并查找录音相关控件
                         val newRootNode = rootInActiveWindow
                         if (newRootNode != null) {
+                            // 检查是否有地区限制提示
+                            if (checkRegionRestriction(newRootNode)) {
+                                DebugLogger.log("[AccessibilityService] ⚠️ 检测到地区限制：通话录音服务未在您所在的国家/地区提供")
+                                DebugLogger.log("[AccessibilityService] 尝试查找'请求录制通话'选项")
+                            }
+
+                            // 尝试查找并开启所有相关的 Switch 开关（Google Pixel 风格）
+                            DebugLogger.log("[AccessibilityService] 在展开菜单中查找录音开关")
+                            val switchCount = findAllAndClickSwitches(newRootNode, recordingKeywords, "录音相关开关")
+
+                            if (switchCount > 0) {
+                                recordingButtonClicked = true
+                                DebugLogger.log("[AccessibilityService] ✓ 找到并开启了 $switchCount 个录音开关")
+                            }
+
+                            // 再尝试查找普通按钮（备用方案）
                             DebugLogger.log("[AccessibilityService] 在展开菜单中查找录音按钮")
                             found = findAndClickButton(newRootNode, recordingKeywords, "录音")
 
                             if (found) {
                                 recordingButtonClicked = true
                                 DebugLogger.log("[AccessibilityService] ✓ 在展开菜单中找到并点击录音按钮")
-                            } else {
-                                DebugLogger.log("[AccessibilityService] ✗ 展开菜单后仍未找到录音按钮")
+                            } else if (switchCount == 0) {
+                                DebugLogger.log("[AccessibilityService] ✗ 展开菜单后仍未找到录音控件")
                             }
                         }
                     }
@@ -246,6 +271,158 @@ class AutoSpeakerAccessibilityService : AccessibilityService() {
             Log.e(TAG, "点击录音按钮失败: ${e.message}")
             DebugLogger.log("[AccessibilityService] ✗ 点击录音按钮失败: ${e.message}")
         }
+    }
+
+    /**
+     * 检查是否有地区限制提示
+     */
+    private fun checkRegionRestriction(node: AccessibilityNodeInfo): Boolean {
+        val restrictionKeywords = listOf(
+            // 简体中文
+            "未在您所在的国家", "未在您所在的地区", "地区提供", "国家提供",
+            // 英文
+            "not available in your country", "not available in your region",
+            "not available in your area"
+        )
+
+        val text = node.text?.toString()?.lowercase() ?: ""
+        val contentDesc = node.contentDescription?.toString()?.lowercase() ?: ""
+
+        for (keyword in restrictionKeywords) {
+            if (text.contains(keyword.lowercase()) || contentDesc.contains(keyword.lowercase())) {
+                return true
+            }
+        }
+
+        // 递归检查子节点
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i)
+            if (child != null && checkRegionRestriction(child)) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    /**
+     * 查找并点击 Switch 开关（支持 Google Pixel 风格的开关）
+     */
+    private fun findAndClickSwitch(node: AccessibilityNodeInfo, keywords: List<String>, switchName: String): Boolean {
+        // 检查当前节点
+        val text = node.text?.toString()?.lowercase() ?: ""
+        val contentDesc = node.contentDescription?.toString()?.lowercase() ?: ""
+        val className = node.className?.toString() ?: ""
+
+        // 检查是否是 Switch 控件
+        val isSwitch = className.contains("Switch", ignoreCase = true) ||
+                       node.isCheckable // Switch 通常可以勾选
+
+        for (keyword in keywords) {
+            if (text.contains(keyword.lowercase()) || contentDesc.contains(keyword.lowercase())) {
+                if (isSwitch) {
+                    // 检查是否已开启
+                    if (!node.isChecked) {
+                        val clicked = performClick(node)
+                        if (clicked) {
+                            DebugLogger.log("[AccessibilityService] ✓ 点击${switchName}开关成功: text='$text' desc='$contentDesc'")
+                            return true
+                        }
+                    } else {
+                        DebugLogger.log("[AccessibilityService] ✓ ${switchName}开关已开启，无需点击")
+                        return true
+                    }
+                } else {
+                    // 不是 Switch，但包含关键词，尝试点击
+                    val clicked = performClick(node)
+                    if (clicked) {
+                        DebugLogger.log("[AccessibilityService] ✓ 点击${switchName}成功: text='$text' desc='$contentDesc'")
+                        return true
+                    }
+                }
+            }
+        }
+
+        // 递归查找子节点
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i)
+            if (child != null) {
+                if (findAndClickSwitch(child, keywords, switchName)) {
+                    return true
+                }
+            }
+        }
+
+        return false
+    }
+
+    /**
+     * 查找并开启所有相关的 Switch 开关（Google Pixel 可能有多个开关）
+     */
+    private fun findAllAndClickSwitches(node: AccessibilityNodeInfo, keywords: List<String>, switchName: String): Int {
+        return findAllAndClickSwitchesInternal(node, keywords, switchName, mutableSetOf(), mutableSetOf(), 0)
+    }
+
+    /**
+     * 递归查找并开启所有 Switch 开关的内部方法
+     */
+    private fun findAllAndClickSwitchesInternal(
+        node: AccessibilityNodeInfo,
+        keywords: List<String>,
+        switchName: String,
+        visitedNodes: MutableSet<String>,
+        clickedTexts: MutableSet<String>,
+        count: Int
+    ): Int {
+        var currentCount = count
+
+        // 检查当前节点
+        val text = node.text?.toString()?.lowercase() ?: ""
+        val contentDesc = node.contentDescription?.toString()?.lowercase() ?: ""
+        val className = node.className?.toString() ?: ""
+
+        // 避免重复处理相同的文本
+        val nodeKey = text + contentDesc
+        if (nodeKey.isNotBlank() && nodeKey in clickedTexts) {
+            return currentCount
+        }
+
+        // 检查是否是 Switch 控件
+        val isSwitch = className.contains("Switch", ignoreCase = true) ||
+                       node.isCheckable
+
+        for (keyword in keywords) {
+            if (text.contains(keyword.lowercase()) || contentDesc.contains(keyword.lowercase())) {
+                if (isSwitch) {
+                    // 检查是否已开启
+                    if (!node.isChecked) {
+                        val clicked = performClick(node)
+                        if (clicked) {
+                            currentCount++
+                            clickedTexts.add(nodeKey)
+                            DebugLogger.log("[AccessibilityService] ✓ 点击${switchName}开关成功 (#$currentCount): text='$text' desc='$contentDesc'")
+                            // 短暂延迟，避免点击过快
+                            Thread.sleep(100)
+                        }
+                    } else {
+                        DebugLogger.log("[AccessibilityService] ✓ ${switchName}开关已开启，无需点击: text='$text'")
+                        currentCount++
+                        clickedTexts.add(nodeKey)
+                    }
+                }
+                break  // 匹配到一个关键词就够了
+            }
+        }
+
+        // 递归查找子节点
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i)
+            if (child != null) {
+                currentCount = findAllAndClickSwitchesInternal(child, keywords, switchName, visitedNodes, clickedTexts, currentCount)
+            }
+        }
+
+        return currentCount
     }
 
     /**
