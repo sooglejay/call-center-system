@@ -620,26 +620,42 @@ private fun TaskExecutionContent(
 ) {
     val customers = task.customers ?: emptyList()
 
-    // 按通话状态分组（简化为三种状态：已接听、语音信箱、响铃未接）
-    val pendingCustomers = customers.filter { it.callStatus == "pending" }
-    val connectedCustomers = customers.filter { it.callStatus == "connected" || it.callResult == "已接听" }
-    val voicemailCustomers = customers.filter { it.callStatus == "voicemail" || it.callResult == "语音信箱" }
-    // 响铃未接：合并对方拒接、对方忙线、对方关机、无人接听、IVR语音等所有未接通状态
-    val unansweredCustomers = customers.filter {
-        it.callStatus == "unanswered" ||
-        it.callStatus == "rejected" ||
-        it.callStatus == "busy" ||
-        it.callStatus == "power_off" ||
-        it.callStatus == "no_answer" ||
-        it.callStatus == "ivr" ||
-        it.callResult == "响铃未接" ||
-        it.callResult == "对方拒接" ||
-        it.callResult == "对方忙线" ||
-        it.callResult == "关机/停机" ||
-        it.callResult == "对方关机" ||
-        it.callResult == "无人接听" ||
-        it.callResult == "IVR语音"
+    // 使用 remember 缓存过滤结果，只有当 customers 列表变化时才重新计算
+    data class GroupedCustomers(
+        val pending: List<TaskCustomer>,
+        val connected: List<TaskCustomer>,
+        val voicemail: List<TaskCustomer>,
+        val unanswered: List<TaskCustomer>
+    )
+    
+    val groupedCustomers = remember(customers) {
+        // 按通话状态分组（简化为三种状态：已接听、语音信箱、响铃未接）
+        val pending = customers.filter { it.callStatus == "pending" }
+        val connected = customers.filter { it.callStatus == "connected" || it.callResult == "已接听" }
+        val voicemail = customers.filter { it.callStatus == "voicemail" || it.callResult == "语音信箱" }
+        // 响铃未接：合并对方拒接、对方忙线、对方关机、无人接听、IVR语音等所有未接通状态
+        val unanswered = customers.filter {
+            it.callStatus == "unanswered" ||
+            it.callStatus == "rejected" ||
+            it.callStatus == "busy" ||
+            it.callStatus == "power_off" ||
+            it.callStatus == "no_answer" ||
+            it.callStatus == "ivr" ||
+            it.callResult == "响铃未接" ||
+            it.callResult == "对方拒接" ||
+            it.callResult == "对方忙线" ||
+            it.callResult == "关机/停机" ||
+            it.callResult == "对方关机" ||
+            it.callResult == "无人接听" ||
+            it.callResult == "IVR语音"
+        }
+        GroupedCustomers(pending, connected, voicemail, unanswered)
     }
+
+    val pendingCustomers = groupedCustomers.pending
+    val connectedCustomers = groupedCustomers.connected
+    val voicemailCustomers = groupedCustomers.voicemail
+    val unansweredCustomers = groupedCustomers.unanswered
 
     // 根据选中的Tab过滤客户列表（简化为三种状态）
     val displayedCustomers = when (selectedTab) {

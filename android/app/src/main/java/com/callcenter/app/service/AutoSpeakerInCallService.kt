@@ -23,6 +23,30 @@ class AutoSpeakerInCallService : InCallService() {
         
         var isServiceActive = false
             private set
+        
+        // 当前通话实例，用于挂断
+        private var activeCall: Call? = null
+        
+        /**
+         * 挂断当前通话
+         * @return 是否成功发起挂断请求
+         */
+        fun disconnectCurrentCall(): Boolean {
+            val call = activeCall
+            if (call == null) {
+                DebugLogger.log("[InCallService] ✗ 没有活跃的通话可挂断")
+                return false
+            }
+            
+            return try {
+                call.disconnect()
+                DebugLogger.log("[InCallService] ✓ 已发送挂断命令")
+                true
+            } catch (e: Exception) {
+                DebugLogger.log("[InCallService] ✗ 挂断失败: ${e.message}")
+                false
+            }
+        }
     }
 
     override fun onCreate() {
@@ -71,6 +95,7 @@ class AutoSpeakerInCallService : InCallService() {
         DebugLogger.log("[InCallService] onCallAdded - 有新通话加入")
         
         currentCall = call
+        activeCall = call  // 保存到静态变量，供挂断使用
         call.registerCallback(callCallback)
         targetSpeakerOn = true
         forceSpeakerOn("on_call_added")
@@ -82,6 +107,7 @@ class AutoSpeakerInCallService : InCallService() {
         
         call.unregisterCallback(callCallback)
         currentCall = null
+        activeCall = null  // 清除静态变量
         stopMonitoring()
         super.onCallRemoved(call)
     }
