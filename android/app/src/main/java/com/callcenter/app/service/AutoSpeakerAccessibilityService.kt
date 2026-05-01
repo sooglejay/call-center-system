@@ -184,10 +184,10 @@ class AutoSpeakerAccessibilityService : AccessibilityService() {
                 DebugLogger.log("[AccessibilityService] ✗ 无法获取根节点")
                 return
             }
-            
+
             DebugLogger.log("[AccessibilityService] 开始查找录音按钮...")
             dumpNodeHierarchy(rootNode, 0)  // 调试：打印节点层级
-            
+
             // 查找录音相关的按钮（多语言支持）
             val recordingKeywords = listOf(
                 // 简体中文
@@ -202,23 +202,135 @@ class AutoSpeakerAccessibilityService : AccessibilityService() {
                 // 韩文
                 "녹음"
             )
-            
+
             // 递归查找包含关键词的按钮
-            val found = findAndClickButton(rootNode, recordingKeywords, "录音")
-            
+            var found = findAndClickButton(rootNode, recordingKeywords, "录音")
+
             if (found) {
                 recordingButtonClicked = true
                 DebugLogger.log("[AccessibilityService] ✓ 录音按钮已点击")
             } else {
-                DebugLogger.log("[AccessibilityService] ✗ 未找到录音按钮")
+                DebugLogger.log("[AccessibilityService] ✗ 未直接找到录音按钮，尝试查找'更多'按钮")
+
                 // 尝试通过描述查找
-                findAndClickButtonByDescription(rootNode, recordingKeywords, "录音")
+                found = findAndClickButtonByDescription(rootNode, recordingKeywords, "录音")
+
+                if (!found) {
+                    // 尝试点击"更多"按钮展开菜单
+                    DebugLogger.log("[AccessibilityService] 尝试点击'更多'按钮展开菜单")
+                    val moreButtonClicked = clickMoreButton()
+
+                    if (moreButtonClicked) {
+                        // 等待菜单展开
+                        DebugLogger.log("[AccessibilityService] 等待菜单展开...")
+                        Thread.sleep(500)
+
+                        // 重新获取根节点并查找录音按钮
+                        val newRootNode = rootInActiveWindow
+                        if (newRootNode != null) {
+                            DebugLogger.log("[AccessibilityService] 在展开菜单中查找录音按钮")
+                            found = findAndClickButton(newRootNode, recordingKeywords, "录音")
+
+                            if (found) {
+                                recordingButtonClicked = true
+                                DebugLogger.log("[AccessibilityService] ✓ 在展开菜单中找到并点击录音按钮")
+                            } else {
+                                DebugLogger.log("[AccessibilityService] ✗ 展开菜单后仍未找到录音按钮")
+                            }
+                        }
+                    }
+                }
             }
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "点击录音按钮失败: ${e.message}")
             DebugLogger.log("[AccessibilityService] ✗ 点击录音按钮失败: ${e.message}")
         }
+    }
+
+    /**
+     * 尝试点击"更多"按钮展开菜单
+     */
+    private fun clickMoreButton(): Boolean {
+        try {
+            val rootNode = rootInActiveWindow ?: return false
+
+            // 查找"更多"按钮的关键词（多语言支持）
+            val moreKeywords = listOf(
+                // 简体中文
+                "更多", "展开", "菜单", "其他选项",
+                // 繁体中文
+                "更多", "展開", "選單", "其他選項",
+                // 英文
+                "more", "menu", "expand", "overflow", "options",
+                "more options", "additional",
+                // 符号
+                "⋯", "⋮", "☰", "•••", "..."
+            )
+
+            // 先尝试通过文本查找
+            var found = findAndClickButton(rootNode, moreKeywords, "更多")
+
+            if (!found) {
+                // 尝试通过内容描述查找
+                found = findAndClickButtonByDescription(rootNode, moreKeywords, "更多")
+            }
+
+            if (!found) {
+                // 尝试通过视图ID查找（Google Dialer 常见的ID）
+                val moreButtonIds = listOf(
+                    "com.google.android.dialer:id/more_options",
+                    "com.google.android.dialer:id/overflow",
+                    "com.android.dialer:id/more_options",
+                    "com.android.dialer:id/overflow",
+                    "android:id/more"
+                )
+
+                found = findAndClickButtonById(rootNode, moreButtonIds, "更多")
+            }
+
+            if (found) {
+                DebugLogger.log("[AccessibilityService] ✓ '更多'按钮已点击")
+            } else {
+                DebugLogger.log("[AccessibilityService] ✗ 未找到'更多'按钮")
+            }
+
+            return found
+
+        } catch (e: Exception) {
+            Log.e(TAG, "点击'更多'按钮失败: ${e.message}")
+            DebugLogger.log("[AccessibilityService] ✗ 点击'更多'按钮失败: ${e.message}")
+            return false
+        }
+    }
+
+    /**
+     * 通过ID查找并点击按钮
+     */
+    private fun findAndClickButtonById(node: AccessibilityNodeInfo, ids: List<String>, buttonName: String): Boolean {
+        val nodeId = node.viewIdResourceName ?: ""
+
+        for (id in ids) {
+            if (nodeId.contains(id, ignoreCase = true)) {
+                val clicked = performClick(node)
+                if (clicked) {
+                    DebugLogger.log("[AccessibilityService] ✓ 通过ID点击${buttonName}按钮成功: id='$nodeId'")
+                    return true
+                }
+            }
+        }
+
+        // 递归查找子节点
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i)
+            if (child != null) {
+                if (findAndClickButtonById(child, ids, buttonName)) {
+                    return true
+                }
+            }
+        }
+
+        return false
     }
     
     /**
