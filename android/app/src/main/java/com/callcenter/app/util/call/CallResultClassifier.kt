@@ -170,14 +170,38 @@ class CallResultClassifier(
 
         // 根据 OFFHOOK 状态返回默认结果
         if (hasOffhook) {
-            // OFFHOOK 状态下没识别到文本，默认为语音信箱
-            Log.d(TAG, "========== OFFHOOK状态但未识别到文本，默认返回 VOICEMAIL（语音信箱）==========")
-            return CallResult(
-                type = CallResultType.VOICEMAIL,
-                confidence = 0.60f,
-                reason = "OFFHOOK状态下未识别到语音文本，默认为语音信箱",
-                layer = 1
-            )
+            // 【修复】OFFHOOK 状态下，如果关键词识别失败，尝试使用能量分析降级判断
+            Log.d(TAG, "--- 录音识别未返回有效结果，尝试能量分析降级判断 ---")
+
+            // 检查能量分析结果
+            if (context.audioEnergyPattern == AudioEnergyPattern.FLUCTUATING) {
+                // 能量波动明显，双向对话特征，判定为真人接听
+                Log.d(TAG, "========== 能量分析降级判断：FLUCTUATING → 已接听 ==========")
+                return CallResult(
+                    type = CallResultType.CONNECTED,
+                    confidence = 0.75f,  // 降级判断置信度稍低
+                    reason = "OFFHOOK状态，能量分析显示双向对话特征（FLUCTUATING），判定为真人接听",
+                    layer = 2  // 第二层判断（能量分析）
+                )
+            } else if (context.audioEnergyPattern == AudioEnergyPattern.STEADY) {
+                // 能量平稳，单向播报特征，判定为语音信箱
+                Log.d(TAG, "========== 能量分析降级判断：STEADY → 语音信箱 ==========")
+                return CallResult(
+                    type = CallResultType.VOICEMAIL,
+                    confidence = 0.75f,
+                    reason = "OFFHOOK状态，能量分析显示单向播报特征（STEADY），判定为语音信箱",
+                    layer = 2
+                )
+            } else {
+                // 能量分析未返回有效结果，使用默认判断
+                Log.d(TAG, "========== OFFHOOK状态但未识别到文本，能量分析也未返回有效结果，默认返回 VOICEMAIL（语音信箱）==========")
+                return CallResult(
+                    type = CallResultType.VOICEMAIL,
+                    confidence = 0.60f,
+                    reason = "OFFHOOK状态下未识别到语音文本，能量分析结果未知，默认为语音信箱",
+                    layer = 1
+                )
+            }
         } else {
             // 没有 OFFHOOK，确实是响铃未接听
             Log.d(TAG, "========== 未进入OFFHOOK状态，返回 NO_ANSWER（响铃未接听）==========")

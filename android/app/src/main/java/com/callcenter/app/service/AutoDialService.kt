@@ -1660,7 +1660,11 @@ class AutoDialService : Service() {
                                     DebugLogger.logSeparator("录音识别启动")
                                     DebugLogger.log("[RecordDetect] 创建录音识别实例")
                                     audioEnergyAnalyzer = AudioEnergyAnalyzer(this@AutoDialService)
-                                    
+
+                                    // 【关键修复】启用音频数据保存，用于实时识别和离线关键词检测
+                                    audioEnergyAnalyzer?.setSaveAudioData(true)
+                                    DebugLogger.log("[RecordDetect] ✓ 已启用音频数据保存")
+
                                     // 检查是否启用了关键词检测功能
                                     val keywordDetectionEnabled = try {
                                         val enabled = callResultClassifier.isKeywordDetectionEnabled()
@@ -1889,11 +1893,19 @@ class AutoDialService : Service() {
                                 DebugLogger.logSeparator("停止录音识别")
                                 Log.d(TAG, "开始停止录音识别...")
                                 DebugLogger.log("[RecordDetect] 停止录音识别...")
-                                
+
+                                // 【修复】获取能量分析结果
+                                var energyPattern = com.callcenter.app.util.call.AudioEnergyPattern.UNKNOWN
                                 try {
-                                    // 停止录音
-                                    audioEnergyAnalyzer?.stopAndAnalyze()
+                                    // 停止录音并获取能量分析结果
+                                    val energyResult = audioEnergyAnalyzer?.stopAndAnalyze()
                                     DebugLogger.log("[RecordDetect] ✓ 录音识别已停止")
+
+                                    // 提取能量模式
+                                    energyPattern = energyResult?.pattern ?: com.callcenter.app.util.call.AudioEnergyPattern.UNKNOWN
+                                    if (energyPattern != com.callcenter.app.util.call.AudioEnergyPattern.UNKNOWN) {
+                                        DebugLogger.log("[RecordDetect] ✓ 能量分析结果: pattern=$energyPattern, confidence=${energyResult?.confidence}")
+                                    }
                                 } catch (e: Exception) {
                                     Log.e(TAG, "停止录音识别异常: ${e.message}")
                                     DebugLogger.log("[RecordDetect] ✗ 停止录音识别异常: ${e.message}")
@@ -1903,16 +1915,18 @@ class AutoDialService : Service() {
                                 // 使用智能分类器判断通话结果
                                 DebugLogger.logSeparator("智能分类判断")
                                 Log.d(TAG, "开始智能分类判断...")
-                                
+
                                 DebugLogger.log("[Classify] ========== 分类参数 ==========")
                                 DebugLogger.log("[Classify] 通话时长(offhookDuration): $callDuration ms")
                                 DebugLogger.log("[Classify] 关键词类型: $keywordCallType")
                                 DebugLogger.log("[Classify] 检测到的关键词: $detectedKeywords")
-                                
+                                DebugLogger.log("[Classify] 能量模式: $energyPattern")
+
                                 val callResult = determineCallResult(
                                     offhookDuration = callDuration,
                                     detectedKeywords = detectedKeywords,
-                                    keywordCallType = keywordCallType
+                                    keywordCallType = keywordCallType,
+                                    audioEnergyPattern = energyPattern
                                 )
 
                                 DebugLogger.log("[Classify] ========== 分类结果 ==========")
@@ -2082,14 +2096,16 @@ class AutoDialService : Service() {
     private suspend fun determineCallResult(
         offhookDuration: Long,
         detectedKeywords: List<String> = emptyList(),
-        keywordCallType: KeywordCallType? = null
+        keywordCallType: KeywordCallType? = null,
+        audioEnergyPattern: com.callcenter.app.util.call.AudioEnergyPattern = com.callcenter.app.util.call.AudioEnergyPattern.UNKNOWN
     ): Pair<Boolean, String> {
         // 构建通话上下文
         val context = CallContext(
             offhookDuration = offhookDuration,
             totalDuration = offhookDuration,
             detectedKeywords = detectedKeywords,
-            keywordCallType = keywordCallType
+            keywordCallType = keywordCallType,
+            audioEnergyPattern = audioEnergyPattern
         )
 
         // 使用分类器判断
