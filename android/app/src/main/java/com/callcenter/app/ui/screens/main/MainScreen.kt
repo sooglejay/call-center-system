@@ -2857,7 +2857,7 @@ private fun ProfileTab(
             SettingsItem(
                 icon = Icons.Default.Info,
                 title = "版本信息",
-                subtitle = "v${com.callcenter.app.BuildConfig.VERSION_NAME} (${com.callcenter.app.BuildConfig.VERSION_CODE})",
+                subtitle = "版本 ${com.callcenter.app.BuildConfig.VERSION_NAME}",
                 onClick = { showReleaseNotesDialog = true }
             )
             SettingsItem(

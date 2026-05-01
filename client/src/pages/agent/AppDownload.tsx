@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Card, Descriptions, QRCode, Button, Spin, Typography, Divider } from 'antd';
+import { Card, Descriptions, QRCode, Button, Spin, Typography, Divider, Tooltip } from 'antd';
 import { DownloadOutlined, AndroidOutlined, QrcodeOutlined } from '@ant-design/icons';
 import { versionApi } from '../../services/api';
 
@@ -41,7 +41,7 @@ export default function AppDownload() {
     <div>
       <Title level={2}>
         <AndroidOutlined style={{ marginRight: 12 }} />
-        Android App 下载
+        App下载
       </Title>
       <Paragraph type="secondary">
         下载最新版本的Android App，使用当前账号登录即可开始工作。
@@ -54,14 +54,38 @@ export default function AppDownload() {
         <Card
           title="最新版本"
           extra={
-            <Button
-              type="primary"
-              icon={<DownloadOutlined />}
-              href={latestVersion.apk_url || latestVersion.download_url}
-              target="_blank"
-            >
-              下载APK
-            </Button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Button
+                type="primary"
+                icon={<DownloadOutlined />}
+                href={latestVersion.apk_url || latestVersion.download_url}
+                target="_blank"
+              >
+                下载APK
+              </Button>
+              <Tooltip
+                title={
+                  <div style={{ padding: 8 }}>
+                    <QRCode
+                      value={latestVersion.apk_url || latestVersion.download_url}
+                      size={200}
+                    />
+                    <div style={{ textAlign: 'center', marginTop: 8, color: '#666' }}>
+                      扫码下载 v{latestVersion.version_name}
+                    </div>
+                  </div>
+                }
+                placement="top"
+                color="#fff"
+              >
+                <div style={{ cursor: 'pointer' }}>
+                  <QRCode
+                    value={latestVersion.apk_url || latestVersion.download_url}
+                    size={48}
+                  />
+                </div>
+              </Tooltip>
+            </div>
           }
         >
           <Descriptions bordered column={3}>

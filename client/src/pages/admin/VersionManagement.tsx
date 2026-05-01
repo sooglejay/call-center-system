@@ -28,6 +28,7 @@ import {
   DownloadOutlined,
   QrcodeOutlined
 } from '@ant-design/icons';
+import { Tooltip } from 'antd';
 import type { UploadFile } from 'antd/es/upload/interface';
 
 const { Title, Paragraph, Text } = Typography;
@@ -234,9 +235,9 @@ export default function VersionManagement() {
     {
       title: '操作',
       key: 'action',
-      width: 160,
+      width: 220,
       render: (_: any, record: VersionInfo) => (
-        <Space>
+        <Space size="small">
           <Button
             type="link"
             icon={<DownloadOutlined />}
@@ -245,6 +246,32 @@ export default function VersionManagement() {
           >
             下载
           </Button>
+          <Tooltip
+            title={
+              <div style={{ padding: 8 }}>
+                <QRCode
+                  value={record.apk_url}
+                  size={200}
+                  icon="/logo.png"
+                  iconSize={40}
+                />
+                <div style={{ textAlign: 'center', marginTop: 8, color: '#666' }}>
+                  扫码下载 v{record.version_name}
+                </div>
+              </div>
+            }
+            placement="top"
+            color="#fff"
+          >
+            <div style={{ cursor: 'pointer', display: 'inline-flex' }}>
+              <QRCode
+                value={record.apk_url}
+                size={48}
+                icon="/logo.png"
+                iconSize={14}
+              />
+            </div>
+          </Tooltip>
           {record.is_active !== 1 && (
             <Button
               type="text"
@@ -264,10 +291,10 @@ export default function VersionManagement() {
     <div>
       <Title level={2}>
         <MobileOutlined style={{ marginRight: 12 }} />
-        App版本管理
+        App下载
       </Title>
       <Paragraph type="secondary">
-        管理Android App的版本发布和更新。发布新版本后，客户端会自动检测并提示用户更新。
+        下载最新版本的Android App，使用当前账号登录即可开始工作。
       </Paragraph>
 
       <Divider />
@@ -287,6 +314,32 @@ export default function VersionManagement() {
               >
                 下载APK
               </Button>
+              <Tooltip
+                title={
+                  <div style={{ padding: 8 }}>
+                    <QRCode
+                      value={currentVersion.apk_url}
+                      size={200}
+                      icon="/logo.png"
+                      iconSize={40}
+                    />
+                    <div style={{ textAlign: 'center', marginTop: 8, color: '#666' }}>
+                      扫码下载 v{currentVersion.version_name}
+                    </div>
+                  </div>
+                }
+                placement="top"
+                color="#fff"
+              >
+                <div style={{ cursor: 'pointer' }}>
+                  <QRCode
+                    value={currentVersion.apk_url}
+                    size={48}
+                    icon="/logo.png"
+                    iconSize={14}
+                  />
+                </div>
+              </Tooltip>
             </Space>
           }
         >
