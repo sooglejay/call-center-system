@@ -1,7 +1,9 @@
 package com.callcenter.app.service
 
 import android.accessibilityservice.AccessibilityService
+import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
@@ -19,11 +21,15 @@ import com.callcenter.app.util.DebugLogger
  * 2. 点击录音按钮（启动通话录音）
  * 
  * 适用于无法成为默认拨号应用的设备（如 MIUI、Google Pixel）
+ * 
+ * 优化：如果设备不支持录音，记录标记避免重复查找
  */
 class AutoSpeakerAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "AutoSpeakerA11y"
+        private const val PREFS_NAME = "accessibility_service_prefs"
+        private const val KEY_RECORDING_NOT_SUPPORTED = "recording_not_supported"
         
         // 服务是否已激活
         var isServiceEnabled = false
@@ -31,15 +37,47 @@ class AutoSpeakerAccessibilityService : AccessibilityService() {
             
         // 录音按钮是否已点击（防止重复点击）
         private var recordingButtonClicked = false
+
+        // 设备是否支持录音（从SharedPreferences读取）
+        private var isRecordingSupported = true
         
         // 重置录音按钮状态（新通话开始时调用）
         fun resetRecordingState() {
             recordingButtonClicked = false
         }
+
+        /**
+         * 检查设备是否支持录音
+         */
+        fun isRecordingSupported(context: Context): Boolean {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            return !prefs.getBoolean(KEY_RECORDING_NOT_SUPPORTED, false)
+        }
+
+        /**
+         * 标记设备不支持录音
+         */
+        private fun markRecordingNotSupported(context: Context) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.edit().putBoolean(KEY_RECORDING_NOT_SUPPORTED, true).apply()
+            isRecordingSupported = false
+            DebugLogger.log("[AccessibilityService] ⚠️ 已标记设备不支持通话录音，后续将不再查找录音按钮")
+        }
+
+        /**
+         * 重置录音支持标记（用于设置页面手动重置）
+         */
+        fun resetRecordingSupportFlag(context: Context) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.edit().remove(KEY_RECORDING_NOT_SUPPORTED).apply()
+            isRecordingSupported = true
+            DebugLogger.log("[AccessibilityService] ✓ 已重置录音支持标记，将重新尝试查找录音按钮")
+        }
     }
 
     private var audioManager: AudioManager? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    private lateinit var sharedPreferences: SharedPreferences
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -47,6 +85,16 @@ class AutoSpeakerAccessibilityService : AccessibilityService() {
         DebugLogger.log("[AccessibilityService] 服务已连接")
         isServiceEnabled = true
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
+        
+        // 初始化SharedPreferences，读取录音支持状态
+        sharedPreferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        isRecordingSupported = !sharedPreferences.getBoolean(KEY_RECORDING_NOT_SUPPORTED, false)
+        
+        if (!isRecordingSupported) {
+            DebugLogger.log("[AccessibilityService] ⚠️ 设备已标记为不支持通话录音，将跳过录音按钮查找")
+        } else {
+            DebugLogger.log("[AccessibilityService] ✓ 设备支持录音，将尝试查找录音按钮")
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -72,13 +120,15 @@ class AutoSpeakerAccessibilityService : AccessibilityService() {
                     DebugLogger.log("[AccessibilityService] 检测到通话中，尝试开启扬声器")
                     enableSpeaker()
                     
-                    // 自动点击录音按钮
-                    if (!recordingButtonClicked) {
+                    // 自动点击录音按钮（仅在设备支持录音且未点击时）
+                    if (isRecordingSupported && !recordingButtonClicked) {
                         DebugLogger.log("[AccessibilityService] 尝试自动点击录音按钮")
                         // 延迟一下等待界面加载完成
                         mainHandler.postDelayed({
                             clickRecordingButton()
                         }, 1000)
+                    } else if (!isRecordingSupported) {
+                        DebugLogger.log("[AccessibilityService] ⏭️ 设备不支持录音，跳过录音按钮查找")
                     }
                 } else {
                     // 不在通话中，重置录音状态
@@ -261,9 +311,18 @@ class AutoSpeakerAccessibilityService : AccessibilityService() {
                                 DebugLogger.log("[AccessibilityService] ✓ 在展开菜单中找到并点击录音按钮")
                             } else if (switchCount == 0) {
                                 DebugLogger.log("[AccessibilityService] ✗ 展开菜单后仍未找到录音控件")
+                                // 标记设备不支持录音，避免后续重复查找
+                                markRecordingNotSupported(this@AutoSpeakerAccessibilityService)
                             }
                         }
+                    } else {
+                        // 点击"更多"按钮失败，可能不存在更多菜单
+                        DebugLogger.log("[AccessibilityService] ✗ 未找到'更多'按钮")
+                        // 标记设备不支持录音
+                        markRecordingNotSupported(this@AutoSpeakerAccessibilityService)
                     }
+                } else {
+                    // 通过描述找到了录音按钮，无需标记
                 }
             }
 
