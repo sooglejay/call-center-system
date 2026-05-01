@@ -492,7 +492,9 @@ class AudioEnergyAnalyzer(private val context: Context) {
             averageEnergy = averageEnergy,
             normalizedStdDev = normalizedStdDev,
             changeRate = changeRate,
-            durationMs = durationMs
+            durationMs = durationMs,
+            energyChanges = energyChanges,
+            samples = samples
         )
 
         DebugLogger.log("[AudioEnergy] 模式判断结果: $pattern")
@@ -532,7 +534,9 @@ class AudioEnergyAnalyzer(private val context: Context) {
         averageEnergy: Float,
         normalizedStdDev: Float,
         changeRate: Float,
-        durationMs: Long
+        durationMs: Long,
+        energyChanges: Int,
+        samples: List<Float>
     ): Triple<AudioEnergyPattern, Float, String> {
         // 静音情况（针对 MIC 免提模式降低了阈值）
         if (averageEnergy < SILENCE_THRESHOLD) {
@@ -558,6 +562,26 @@ class AudioEnergyAnalyzer(private val context: Context) {
             )
         }
 
+        // 【新增】间歇性模式（真人应答等待回应）
+        // 特征：单方说话 + 沉默等待，能量变化次数少但有明显的说话段
+        if (energyChanges in 2..6 && changeRate < 1.5f && normalizedStdDev in 0.15f..0.35f) {
+            // 检查是否有明显的说话段（连续高能量）
+            val hasSpeechSegments = checkSpeechSegments(samples, averageEnergy)
+
+            if (hasSpeechSegments) {
+                val confidence = when {
+                    energyChanges in 2..4 -> 0.70f  // 少量变化，可能是真人应答
+                    energyChanges in 5..6 -> 0.65f  // 稍多变化
+                    else -> 0.60f
+                }
+                return Triple(
+                    AudioEnergyPattern.INTERMITTENT,
+                    confidence,
+                    "间歇性说话模式（变化次数=$energyChanges，变化率=${String.format("%.1f", changeRate)}/秒），单方说话特征，可能是真人接听等待回应"
+                )
+            }
+        }
+
         // 波动模式（对话特征）
         // 真人对话有明显的能量波动（说话-静音-说话）
         if (normalizedStdDev > FLUCTUATING_PATTERN_THRESHOLD && changeRate > 1.5f) {
@@ -579,6 +603,34 @@ class AudioEnergyAnalyzer(private val context: Context) {
             0.5f,
             "能量中等波动（归一化标准差=${String.format("%.2f", normalizedStdDev)}），需结合其他因素判断"
         )
+    }
+
+    /**
+     * 检查是否有明显的说话段
+     * 说话段特征：连续多个样本能量较高
+     */
+    private fun checkSpeechSegments(samples: List<Float>, averageEnergy: Float): Boolean {
+        if (samples.isEmpty()) return false
+
+        val speechThreshold = averageEnergy * 1.5f  // 说话阈值：平均能量的1.5倍
+        var consecutiveHighEnergy = 0
+        var speechSegmentCount = 0
+
+        for (sample in samples) {
+            if (sample > speechThreshold) {
+                consecutiveHighEnergy++
+                // 连续3个高能量样本（约300ms）认为是说话段
+                if (consecutiveHighEnergy >= 3) {
+                    speechSegmentCount++
+                    consecutiveHighEnergy = 0
+                }
+            } else {
+                consecutiveHighEnergy = 0
+            }
+        }
+
+        // 至少有1-2个明显的说话段
+        return speechSegmentCount in 1..3
     }
 
     /**

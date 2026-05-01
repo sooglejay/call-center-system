@@ -61,6 +61,7 @@ enum class HangupInitiator {
 enum class AudioEnergyPattern {
     STEADY,        // 平稳（语音信箱特征）
     FLUCTUATING,   // 波动（对话特征）
+    INTERMITTENT,  // 间歇性（单方说话特征，如真人应答等待回应）
     MODERATE,      // 中等
     UNKNOWN
 }
@@ -170,37 +171,86 @@ class CallResultClassifier(
 
         // 根据 OFFHOOK 状态返回默认结果
         if (hasOffhook) {
-            // 【修复】OFFHOOK 状态下，如果关键词识别失败，尝试使用能量分析降级判断
-            Log.d(TAG, "--- 录音识别未返回有效结果，尝试能量分析降级判断 ---")
+            // 【修复】OFFHOOK 状态下，结合多维度信息判断
+            Log.d(TAG, "--- 录音识别未返回有效结果，尝试多维度降级判断 ---")
 
-            // 检查能量分析结果
-            if (context.audioEnergyPattern == AudioEnergyPattern.FLUCTUATING) {
-                // 能量波动明显，双向对话特征，判定为真人接听
-                Log.d(TAG, "========== 能量分析降级判断：FLUCTUATING → 已接听 ==========")
-                return CallResult(
-                    type = CallResultType.CONNECTED,
-                    confidence = 0.75f,  // 降级判断置信度稍低
-                    reason = "OFFHOOK状态，能量分析显示双向对话特征（FLUCTUATING），判定为真人接听",
-                    layer = 2  // 第二层判断（能量分析）
-                )
-            } else if (context.audioEnergyPattern == AudioEnergyPattern.STEADY) {
-                // 能量平稳，单向播报特征，判定为语音信箱
-                Log.d(TAG, "========== 能量分析降级判断：STEADY → 语音信箱 ==========")
-                return CallResult(
-                    type = CallResultType.VOICEMAIL,
-                    confidence = 0.75f,
-                    reason = "OFFHOOK状态，能量分析显示单向播报特征（STEADY），判定为语音信箱",
-                    layer = 2
-                )
-            } else {
-                // 能量分析未返回有效结果，使用默认判断
-                Log.d(TAG, "========== OFFHOOK状态但未识别到文本，能量分析也未返回有效结果，默认返回 VOICEMAIL（语音信箱）==========")
-                return CallResult(
-                    type = CallResultType.VOICEMAIL,
-                    confidence = 0.60f,
-                    reason = "OFFHOOK状态下未识别到语音文本，能量分析结果未知，默认为语音信箱",
-                    layer = 1
-                )
+            // 多维度综合判断（结合通话时长和能量模式）
+            val duration = context.offhookDuration
+            val energyPattern = context.audioEnergyPattern
+
+            // 判断逻辑：
+            // 1. 通话时长 > 20秒：很可能是真人接听（语音信箱通常不会播报这么久）
+            // 2. 通话时长 10-20秒 + 能量FLUCTUATING：可能是真人，但置信度较低
+            // 3. 通话时长 5-20秒 + 能量INTERMITTENT：可能是真人应答等待回应
+            // 4. 能量STEADY：很可能是语音信箱
+            // 5. 其他情况：默认语音信箱
+
+            when {
+                duration > 20000 -> {
+                    // 通话时长超过20秒，很可能是真人接听
+                    Log.d(TAG, "========== 多维度判断：通话时长>${duration/1000}秒 → 已接听 ==========")
+                    return CallResult(
+                        type = CallResultType.CONNECTED,
+                        confidence = 0.80f,
+                        reason = "OFFHOOK状态，通话时长超过20秒（${duration/1000}秒），判定为真人接听",
+                        layer = 1  // 时长判断（第一层）
+                    )
+                }
+
+                duration in 10000..20000 && energyPattern == AudioEnergyPattern.FLUCTUATING -> {
+                    // 通话时长10-20秒，能量波动，可能是真人，但置信度中等
+                    Log.d(TAG, "========== 多维度判断：通话时长${duration/1000}秒+FLUCTUATING → 可能已接听 ==========")
+                    return CallResult(
+                        type = CallResultType.CONNECTED,
+                        confidence = 0.65f,  // 中等置信度
+                        reason = "OFFHOOK状态，通话时长${duration/1000}秒+能量波动，可能是真人接听",
+                        layer = 2  // 能量分析（第二层）
+                    )
+                }
+
+                duration in 5000..20000 && energyPattern == AudioEnergyPattern.INTERMITTENT -> {
+                    // 【新增】通话时长5-20秒，间歇性说话，可能是真人应答等待回应
+                    Log.d(TAG, "========== 多维度判断：通话时长${duration/1000}秒+INTERMITTENT → 可能已接听 ==========")
+                    return CallResult(
+                        type = CallResultType.CONNECTED,
+                        confidence = 0.68f,  // 中等置信度
+                        reason = "OFFHOOK状态，通话时长${duration/1000}秒+间歇性说话模式，可能是真人接听等待回应",
+                        layer = 2
+                    )
+                }
+
+                energyPattern == AudioEnergyPattern.STEADY -> {
+                    // 能量平稳，单向播报特征，判定为语音信箱
+                    Log.d(TAG, "========== 多维度判断：STEADY → 语音信箱 ==========")
+                    return CallResult(
+                        type = CallResultType.VOICEMAIL,
+                        confidence = 0.75f,
+                        reason = "OFFHOOK状态，能量分析显示单向播报特征（STEADY），判定为语音信箱",
+                        layer = 2
+                    )
+                }
+
+                duration in 5000..10000 && energyPattern == AudioEnergyPattern.FLUCTUATING -> {
+                    // 通话时长5-10秒，能量波动，可能是真人或语音信箱+噪音，置信度较低
+                    Log.d(TAG, "========== 多维度判断：通话时长${duration/1000}秒+FLUCTUATING（短时）→ 可能语音信箱 ==========")
+                    return CallResult(
+                        type = CallResultType.VOICEMAIL,
+                        confidence = 0.60f,
+                        reason = "OFFHOOK状态，通话时长较短（${duration/1000}秒）+能量波动，可能是语音信箱或嘈杂环境",
+                        layer = 2
+                    )
+                }
+
+                else -> {
+                    // 其他情况，默认语音信箱
+                    Log.d(TAG, "========== 多维度判断：默认 VOICEMAIL（语音信箱）==========")
+                    return CallResult(
+                        type = CallResultType.VOICEMAIL,
+                        confidence = 0.55f,
+                        reason = "OFFHOOK状态下未识别到语音文本，能量分析结果=${energyPattern}，通话时长=${duration/1000}秒，默认为语音信箱",
+                        layer = 1
+                    )
+                }
             }
         } else {
             // 没有 OFFHOOK，确实是响铃未接听
