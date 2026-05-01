@@ -1,32 +1,144 @@
 import { useEffect, useState } from 'react';
-import { Card, Descriptions, QRCode, Button, Spin, Typography, Divider } from 'antd';
-import { DownloadOutlined, AndroidOutlined, QrcodeOutlined } from '@ant-design/icons';
+import { Card, Descriptions, QRCode, Button, Spin, Typography, Divider, Tooltip, Table, Tag, Space } from 'antd';
+import { DownloadOutlined, AndroidOutlined, QrcodeOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { versionApi } from '../../services/api';
 
 const { Title, Paragraph, Text } = Typography;
+
+interface VersionInfo {
+  id: number;
+  version_code: number;
+  version_name: string;
+  platform: string;
+  apk_url: string;
+  download_url?: string;
+  file_size?: number;
+  update_log: string;
+  force_update: number;
+  min_version_code: number;
+  is_active: number;
+  created_by_name: string;
+  created_at: string;
+}
 
 /**
  * App下载页面 - 客服版本
  */
 export default function AppDownload() {
-  const [latestVersion, setLatestVersion] = useState<any>(null);
+  const [latestVersion, setLatestVersion] = useState<VersionInfo | null>(null);
+  const [versions, setVersions] = useState<VersionInfo[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchLatestVersion();
+    fetchVersions();
   }, []);
 
-  const fetchLatestVersion = async () => {
+  const fetchVersions = async () => {
     try {
       setLoading(true);
-      const response = await versionApi.getLatestVersion();
-      setLatestVersion(response.data);
+      const response = await versionApi.getVersions();
+      setVersions(response.data || []);
+      // 设置最新版本
+      const active = (response.data || []).find((v: VersionInfo) => v.is_active === 1);
+      setLatestVersion(active || null);
     } catch (error) {
       console.error('获取版本信息失败', error);
     } finally {
       setLoading(false);
     }
   };
+
+  const columns = [
+    {
+      title: '版本号',
+      dataIndex: 'version_code',
+      key: 'version_code',
+      width: 100,
+      sorter: (b: VersionInfo, a: VersionInfo) => b.version_code - a.version_code,
+      defaultSortOrder: 'descend' as const
+    },
+    {
+      title: '版本名称',
+      dataIndex: 'version_name',
+      key: 'version_name',
+      width: 120
+    },
+    {
+      title: '状态',
+      dataIndex: 'is_active',
+      key: 'is_active',
+      width: 100,
+      render: (isActive: number) => (
+        isActive === 1 ? (
+          <Tag color="success" icon={<CheckCircleOutlined />}>当前版本</Tag>
+        ) : (
+          <Tag color="default">历史版本</Tag>
+        )
+      )
+    },
+    {
+      title: '强制更新',
+      dataIndex: 'force_update',
+      key: 'force_update',
+      width: 100,
+      render: (force: number) => (
+        force === 1 ? <Tag color="red">是</Tag> : <Tag color="default">否</Tag>
+      )
+    },
+    {
+      title: '发布人',
+      dataIndex: 'created_by_name',
+      key: 'created_by_name',
+      width: 120
+    },
+    {
+      title: '发布时间',
+      dataIndex: 'created_at',
+      key: 'created_at',
+      width: 180,
+      sorter: (b: VersionInfo, a: VersionInfo) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      render: (date: string) => new Date(date).toLocaleString()
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 220,
+      render: (_: any, record: VersionInfo) => (
+        <Space size="small">
+          <Button
+            type="link"
+            icon={<DownloadOutlined />}
+            href={record.apk_url}
+            target="_blank"
+          >
+            下载
+          </Button>
+          <Tooltip
+            title={
+              <div style={{ padding: 8 }}>
+                <QRCode
+                  value={record.apk_url}
+                  size={200}
+                />
+                <div style={{ textAlign: 'center', marginTop: 8, color: '#666' }}>
+                  扫码下载 v{record.version_name}
+                </div>
+              </div>
+            }
+            placement="top"
+            color="#fff"
+          >
+            <div style={{ cursor: 'pointer', display: 'inline-flex' }}>
+              <QRCode
+                value={record.apk_url}
+                size={48}
+              />
+            </div>
+          </Tooltip>
+        </Space>
+      )
+    }
+  ];
 
   if (loading) {
     return (
@@ -41,7 +153,7 @@ export default function AppDownload() {
     <div>
       <Title level={2}>
         <AndroidOutlined style={{ marginRight: 12 }} />
-        Android App 下载
+        App下载
       </Title>
       <Paragraph type="secondary">
         下载最新版本的Android App，使用当前账号登录即可开始工作。
@@ -54,14 +166,38 @@ export default function AppDownload() {
         <Card
           title="最新版本"
           extra={
-            <Button
-              type="primary"
-              icon={<DownloadOutlined />}
-              href={latestVersion.apk_url || latestVersion.download_url}
-              target="_blank"
-            >
-              下载APK
-            </Button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Button
+                type="primary"
+                icon={<DownloadOutlined />}
+                href={latestVersion.apk_url || latestVersion.download_url}
+                target="_blank"
+              >
+                下载APK
+              </Button>
+              <Tooltip
+                title={
+                  <div style={{ padding: 8 }}>
+                    <QRCode
+                      value={latestVersion.apk_url || latestVersion.download_url || ''}
+                      size={200}
+                    />
+                    <div style={{ textAlign: 'center', marginTop: 8, color: '#666' }}>
+                      扫码下载 v{latestVersion.version_name}
+                    </div>
+                  </div>
+                }
+                placement="top"
+                color="#fff"
+              >
+                <div style={{ cursor: 'pointer' }}>
+                  <QRCode
+                    value={latestVersion.apk_url || latestVersion.download_url || ''}
+                    size={48}
+                  />
+                </div>
+              </Tooltip>
+            </div>
           }
         >
           <Descriptions bordered column={3}>
@@ -100,7 +236,7 @@ export default function AppDownload() {
               border: '1px solid #f0f0f0'
             }}>
               <QRCode
-                value={latestVersion.apk_url || latestVersion.download_url}
+                value={latestVersion.apk_url || latestVersion.download_url || ''}
                 size={200}
               />
             </div>
@@ -118,6 +254,20 @@ export default function AppDownload() {
           </div>
         </Card>
       )}
+
+      {/* 版本历史 */}
+      <Card
+        title="版本历史"
+        style={{ marginTop: 24 }}
+      >
+        <Table
+          dataSource={versions}
+          columns={columns}
+          rowKey="id"
+          loading={loading}
+          pagination={{ pageSize: 10 }}
+        />
+      </Card>
 
       {/* 安装说明 */}
       <Card title="安装说明" style={{ marginTop: 24 }}>

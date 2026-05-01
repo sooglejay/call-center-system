@@ -76,11 +76,11 @@ router.use(authMiddleware);
 // 获取最新版本（用于下载页面）
 router.get('/latest', getCurrentVersion);
 
+// 获取版本列表（普通用户可查看，用于下载历史版本）
+router.get('/list', getVersionList);
+
 // 以下接口需要管理员权限
 router.use(adminMiddleware);
-
-// 获取版本列表
-router.get('/list', getVersionList);
 
 // 获取当前活跃版本（管理员）
 router.get('/current', getCurrentVersion);

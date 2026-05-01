@@ -92,25 +92,20 @@ increment_version() {
     
     # 自增 VERSION_CODE
     NEW_VERSION_CODE=$((VERSION_CODE + 1))
-    
-    # 自增 VERSION_NAME (递增最后一位数字)
-    # 例如: 1.9.11 -> 1.9.12
-    local major=$(echo "$VERSION_NAME" | cut -d'.' -f1)
-    local minor=$(echo "$VERSION_NAME" | cut -d'.' -f2)
-    local patch=$(echo "$VERSION_NAME" | cut -d'.' -f3)
-    local new_patch=$((patch + 1))
-    
-    NEW_VERSION_NAME="${major}.${minor}.${new_patch}"
-    
+
+    # 自增 VERSION_NAME (与 VERSION_CODE 保持一致，使用纯数字)
+    # 例如: 139 -> 140
+    NEW_VERSION_NAME=$NEW_VERSION_CODE
+
     # 更新 local.properties
     if [ -f "$local_props_file" ]; then
         # 使用 sed 更新版本号
         sed -i '' "s/VERSION_CODE=.*/VERSION_CODE=$NEW_VERSION_CODE/" "$local_props_file"
         sed -i '' "s/VERSION_NAME=.*/VERSION_NAME=$NEW_VERSION_NAME/" "$local_props_file"
-        
+
         VERSION_CODE=$NEW_VERSION_CODE
         VERSION_NAME=$NEW_VERSION_NAME
-        
+
         echo -e "${YELLOW}版本号已自增: v$VERSION_NAME (code: $VERSION_CODE)${NC}"
     fi
 }
