@@ -4,6 +4,7 @@ import { UploadOutlined, CameraOutlined, UserAddOutlined, TeamOutlined, InfoCirc
 import { customerApi, dataImportApi, userApi } from '../../services/api';
 import { taskApi } from '../../services/api';
 import type { Customer, User } from '../../services/api';
+import { normalizeCallResultDisplay } from '../../types';
 import * as XLSX from 'xlsx';
 
 const { TabPane } = Tabs;
@@ -517,7 +518,7 @@ export default function CustomerManagement() {
         '地址': customer.address || '',
         '客户状态': statusLabels[customer.status || 'pending'] || '待跟进',
         '通话状态': callStatusLabels[customer.call_status || 'pending'] || '待拨打',
-        '通话结果': customer.call_result || '',
+        '通话结果': normalizeCallResultDisplay(customer.call_result) || '',
         '分配客服': customer.assigned_to_name || '未分配',
         '导入人': customer.imported_by_name || '',
         '导入时间': customer.created_at ? new Date(customer.created_at).toLocaleString() : ''
@@ -715,23 +716,23 @@ export default function CustomerManagement() {
     interested: '有意向'
   };
 
-  // 简化为三种通话状态：已接听、语音信箱、响铃未接
+  // 通话状态展示统一为两种结果（真人已接通 / 响铃未接通）
   const callStatusLabels: Record<string, string> = {
     pending: '待拨打',
     ringing: '响铃中',
-    connected: '已接听',
-    voicemail: '语音信箱',
-    // 以下状态统一归为响铃未接
-    unanswered: '响铃未接',
-    rejected: '响铃未接',
-    busy: '响铃未接',
-    power_off: '响铃未接',
-    no_answer: '响铃未接',
-    ivr: '响铃未接',
-    other: '响铃未接',
-    failed: '响铃未接',
-    completed: '响铃未接',
-    called: '响铃未接'
+    connected: '真人已接通',
+    // 以下状态统一归为响铃未接通（兼容历史 voicemail 等）
+    voicemail: '响铃未接通',
+    unanswered: '响铃未接通',
+    rejected: '响铃未接通',
+    busy: '响铃未接通',
+    power_off: '响铃未接通',
+    no_answer: '响铃未接通',
+    ivr: '响铃未接通',
+    other: '响铃未接通',
+    failed: '响铃未接通',
+    completed: '响铃未接通',
+    called: '响铃未接通'
   };
 
   const columns = [
@@ -777,7 +778,7 @@ export default function CustomerManagement() {
           </Tag>
           {record.call_result && (
             <Text type="secondary" style={{ fontSize: 12 }}>
-              {record.call_result}
+              {normalizeCallResultDisplay(record.call_result) || record.call_result}
             </Text>
           )}
         </Space>
@@ -964,9 +965,8 @@ export default function CustomerManagement() {
             onChange={setFilterCallStatus}
             options={[
               { value: 'pending', label: '待拨打' },
-              { value: 'connected', label: '已接听' },
-              { value: 'voicemail', label: '语音信箱' },
-              { value: 'unanswered', label: '响铃未接' }
+              { value: 'connected', label: '真人已接通' },
+              { value: 'unanswered', label: '响铃未接通' }
             ]}
           />
           <Select 

@@ -11,6 +11,7 @@ import {
 import { taskApi, twilioApi } from '../../services/api';
 import type { Task } from '../../services/api';
 import { useNavigate, useParams } from 'react-router-dom';
+import { normalizeCallResultDisplay } from '../../types';
 
 interface TaskCustomer {
   task_customer_id: number;
@@ -37,35 +38,28 @@ interface TaskDetail extends Task {
   customers?: TaskCustomer[];
 }
 
-// 通话结果选项 - 与 Android 端对齐
-// Android 端状态：connected, voicemail, unanswered, rejected, busy, power_off, no_answer, ivr, other
+// 通话结果选项（前端展示统一为两种状态）
 const CALL_RESULTS = [
-  { value: 'connected', label: '已接听', color: 'green' },
-  { value: 'voicemail', label: '语音信箱', color: 'blue' },
-  { value: 'unanswered', label: '响铃未接', color: 'orange' },
-  { value: 'rejected', label: '对方拒接', color: 'red' },
-  { value: 'busy', label: '对方忙线', color: 'orange' },
-  { value: 'power_off', label: '关机/停机', color: 'default' },
-  { value: 'no_answer', label: '无人接听', color: 'default' },
-  { value: 'ivr', label: 'IVR语音', color: 'cyan' },
-  { value: 'other', label: '其他', color: 'default' }
+  { value: 'connected', label: '真人已接通', color: 'green' },
+  { value: 'unanswered', label: '响铃未接通', color: 'orange' }
 ];
 
-// 通话状态筛选选项 - 与 Android 端对齐
+// 通话状态筛选选项（两种结果 + 基础状态）
 const CALL_STATUS_TABS = [
   { key: 'all', label: '全部', filter: () => true },
   { key: 'pending', label: '待拨打', filter: (c: TaskCustomer) => c.call_status === 'pending' },
-  { key: 'connected', label: '已接听', filter: (c: TaskCustomer) => c.call_result === '已接听' || c.call_result === 'connected' },
-  { key: 'voicemail', label: '语音信箱', filter: (c: TaskCustomer) => c.call_result === '语音信箱' || c.call_result === 'voicemail' },
-  { key: 'unanswered', label: '响铃未接', filter: (c: TaskCustomer) => c.call_result === '响铃未接' || c.call_result === 'unanswered' },
-  { key: 'failed', label: '拨打失败', filter: (c: TaskCustomer) => 
-    c.call_result === '对方拒接' || c.call_result === 'rejected' ||
-    c.call_result === '对方忙线' || c.call_result === 'busy' ||
-    c.call_result === '关机/停机' || c.call_result === 'power_off' ||
-    c.call_result === '无人接听' || c.call_result === 'no_answer' ||
-    c.call_result === 'IVR语音' || c.call_result === 'ivr' ||
-    c.call_result === '其他' || c.call_result === 'other' ||
-    (c.call_status === 'failed' && !c.call_result)
+  {
+    key: 'connected',
+    label: '真人已接通',
+    filter: (c: TaskCustomer) => normalizeCallResultDisplay(c.call_result) === '真人已接通'
+  },
+  {
+    key: 'unanswered',
+    label: '响铃未接通',
+    filter: (c: TaskCustomer) => {
+      if (c.call_status === 'pending') return false;
+      return normalizeCallResultDisplay(c.call_result) === '响铃未接通';
+    }
   },
   { key: 'called', label: '已拨打', filter: (c: TaskCustomer) => c.call_status !== 'pending' }
 ];
@@ -167,9 +161,9 @@ export default function AgentTaskExecution() {
     if (!currentCustomer || !taskId) return;
     
     try {
-      // 与 Android 端对齐：已接听为成功状态，其他为失败状态
+      // 与 Android 端对齐：两种状态
       const isConnected = selectedResult === 'connected';
-      const finalStatus = isConnected ? 'connected' : 'failed';
+      const finalStatus = isConnected ? 'connected' : 'unanswered';
       
       // 获取中文显示名称
       const resultConfig = CALL_RESULTS.find(r => r.value === selectedResult);
@@ -217,9 +211,11 @@ export default function AgentTaskExecution() {
     const statusConfig: Record<string, { color: string; text: string }> = {
       pending: { color: 'default', text: '待拨打' },
       called: { color: 'processing', text: '已拨打' },
-      connected: { color: 'success', text: '已接通' },
+      connected: { color: 'success', text: '真人已接通' },
       completed: { color: 'success', text: '已完成' },
-      failed: { color: 'error', text: '未接通' }
+      unanswered: { color: 'error', text: '响铃未接通' },
+      failed: { color: 'error', text: '响铃未接通' },
+      voicemail: { color: 'error', text: '响铃未接通' }
     };
     const config = statusConfig[status] || statusConfig.pending;
     return <Tag color={config.color}>{config.text}</Tag>;
@@ -227,8 +223,8 @@ export default function AgentTaskExecution() {
 
   // 获取通话结果标签
   const getCallResultLabel = (result?: string) => {
-    const found = CALL_RESULTS.find(r => r.value === result);
-    return found ? found.label : result || '-';
+    const normalized = normalizeCallResultDisplay(result);
+    return normalized || '-';
   };
 
   const pendingCount = customers.filter(c => c.call_status === 'pending').length;

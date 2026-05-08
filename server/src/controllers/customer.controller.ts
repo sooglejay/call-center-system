@@ -81,10 +81,28 @@ export const getCustomers = async (req: any, res: Response) => {
       params.push(status);
     }
     
-    // 通话状态过滤
+    // 通话状态过滤（兼容两态展示：connected / unanswered）
     if (call_status) {
-      whereConditions.push(`call_status = $${params.length + 1}`);
-      params.push(call_status);
+      const v = call_status.toString().trim();
+      const lower = v.toLowerCase();
+
+      // 两态：真人已接通
+      if (lower === 'connected') {
+        const statuses = ['connected', 'completed'];
+        const placeholders = statuses.map((_, idx) => `$${params.length + idx + 1}`).join(',');
+        whereConditions.push(`call_status IN (${placeholders})`);
+        params.push(...statuses);
+      }
+      // 两态：响铃未接通（兼容历史 voicemail 等）
+      else if (lower === 'unanswered' || lower === 'voicemail' || lower === 'failed') {
+        const statuses = ['unanswered', 'voicemail', 'failed', 'rejected', 'busy', 'power_off', 'no_answer', 'ivr', 'other', 'called'];
+        const placeholders = statuses.map((_, idx) => `$${params.length + idx + 1}`).join(',');
+        whereConditions.push(`call_status IN (${placeholders})`);
+        params.push(...statuses);
+      } else {
+        whereConditions.push(`call_status = $${params.length + 1}`);
+        params.push(v);
+      }
     }
 
     // 标签过滤
@@ -868,7 +886,7 @@ export const getNameLetterStats = async (req: Request, res: Response) => {
 export const updateCallStatus = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { call_status, call_result } = req.body;
+    const { call_status, call_result, callResult } = req.body as any;
     
     // 验证通话状态值
     const validStatuses = ['pending', 'ringing', 'connected', 'voicemail', 'unanswered', 'failed', 'completed'];
@@ -881,10 +899,15 @@ export const updateCallStatus = async (req: Request, res: Response) => {
       return res.status(404).json({ error: '客户不存在' });
     }
     
-    // 更新通话状态和结果
+    // 更新通话状态和结果（兼容 callResult；并将展示结果收敛为两类）
+    const rawResult = call_result ?? callResult;
+    const v = (rawResult ?? '').toString().trim();
+    const displayResult = v ? (['真人已接通', '已接听', 'connected', 'answered'].includes(v) || ['connected', 'answered'].includes(v.toLowerCase())
+      ? '真人已接通'
+      : '响铃未接通') : null;
     await query(
       `UPDATE customers SET call_status = $1, call_result = $2, updated_at = datetime('now') WHERE id = $3`,
-      [call_status, call_result || null, id]
+      [call_status, displayResult, id]
     );
     
     // 获取更新后的数据
@@ -913,7 +936,7 @@ export const updateCallStatus = async (req: Request, res: Response) => {
 // 批量更新客户通话状态
 export const batchUpdateCallStatus = async (req: any, res: Response) => {
   try {
-    const { customer_ids, call_status, call_result } = req.body;
+    const { customer_ids, call_status, call_result, callResult } = req.body as any;
     
     if (!Array.isArray(customer_ids) || customer_ids.length === 0) {
       return res.status(400).json({ error: '请选择要更新的客户' });
@@ -925,11 +948,16 @@ export const batchUpdateCallStatus = async (req: any, res: Response) => {
       return res.status(400).json({ error: '无效的通话状态' });
     }
     
-    // 批量更新
+    // 批量更新（兼容 callResult；并将展示结果收敛为两类）
+    const rawResult = call_result ?? callResult;
+    const v = (rawResult ?? '').toString().trim();
+    const displayResult = v ? (['真人已接通', '已接听', 'connected', 'answered'].includes(v) || ['connected', 'answered'].includes(v.toLowerCase())
+      ? '真人已接通'
+      : '响铃未接通') : null;
     const placeholders = customer_ids.map((_, idx) => `$${idx + 3}`).join(',');
     const result = await query(
       `UPDATE customers SET call_status = $1, call_result = $2, updated_at = datetime('now') WHERE id IN (${placeholders})`,
-      [call_status, call_result || null, ...customer_ids]
+      [call_status, displayResult, ...customer_ids]
     );
     
     res.json({

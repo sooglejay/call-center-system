@@ -1,6 +1,26 @@
 import { Request, Response } from 'express';
 import { query } from '../config/database';
 
+// 通话结果展示值收敛：只保留两类（兼容历史/英文码/旧中文值）
+function normalizeCallResult(raw: any): string | null {
+  const v = (raw ?? '').toString().trim();
+  if (!v) return null;
+
+  const normalized = v.toLowerCase();
+  const connectedSet = new Set([
+    '真人已接通',
+    '已接听',
+    'connected',
+    'answered',
+  ]);
+  if (connectedSet.has(v) || connectedSet.has(normalized)) {
+    return '真人已接通';
+  }
+
+  // 其他所有情况（含 语音信箱/无人接听/忙线/拒接 等）统一归为“响铃未接通”
+  return '响铃未接通';
+}
+
 const DEFAULT_CUSTOMER_TAG = '未打标客户';
 
 // 获取任务列表（管理员视角）
@@ -276,7 +296,7 @@ export const getTaskById = async (req: Request, res: Response) => {
         tag: c.tag,
         customer_status: c.customer_status,
         call_status: c.call_status || 'pending',
-        call_result: c.call_result,
+        call_result: normalizeCallResult(c.call_result),
         called_at: c.called_at,
         call_id: c.call_id,
         call_duration: c.call_duration,
@@ -489,14 +509,18 @@ export const removeCustomerFromTask = async (req: Request, res: Response) => {
 export const updateTaskCustomerStatus = async (req: Request, res: Response) => {
   try {
     const { id, customerId } = req.params;
-    const { status, call_result, call_id } = req.body;
+    // 兼容：老客户端/服务端使用 call_result，新客户端可能发送 callResult
+    const { status, call_result, callResult, call_id, callId } = req.body as any;
+
+    const normalizedCallResult = normalizeCallResult(call_result ?? callResult);
+    const normalizedCallId = call_id ?? callId ?? null;
     
     // 更新 task_customers 表
     await query(
       `UPDATE task_customers 
        SET status = $1, call_result = $2, call_id = $3, called_at = datetime('now')
        WHERE task_id = $4 AND customer_id = $5`,
-      [status, call_result || null, call_id || null, id, customerId]
+      [status, normalizedCallResult, normalizedCallId, id, customerId]
     );
     
     // 同时更新 customers 表的状态，保持数据一致性
@@ -645,7 +669,7 @@ export const getTaskCustomers = async (req: Request, res: Response) => {
         tag: c.tag,
         customer_status: c.customer_status,
         call_status: c.call_status || 'pending',
-        call_result: c.call_result,
+        call_result: normalizeCallResult(c.call_result),
         called_at: c.called_at,
         call_id: c.call_id,
         call_duration: c.call_duration,

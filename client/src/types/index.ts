@@ -155,3 +155,31 @@ export interface AgentRanking {
   total_duration: number;
   connection_rate: number;
 }
+
+// --------------------
+// Call result helpers
+// --------------------
+
+export type TwoStateCallResult = '真人已接通' | '响铃未接通';
+
+/**
+ * Normalize any legacy/new call_result into the two-state display values.
+ * - Connected: 真人已接通
+ * - Everything else: 响铃未接通
+ * - Empty/undefined: null
+ */
+export function normalizeCallResultDisplay(raw?: unknown): TwoStateCallResult | null {
+  const v = (raw ?? '').toString().trim();
+  if (!v) return null;
+
+  const lower = v.toLowerCase();
+  const connectedSet = new Set(['真人已接通', '已接听', 'connected', 'answered']);
+  if (connectedSet.has(v) || connectedSet.has(lower)) {
+    return '真人已接通';
+  }
+  return '响铃未接通';
+}
+
+export function isHumanConnected(raw?: unknown): boolean {
+  return normalizeCallResultDisplay(raw) === '真人已接通';
+}

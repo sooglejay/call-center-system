@@ -1,8 +1,9 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Table, Button, Modal, Form, Input, Select, DatePicker, message, Tag, Tabs, Badge, Checkbox, Space, Divider, Typography, Empty, Alert, Progress, Card, Descriptions, Tooltip, Statistic, Row, Col, Dropdown } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, TeamOutlined, ScheduleOutlined, InfoCircleOutlined, EyeOutlined, PhoneOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined, MessageOutlined, DownloadOutlined, FileExcelOutlined, FileTextOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, TeamOutlined, ScheduleOutlined, InfoCircleOutlined, EyeOutlined, PhoneOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined, DownloadOutlined, FileExcelOutlined, FileTextOutlined } from '@ant-design/icons';
 import { taskApi, userApi, customerApi } from '../../services/api';
 import type { Task, User, Customer } from '../../services/api';
+import { normalizeCallResultDisplay } from '../../types';
 import dayjs from 'dayjs';
 
 const { Text } = Typography;
@@ -311,13 +312,13 @@ export default function TaskManagement() {
     ];
 
     // 转换数据
-    const rows = customers.map(customer => [
+  const rows = customers.map(customer => [
       customer.name || '',
       customer.phone || '',
       customer.tag || '未打标客户',
       customer.company || '',
       getCallStatusText(customer.call_status, customer.call_result),
-      customer.call_result || '',
+      normalizeCallResultDisplay(customer.call_result) || '',
       customer.call_duration?.toString() || '',
       customer.called_at ? dayjs(customer.called_at).format('YYYY-MM-DD HH:mm:ss') : '',
       customer.recording_url || ''
@@ -384,7 +385,7 @@ export default function TaskManagement() {
                 <td>${customer.tag || '未打标客户'}</td>
                 <td>${customer.company || ''}</td>
                 <td>${getCallStatusText(customer.call_status, customer.call_result)}</td>
-                <td>${customer.call_result || ''}</td>
+                <td>${normalizeCallResultDisplay(customer.call_result) || ''}</td>
                 <td>${customer.call_duration || ''}</td>
                 <td>${customer.called_at ? dayjs(customer.called_at).format('YYYY-MM-DD HH:mm:ss') : ''}</td>
                 <td>${customer.recording_url || ''}</td>
@@ -407,44 +408,16 @@ export default function TaskManagement() {
     message.success(`已导出 ${customers.length} 条客户数据`);
   };
 
-  // 获取拨打状态文本（简化为三种状态）
+  // 获取拨打状态文本（展示统一为两种状态）
   const getCallStatusText = (status: string, callResult?: string): string => {
-    if (callResult) {
-      const resultMap: Record<string, string> = {
-        '已接听': '已接听',
-        'connected': '已接听',
-        '语音信箱': '语音信箱',
-        'voicemail': '语音信箱',
-        // 以下状态统一归为响铃未接
-        '响铃未接': '响铃未接',
-        'unanswered': '响铃未接',
-        '对方拒接': '响铃未接',
-        'rejected': '响铃未接',
-        '对方忙线': '响铃未接',
-        'busy': '响铃未接',
-        '关机/停机': '响铃未接',
-        'power_off': '响铃未接',
-        '无人接听': '响铃未接',
-        'no_answer': '响铃未接',
-        'IVR语音': '响铃未接',
-        'ivr': '响铃未接',
-        '其他': '响铃未接',
-        'other': '响铃未接'
-      };
-      if (resultMap[callResult]) {
-        return resultMap[callResult];
-      }
-    }
+    if (status === 'pending') return '待拨打';
 
-    const statusMap: Record<string, string> = {
-      'pending': '待拨打',
-      'connected': '已接听',
-      // 以下状态统一归为响铃未接
-      'called': '响铃未接',
-      'completed': '响铃未接',
-      'failed': '响铃未接'
-    };
-    return statusMap[status] || '待拨打';
+    const normalized = normalizeCallResultDisplay(callResult);
+    if (normalized) return normalized;
+
+    // call_result 缺失时，回退使用 call_status
+    if (status === 'connected') return '真人已接通';
+    return '响铃未接通';
   };
 
   // 批量删除任务
@@ -497,20 +470,12 @@ export default function TaskManagement() {
       return;
     }
     
-    // 根据筛选状态生成默认任务名（简化为三种状态）
+    // 根据筛选状态生成默认任务名（两种结果）
     const filterLabelMap: Record<string, string> = {
       'all': '全部',
       'pending': '待拨打',
-      'connected': '已接听',
-      'voicemail': '语音信箱',
-      // 以下状态统一归为响铃未接
-      'unanswered': '响铃未接',
-      'rejected': '响铃未接',
-      'busy': '响铃未接',
-      'power_off': '响铃未接',
-      'no_answer': '响铃未接',
-      'ivr': '响铃未接',
-      'failed': '响铃未接'
+      'connected': '真人已接通',
+      'unanswered': '响铃未接通'
     };
     
     const filterLabel = filterLabelMap[customerCallStatusFilter] || '筛选';
@@ -569,29 +534,17 @@ export default function TaskManagement() {
         return status === 'pending';
       }
 
-      // 其他筛选器根据 call_result 匹配（简化为三种状态）
-      // 需要同时满足：已拨打（status != pending）且 call_result 匹配
+      // 其他筛选器根据 call_result 匹配（两种结果）
       if (status === 'pending') {
         return false;
       }
 
-      // 根据 call_result 匹配各种状态，统一归为三种
-      const resultMap: Record<string, string[]> = {
-        'connected': ['已接听', 'connected'],
-        'voicemail': ['语音信箱', 'voicemail'],
-        // 以下状态统一归为响铃未接
-        'unanswered': ['响铃未接', 'unanswered', '对方拒接', 'rejected', '对方忙线', 'busy', '关机/停机', 'power_off', '无人接听', 'no_answer', 'IVR语音', 'ivr', '其他', 'other'],
-        'rejected': ['响铃未接', 'unanswered', '对方拒接', 'rejected'],
-        'busy': ['响铃未接', 'unanswered', '对方忙线', 'busy'],
-        'power_off': ['响铃未接', 'unanswered', '关机/停机', 'power_off'],
-        'no_answer': ['响铃未接', 'unanswered', '无人接听', 'no_answer'],
-        'ivr': ['响铃未接', 'unanswered', 'IVR语音', 'ivr'],
-        'other': ['响铃未接', 'unanswered', '其他', 'other']
-      };
+      if (customerCallStatusFilter === 'connected') {
+        return normalizeCallResultDisplay(result) === '真人已接通';
+      }
 
-      const validResults = resultMap[customerCallStatusFilter];
-      if (validResults && result) {
-        return validResults.includes(result);
+      if (customerCallStatusFilter === 'unanswered') {
+        return normalizeCallResultDisplay(result) === '响铃未接通';
       }
 
       return false;
@@ -615,50 +568,25 @@ export default function TaskManagement() {
     return <Tag color={config.color}>{config.text}</Tag>;
   };
 
-  // 拨打状态标签 - 与 Android 端对齐（简化为三种状态）
+  // 拨打状态标签（展示统一为两种状态）
   const renderCallStatusTag = (status: string, callResult?: string) => {
-    // 优先根据 call_result 显示状态（简化为三种）
-    if (callResult) {
-      const resultConfig: Record<string, { color: string; text: string; icon: React.ReactNode }> = {
-        '已接听': { color: 'success', text: '已接听', icon: <CheckCircleOutlined /> },
-        'connected': { color: 'success', text: '已接听', icon: <CheckCircleOutlined /> },
-        '语音信箱': { color: 'blue', text: '语音信箱', icon: <MessageOutlined /> },
-        'voicemail': { color: 'blue', text: '语音信箱', icon: <MessageOutlined /> },
-        // 以下状态统一归为响铃未接
-        '响铃未接': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
-        'unanswered': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
-        '对方拒接': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
-        'rejected': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
-        '对方忙线': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
-        'busy': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
-        '关机/停机': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
-        'power_off': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
-        '无人接听': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
-        'no_answer': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
-        'IVR语音': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
-        'ivr': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
-        '其他': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
-        'other': { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> }
-      };
-      const config = resultConfig[callResult];
-      if (config) {
-        return <Tag color={config.color} icon={config.icon}>{config.text}</Tag>;
-      }
+    if (status === 'pending') {
+      return <Tag color="default" icon={<ClockCircleOutlined />}>待拨打</Tag>;
     }
 
-    // 根据 call_status 显示基础状态（简化为三种通话状态）
-    const statusConfig: Record<string, { color: string; text: string; icon: React.ReactNode }> = {
-      pending: { color: 'default', text: '待拨打', icon: <ClockCircleOutlined /> },
-      connected: { color: 'success', text: '已接听', icon: <CheckCircleOutlined /> },
-      voicemail: { color: 'blue', text: '语音信箱', icon: <MessageOutlined /> },
-      unanswered: { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
-      // 以下状态统一归为响铃未接
-      called: { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
-      failed: { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> },
-      completed: { color: 'orange', text: '响铃未接', icon: <CloseCircleOutlined /> }
-    };
-    const config = statusConfig[status] || statusConfig.pending;
-    return <Tag color={config.color} icon={config.icon}>{config.text}</Tag>;
+    const normalized = normalizeCallResultDisplay(callResult);
+    if (normalized === '真人已接通') {
+      return <Tag color="success" icon={<CheckCircleOutlined />}>真人已接通</Tag>;
+    }
+    if (normalized === '响铃未接通') {
+      return <Tag color="orange" icon={<CloseCircleOutlined />}>响铃未接通</Tag>;
+    }
+
+    // call_result 缺失时，回退使用 call_status
+    if (status === 'connected') {
+      return <Tag color="success" icon={<CheckCircleOutlined />}>真人已接通</Tag>;
+    }
+    return <Tag color="orange" icon={<CloseCircleOutlined />}>响铃未接通</Tag>;
   };
 
   // 任务列表列定义
@@ -1185,9 +1113,8 @@ export default function TaskManagement() {
                     options={[
                       { value: 'all', label: '全部客户' },
                       { value: 'pending', label: '待拨打' },
-                      { value: 'connected', label: '已接听' },
-                      { value: 'voicemail', label: '语音信箱' },
-                      { value: 'unanswered', label: '响铃未接' }
+                      { value: 'connected', label: '真人已接通' },
+                      { value: 'unanswered', label: '响铃未接通' }
                     ]}
                   />
                   <Tooltip title={`用当前筛选的 ${filteredCustomers.length} 个客户创建新任务`}>
@@ -1318,7 +1245,7 @@ export default function TaskManagement() {
             label="任务名称" 
             rules={[{ required: true, message: '请输入任务名称' }]}
           >
-            <Input placeholder="例如：已接听重拨任务" />
+            <Input placeholder="例如：真人已接通重拨任务" />
           </Form.Item>
           
           <Form.Item 

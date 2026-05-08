@@ -259,13 +259,13 @@ class AutoDialService : Service() {
                 Log.d(TAG, "[CallStateListener] 通话已接通: $number, 接通耗时: ${setupTime}ms")
                 DebugLogger.log("[CallStateListener] Root检测到通话已接通: number=$number, setupTime=${setupTime}ms")
                 lastCallWasConnected = true
-                lastResolvedCallResult = "已接听"
-                // 通话接通时自动标记为已接听
+                lastResolvedCallResult = "真人已接通"
+                // 通话接通时自动标记为真人已接通
                 serviceScope.launch {
                     if (!hasAutoMarkedCurrentCall) {
                         hasAutoMarkedCurrentCall = true
-                        DebugLogger.log("[CallStateListener] 自动标记为已接听")
-                        autoMarkCallStatus("connected", "已接听")
+                        DebugLogger.log("[CallStateListener] 自动标记为真人已接通")
+                        autoMarkCallStatus("connected", "真人已接通")
                     }
                 }
             }
@@ -277,28 +277,28 @@ class AutoDialService : Service() {
                 serviceScope.launch {
                     if (!hasAutoMarkedCurrentCall) {
                         hasAutoMarkedCurrentCall = true
-                        // 如果通话时长大于0，说明发生过真实接通
+                        // 对外状态收敛为两类：真人已接通 / 响铃未接通
+                        // Root 若检测到 VOICEMAIL，一律按“响铃未接通”处理
+                        val lastState = rootCallStateDetector.getCurrentState()
+                        DebugLogger.log("[CallStateListener] 通话结束，根据Root状态判断: $lastState, duration=${duration}ms")
+
+                        if (lastState == RootCallState.VOICEMAIL) {
+                            lastCallWasConnected = false
+                            lastResolvedCallResult = "响铃未接通"
+                            autoMarkCallStatus("unanswered", "响铃未接通")
+                            return@launch
+                        }
+
+                        // 其他情况：若通话时长>0，则认为真人已接通；否则为响铃未接通
                         if (duration > 0) {
                             lastCallWasConnected = true
-                            lastResolvedCallResult = "已接听"
-                            DebugLogger.log("[CallStateListener] 通话时长>0，标记为已接听")
-                            autoMarkCallStatus("connected", "已接听")
+                            lastResolvedCallResult = "真人已接通"
+                            DebugLogger.log("[CallStateListener] 通话时长>0，标记为真人已接通")
+                            autoMarkCallStatus("connected", "真人已接通")
                         } else {
-                            // 根据之前的通话状态判断
-                            val lastState = rootCallStateDetector.getCurrentState()
-                            DebugLogger.log("[CallStateListener] 通话时长=0，根据Root状态判断: $lastState")
-                            // 简化为三种状态：已接听、语音信箱、响铃未接
-                            when (lastState) {
-                                RootCallState.VOICEMAIL -> {
-                                    lastResolvedCallResult = "语音信箱"
-                                    autoMarkCallStatus("voicemail", "语音信箱")
-                                }
-                                // 其他所有状态统一为响铃未接
-                                else -> {
-                                    lastResolvedCallResult = "响铃未接"
-                                    autoMarkCallStatus("unanswered", "响铃未接")
-                                }
-                            }
+                            lastCallWasConnected = false
+                            lastResolvedCallResult = "响铃未接通"
+                            autoMarkCallStatus("unanswered", "响铃未接通")
                         }
                     }
                 }
@@ -314,15 +314,16 @@ class AutoDialService : Service() {
                         RootCallState.VOICEMAIL -> {
                             if (!hasAutoMarkedCurrentCall) {
                                 hasAutoMarkedCurrentCall = true
-                                autoMarkCallStatus("voicemail", "语音信箱")
+                                lastResolvedCallResult = "响铃未接通"
+                                autoMarkCallStatus("unanswered", "响铃未接通")
                             }
                         }
                         // BUSY, REJECTED, POWER_OFF, NO_ANSWER 等状态统一为响铃未接
                         RootCallState.BUSY, RootCallState.REJECTED, RootCallState.POWER_OFF, RootCallState.NO_ANSWER -> {
                             if (!hasAutoMarkedCurrentCall) {
                                 hasAutoMarkedCurrentCall = true
-                                lastResolvedCallResult = "响铃未接"
-                                autoMarkCallStatus("unanswered", "响铃未接")
+                                lastResolvedCallResult = "响铃未接通"
+                                autoMarkCallStatus("unanswered", "响铃未接通")
                             }
                         }
                         else -> {}
@@ -743,7 +744,8 @@ class AutoDialService : Service() {
     private fun handleCallStatusAction(action: String?) {
         val callStatus = when (action) {
             ACTION_CALL_STATUS_CONNECTED -> "connected"
-            ACTION_CALL_STATUS_VOICEMAIL -> "voicemail"
+            // 对外状态收敛为两类：将 VOICEMAIL 归为未接通
+            ACTION_CALL_STATUS_VOICEMAIL -> "unanswered"
             ACTION_CALL_STATUS_UNANSWERED -> "unanswered"
             ACTION_CALL_STATUS_FAILED -> "failed"
             ACTION_CALL_STATUS_REJECTED -> "rejected"
@@ -767,10 +769,9 @@ class AutoDialService : Service() {
                     val request = UpdateTaskCustomerStatusRequest(
                         status = "called",
                         callResult = when (callStatus) {
-                            "connected" -> "已接听"
-                            "voicemail" -> "语音信箱"
-                            // 其他所有状态统一为响铃未接
-                            else -> "响铃未接"
+                            "connected" -> "真人已接通"
+                            // 其他所有状态统一为响铃未接通
+                            else -> "响铃未接通"
                         },
                         callId = currentCallRecordId
                     )
@@ -997,32 +998,34 @@ class AutoDialService : Service() {
         } else null
         DebugLogger.log("[FinalClassifySync] rootState=$rootState")
 
-        // 确定通话结果（简化为三个状态：已接听、语音信箱、响铃未接）
+        // 确定通话结果（对外状态收敛为两个：真人已接通、响铃未接通）
         val result = when {
             // 如果已经有解析结果，直接使用
             lastResolvedCallResult != null -> {
                 when (lastResolvedCallResult) {
-                    "已接听" -> Pair("connected", "已接听")
-                    "语音信箱" -> Pair("voicemail", "语音信箱")
-                    // 其他所有情况（对方忙线、对方拒接、对方关机、无人接听等）都归为响铃未接
-                    else -> Pair("unanswered", "响铃未接")
+                    "真人已接通" -> Pair("connected", "真人已接通")
+                    else -> Pair("unanswered", "响铃未接通")
                 }
             }
             // 如果当前还在通话中（用户停止时电话还没挂断）
             currentCallStateVal == TelephonyManager.CALL_STATE_OFFHOOK -> {
-                // 注意：OFFHOOK 可能是语音信箱，不能直接判断为已接听
+                // 注意：OFFHOOK 可能是语音信箱，优先使用 Root 状态
                 // 获取通话时长
                 val callDuration = rootCallStateDetector.getCurrentCallDuration()
                 DebugLogger.log("[FinalClassifySync] OFFHOOK状态，通话时长: ${callDuration}ms")
-                if (callDuration > VOICE_MAIL_THRESHOLD) {
-                    // 超过15秒，认为是真人接听
+
+                if (rootState == RootCallState.VOICEMAIL) {
+                    lastCallWasConnected = false
+                    lastResolvedCallResult = "响铃未接通"
+                    Pair("unanswered", "响铃未接通")
+                } else if (callDuration > VOICE_MAIL_THRESHOLD) {
                     lastCallWasConnected = true
-                    lastResolvedCallResult = "已接听"
-                    Pair("connected", "已接听")
+                    lastResolvedCallResult = "真人已接通"
+                    Pair("connected", "真人已接通")
                 } else {
-                    // 不足15秒，可能是语音信箱
-                    lastResolvedCallResult = "语音信箱"
-                    Pair("voicemail", "语音信箱")
+                    lastCallWasConnected = false
+                    lastResolvedCallResult = "响铃未接通"
+                    Pair("unanswered", "响铃未接通")
                 }
             }
             // 如果之前检测到接通过，需要根据时长判断
@@ -1030,26 +1033,27 @@ class AutoDialService : Service() {
                 // 获取通话时长
                 val callDuration = rootCallStateDetector.getCurrentCallDuration()
                 DebugLogger.log("[FinalClassifySync] lastCallWasConnected=true，通话时长: ${callDuration}ms")
-                if (callDuration > VOICE_MAIL_THRESHOLD) {
-                    // 超过15秒，认为是真人接听
-                    Pair("connected", "已接听")
+
+                if (rootState == RootCallState.VOICEMAIL) {
+                    Pair("unanswered", "响铃未接通")
+                } else if (callDuration > VOICE_MAIL_THRESHOLD) {
+                    Pair("connected", "真人已接通")
                 } else {
-                    // 不足15秒，可能是语音信箱
-                    Pair("voicemail", "语音信箱")
+                    Pair("unanswered", "响铃未接通")
                 }
             }
             // 根据 Root 检测状态判断（简化为三个状态）
             rootState != null -> when (rootState) {
-                RootCallState.BUSY -> Pair("unanswered", "响铃未接")       // 对方忙线 -> 响铃未接
-                RootCallState.REJECTED -> Pair("unanswered", "响铃未接")   // 对方拒接 -> 响铃未接
-                RootCallState.POWER_OFF -> Pair("unanswered", "响铃未接")  // 对方关机 -> 响铃未接
-                RootCallState.VOICEMAIL -> Pair("voicemail", "语音信箱")
-                RootCallState.NO_ANSWER -> Pair("unanswered", "响铃未接")  // 无人接听 -> 响铃未接
-                RootCallState.ACTIVE, RootCallState.CONNECTED -> Pair("connected", "已接听")
-                else -> Pair("unanswered", "响铃未接")
+                RootCallState.BUSY -> Pair("unanswered", "响铃未接通")       // 对方忙线 -> 响铃未接通
+                RootCallState.REJECTED -> Pair("unanswered", "响铃未接通")   // 对方拒接 -> 响铃未接通
+                RootCallState.POWER_OFF -> Pair("unanswered", "响铃未接通")  // 对方关机 -> 响铃未接通
+                RootCallState.VOICEMAIL -> Pair("unanswered", "响铃未接通")
+                RootCallState.NO_ANSWER -> Pair("unanswered", "响铃未接通")  // 无人接听 -> 响铃未接通
+                RootCallState.ACTIVE, RootCallState.CONNECTED -> Pair("connected", "真人已接通")
+                else -> Pair("unanswered", "响铃未接通")
             }
             // 默认：标记为响铃未接
-            else -> Pair("unanswered", "响铃未接")
+            else -> Pair("unanswered", "响铃未接通")
         }
 
         val (statusKey, displayName) = result
@@ -1152,20 +1156,17 @@ class AutoDialService : Service() {
         } else null
         DebugLogger.log("[FinalClassify] rootState=$rootState")
 
-        // 如果已经有 Root 检测结果，直接使用（简化为三个状态）
+        // 如果已经有 Root 检测结果，直接使用（对外状态收敛为两个）
         if (lastResolvedCallResult != null) {
             Log.d(TAG, "[FinalClassify] 使用已解析的结果: $lastResolvedCallResult")
             DebugLogger.log("[FinalClassify] 使用已解析的结果: $lastResolvedCallResult")
             val statusKey = when (lastResolvedCallResult) {
-                "已接听" -> "connected"
-                "语音信箱" -> "voicemail"
-                // 其他所有情况都归为响铃未接
+                "真人已接通" -> "connected"
                 else -> "unanswered"
             }
             val displayName = when (lastResolvedCallResult) {
-                "已接听" -> "已接听"
-                "语音信箱" -> "语音信箱"
-                else -> "响铃未接"
+                "真人已接通" -> "真人已接通"
+                else -> "响铃未接通"
             }
             DebugLogger.log("[FinalClassify] 调用 autoMarkCallStatus: statusKey=$statusKey, displayName=$displayName")
             autoMarkCallStatus(statusKey, displayName)
@@ -1174,63 +1175,60 @@ class AutoDialService : Service() {
 
         // 如果当前还在通话中（用户停止时电话还没挂断）
         if (currentCallStateVal == TelephonyManager.CALL_STATE_OFFHOOK) {
-            Log.d(TAG, "[FinalClassify] 当前仍在通话中，标记为已接听")
-            DebugLogger.log("[FinalClassify] 当前仍在通话中(OFFHOOK)，标记为已接听")
-            lastCallWasConnected = true
-            lastResolvedCallResult = "已接听"
-            autoMarkCallStatus("connected", "已接听")
+            // OFFHOOK 不等于真人接通，统一按“响铃未接通”处理（等待智能分类或 Root 更精确结果）
+            Log.d(TAG, "[FinalClassify] 当前仍在通话中(OFFHOOK)，按响铃未接通标记")
+            DebugLogger.log("[FinalClassify] 当前仍在通话中(OFFHOOK)，按响铃未接通标记")
+            lastCallWasConnected = false
+            lastResolvedCallResult = "响铃未接通"
+            autoMarkCallStatus("unanswered", "响铃未接通")
             return
         }
 
         // 如果之前检测到接通过
         if (lastCallWasConnected) {
             Log.d(TAG, "[FinalClassify] 之前检测到已接通")
-            DebugLogger.log("[FinalClassify] 之前检测到已接通，标记为已接听")
-            autoMarkCallStatus("connected", "已接听")
+            DebugLogger.log("[FinalClassify] 之前检测到已接通，标记为真人已接通")
+            autoMarkCallStatus("connected", "真人已接通")
             return
         }
 
-        // 根据 Root 检测状态判断（简化为三个状态）
+        // 根据 Root 检测状态判断（对外状态收敛为两个）
         if (rootState != null) {
             Log.d(TAG, "[FinalClassify] 使用 Root 状态: $rootState")
             DebugLogger.log("[FinalClassify] 使用 Root 状态: $rootState")
             when (rootState) {
                 RootCallState.BUSY -> {
-                    // 对方忙线 -> 响铃未接
-                    autoMarkCallStatus("unanswered", "响铃未接")
+                    autoMarkCallStatus("unanswered", "响铃未接通")
                     return
                 }
                 RootCallState.REJECTED -> {
-                    // 对方拒接 -> 响铃未接
-                    autoMarkCallStatus("unanswered", "响铃未接")
+                    autoMarkCallStatus("unanswered", "响铃未接通")
                     return
                 }
                 RootCallState.POWER_OFF -> {
-                    // 对方关机 -> 响铃未接
-                    autoMarkCallStatus("unanswered", "响铃未接")
+                    autoMarkCallStatus("unanswered", "响铃未接通")
                     return
                 }
                 RootCallState.VOICEMAIL -> {
-                    autoMarkCallStatus("voicemail", "语音信箱")
+                    autoMarkCallStatus("unanswered", "响铃未接通")
                     return
                 }
                 RootCallState.NO_ANSWER -> {
-                    // 无人接听 -> 响铃未接
-                    autoMarkCallStatus("unanswered", "响铃未接")
+                    autoMarkCallStatus("unanswered", "响铃未接通")
                     return
                 }
                 RootCallState.ACTIVE, RootCallState.CONNECTED -> {
-                    autoMarkCallStatus("connected", "已接听")
+                    autoMarkCallStatus("connected", "真人已接通")
                     return
                 }
                 else -> {}
             }
         }
 
-        // 默认：标记为响铃未接
-        Log.d(TAG, "[FinalClassify] 默认标记为响铃未接")
-        DebugLogger.log("[FinalClassify] 默认标记为响铃未接")
-        autoMarkCallStatus("unanswered", "响铃未接")
+        // 默认：标记为响铃未接通
+        Log.d(TAG, "[FinalClassify] 默认标记为响铃未接通")
+        DebugLogger.log("[FinalClassify] 默认标记为响铃未接通")
+        autoMarkCallStatus("unanswered", "响铃未接通")
         DebugLogger.log("[FinalClassify] ========== 分类完成 ==========")
     }
 
@@ -1471,15 +1469,14 @@ class AutoDialService : Service() {
         val taskId = _taskId.value
         if (taskId != null) {
             try {
-                // 根据最后一次通话状态确定callResult（简化为三种状态）
+                // 根据最后一次通话状态确定callResult（对外状态收敛为两种）
                 val lastState = rootCallStateDetector.getCurrentState()
                 val callResult = lastResolvedCallResult ?: when {
-                    lastCallWasConnected -> "已接听"
+                    lastCallWasConnected -> "真人已接通"
                     else -> when (lastState) {
-                        RootCallState.VOICEMAIL -> "语音信箱"
-                        RootCallState.CONNECTED, RootCallState.ACTIVE -> "已接听"
-                        // 其他所有状态统一为响铃未接
-                        else -> "响铃未接"
+                        RootCallState.CONNECTED, RootCallState.ACTIVE -> "真人已接通"
+                        // 其他所有状态（含 VOICEMAIL）统一为响铃未接通
+                        else -> "响铃未接通"
                     }
                 }
                 val request = UpdateTaskCustomerStatusRequest(
@@ -1782,7 +1779,7 @@ class AutoDialService : Service() {
                                                                     keywordCallType = KeywordCallType.VOICEMAIL
                                                                     detectedKeywords = listOf(amdHint.reason)
                                                                     FloatingCustomerService.addCallStateHistory(
-                                                                        "识别为语音信箱(AMD)",
+                                                                        "识别为响铃未接通(AMD)",
                                                                         _currentCustomer.value?.phone,
                                                                         _currentCustomer.value?.name
                                                                     )
@@ -1791,15 +1788,15 @@ class AutoDialService : Service() {
                                                                     try {
                                                                         val autoHangupEnabled = featureToggleManager.isEnabled(FeatureToggle.AUTO_HANGUP_ON_VOICEMAIL)
                                                                         if (autoHangupEnabled) {
-                                                                            DebugLogger.log("[VoicemailAutoHangup] (AMD) 检测到语音信箱，自动挂断并拨打下一个")
+                                                                            DebugLogger.log("[VoicemailAutoHangup] (AMD) 检测到未接通(原语音信箱)，自动挂断并拨打下一个")
                                                                             FloatingCustomerService.addCallStateHistory(
-                                                                                "自动挂断语音信箱(AMD)",
+                                                                                "自动挂断未接通(AMD)",
                                                                                 _currentCustomer.value?.phone,
                                                                                 _currentCustomer.value?.name
                                                                             )
                                                                             hangupCurrentCall()
-                                                                            lastResolvedCallResult = "语音信箱"
-                                                                            autoMarkCallStatus("voicemail", "语音信箱")
+                                                                            lastResolvedCallResult = "响铃未接通"
+                                                                            autoMarkCallStatus("unanswered", "响铃未接通")
                                                                         }
                                                                     } catch (e: Exception) {
                                                                         DebugLogger.log("[VoicemailAutoHangup] (AMD) 检查开关失败: ${e.message}")
@@ -1848,13 +1845,13 @@ class AutoDialService : Service() {
                                                     // 如果没有任何早期判定（AMD/文本长度），则超时默认判定为语音信箱
                                                     if (!detectedAsHuman && keywordCallType == null) {
                                                         val totalTime = System.currentTimeMillis() - startTime
-                                                        DebugLogger.log("[RealTimeDetect] ✗ ${totalTime}ms内未识别到文本，判定为语音信箱")
+                                                        DebugLogger.log("[RealTimeDetect] ✗ ${totalTime}ms内未识别到文本，判定为未接通")
                                                         
                                                         keywordCallType = KeywordCallType.VOICEMAIL
                                                         detectedKeywords = emptyList()
                                                         
                                                         FloatingCustomerService.addCallStateHistory(
-                                                            "识别为语音信箱",
+                                                            "识别为响铃未接通",
                                                             _currentCustomer.value?.phone,
                                                             _currentCustomer.value?.name
                                                         )
@@ -1863,9 +1860,9 @@ class AutoDialService : Service() {
                                                         try {
                                                             val autoHangupEnabled = featureToggleManager.isEnabled(FeatureToggle.AUTO_HANGUP_ON_VOICEMAIL)
                                                             if (autoHangupEnabled) {
-                                                                DebugLogger.log("[VoicemailAutoHangup] 检测到语音信箱，自动挂断并拨打下一个")
+                                                                DebugLogger.log("[VoicemailAutoHangup] 检测到未接通(原语音信箱)，自动挂断并拨打下一个")
                                                                 FloatingCustomerService.addCallStateHistory(
-                                                                    "自动挂断语音信箱",
+                                                                    "自动挂断未接通",
                                                                     _currentCustomer.value?.phone,
                                                                     _currentCustomer.value?.name
                                                                 )
@@ -1873,9 +1870,9 @@ class AutoDialService : Service() {
                                                                 // 挂断当前电话
                                                                 hangupCurrentCall()
                                                                 
-                                                                // 标记为语音信箱
-                                                                lastResolvedCallResult = "语音信箱"
-                                                                autoMarkCallStatus("voicemail", "语音信箱")
+                                                                // 标记为响铃未接通
+                                                                lastResolvedCallResult = "响铃未接通"
+                                                                autoMarkCallStatus("unanswered", "响铃未接通")
                                                             }
                                                         } catch (e: Exception) {
                                                             DebugLogger.log("[VoicemailAutoHangup] 检查开关失败: ${e.message}")
@@ -1999,8 +1996,7 @@ class AutoDialService : Service() {
                                 // 自动标记通话状态到服务器（异步执行，不阻塞主流程）
                                 Log.d(TAG, "准备自动标记通话状态...")
                                 val statusKey = when (callResult.second) {
-                                    "已接听" -> "connected"
-                                    "语音信箱" -> "voicemail"
+                                    "真人已接通" -> "connected"
                                     else -> "unanswered"
                                 }
                                 // 先设置标志，避免 processQueue 中重复调用
@@ -2040,14 +2036,14 @@ class AutoDialService : Service() {
                                     Log.d(TAG, "确认电话未接通即结束")
                                     DebugLogger.log("[WaitCall] ✗ 确认电话未接通即结束")
                                     _currentCallState.value = com.callcenter.app.util.root.RootCallState.IDLE
-                                    FloatingCustomerService.addCallStateHistory("未接通", _currentCustomer.value?.phone, _currentCustomer.value?.name)
+                                    FloatingCustomerService.addCallStateHistory("响铃未接通", _currentCustomer.value?.phone, _currentCustomer.value?.name)
                                     lastCallWasConnected = false
-                                    lastResolvedCallResult = "响铃未接"
+                                    lastResolvedCallResult = "响铃未接通"
                                     // 先设置标志，避免 processQueue 中重复调用
                                     hasAutoMarkedCurrentCall = true
                                     // 自动标记为未接通（异步执行）
                                     serviceScope.launch {
-                                        autoMarkCallStatus("unanswered", "响铃未接")
+                                        autoMarkCallStatus("unanswered", "响铃未接通")
                                     }
                                     return true
                                 }
@@ -2104,8 +2100,8 @@ class AutoDialService : Service() {
                     _currentCallState.value = com.callcenter.app.util.root.RootCallState.IDLE
                     FloatingCustomerService.addCallStateHistory("拨号超时", _currentCustomer.value?.phone, _currentCustomer.value?.name)
                     lastCallWasConnected = false
-                    lastResolvedCallResult = "响铃未接"
-                    autoMarkCallStatus("unanswered", "响铃未接")
+                    lastResolvedCallResult = "响铃未接通"
+                    autoMarkCallStatus("unanswered", "响铃未接通")
                     return true
                 }
 
@@ -2117,9 +2113,9 @@ class AutoDialService : Service() {
                     FloatingCustomerService.addCallStateHistory("已挂断", _currentCustomer.value?.phone, _currentCustomer.value?.name, MAX_CALL_DURATION.toLong())
                     // 对于非 root 设备，长时间通话肯定是接通了
                     lastCallWasConnected = true
-                    lastResolvedCallResult = "已接听"
-                    // 自动标记为已接听
-                    autoMarkCallStatus("connected", "已接听")
+                    lastResolvedCallResult = "真人已接通"
+                    // 自动标记为真人已接通
+                    autoMarkCallStatus("connected", "真人已接通")
                     return true
                 }
 
@@ -2167,14 +2163,15 @@ class AutoDialService : Service() {
 
         return when (result.type) {
             CallResultType.CONNECTED -> {
-                Pair(true, "已接听")
+                Pair(true, "真人已接通")
             }
             CallResultType.VOICEMAIL -> {
-                Pair(false, "语音信箱")
+                // 对外状态收敛：语音信箱按“响铃未接通”处理
+                Pair(false, "响铃未接通")
             }
             CallResultType.NO_ANSWER -> {
                 // 响铃未接听（包括对方正忙、对方拒接、无人接听、对方关机等）
-                Pair(false, "响铃未接")
+                Pair(false, "响铃未接通")
             }
         }
     }

@@ -179,20 +179,20 @@ class CallResultClassifier(
             val energyPattern = context.audioEnergyPattern
 
             // 判断逻辑：
-            // 1. 通话时长 > 2分钟：很可能是真人接听（语音信箱通常不会播报这么久）
+            // 1. 通话时长 > 5分钟：很可能是真人接听（语音信箱通常不会播报这么久）
             // 2. 通话时长 10-20秒 + 能量FLUCTUATING：可能是真人，但置信度较低
             // 3. 通话时长 5-20秒 + 能量INTERMITTENT：可能是真人应答等待回应
             // 4. 能量STEADY：很可能是语音信箱
             // 5. 其他情况：默认语音信箱
 
             when {
-                duration > 120000 -> {
-                    // 通话时长超过2分钟，很可能是真人接听
-                    Log.d(TAG, "========== 多维度判断：通话时长>${duration/1000}秒(>2分钟) → 已接听 ==========")
+                duration > 300000 -> {
+                    // 通话时长超过5分钟，很可能是真人接听
+                    Log.d(TAG, "========== 多维度判断：通话时长>${duration/1000}秒(>5分钟) → 已接听 ==========")
                     return CallResult(
                         type = CallResultType.CONNECTED,
                         confidence = 0.80f,
-                        reason = "OFFHOOK状态，通话时长超过2分钟（${duration/1000}秒），判定为真人接听",
+                        reason = "OFFHOOK状态，通话时长超过5分钟（${duration/1000}秒），判定为真人接听",
                         layer = 1  // 时长判断（第一层）
                     )
                 }
@@ -299,19 +299,19 @@ class CallResultClassifier(
      * 传统判断方式（功能开关关闭时使用）
      */
     private fun classifyLegacy(context: CallContext): CallResult {
-        // 使用时长阈值判断（默认2分钟）
-        val thresholdMs = 120000L
+        // 使用时长阈值判断（默认5分钟）
+        val thresholdMs = 300000L
         return when {
             context.offhookDuration < thresholdMs -> CallResult(
                 type = CallResultType.VOICEMAIL,
                 confidence = 0.60f,
-                reason = "传统判断：OFFHOOK<2分钟",
+                reason = "传统判断：OFFHOOK<5分钟",
                 layer = 0
             )
             else -> CallResult(
                 type = CallResultType.CONNECTED,
                 confidence = 0.70f,
-                reason = "传统判断：OFFHOOK>=2分钟",
+                reason = "传统判断：OFFHOOK>=5分钟",
                 layer = 0
             )
         }
