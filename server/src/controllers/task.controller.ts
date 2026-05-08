@@ -510,10 +510,14 @@ export const updateTaskCustomerStatus = async (req: Request, res: Response) => {
   try {
     const { id, customerId } = req.params;
     // 兼容：老客户端/服务端使用 call_result，新客户端可能发送 callResult
-    const { status, call_result, callResult, call_id, callId } = req.body as any;
+    const { status, call_result, callResult, call_id, callId, call_duration, callDuration } = req.body as any;
 
     const normalizedCallResult = normalizeCallResult(call_result ?? callResult);
     const normalizedCallId = call_id ?? callId ?? null;
+    const rawDuration = call_duration ?? callDuration;
+    const normalizedCallDuration = (rawDuration === undefined || rawDuration === null || rawDuration === '')
+      ? null
+      : Number(rawDuration);
     
     // 更新 task_customers 表
     await query(
@@ -522,6 +526,24 @@ export const updateTaskCustomerStatus = async (req: Request, res: Response) => {
        WHERE task_id = $4 AND customer_id = $5`,
       [status, normalizedCallResult, normalizedCallId, id, customerId]
     );
+
+    // 如果提供了通话时长，且关联了 call 记录，则同步更新 calls 表的通话时长
+    if (
+      normalizedCallId !== null &&
+      normalizedCallId !== undefined &&
+      normalizedCallDuration !== null &&
+      !Number.isNaN(normalizedCallDuration) &&
+      Number.isFinite(normalizedCallDuration) &&
+      normalizedCallDuration >= 0
+    ) {
+      await query(
+        `UPDATE calls
+         SET call_duration = $1,
+             updated_at = datetime('now')
+         WHERE id = $2`,
+        [Math.floor(normalizedCallDuration), normalizedCallId]
+      );
+    }
     
     // 同时更新 customers 表的状态，保持数据一致性
     // 如果任务客户状态为 connected 或 completed，则更新客户状态为 contacted

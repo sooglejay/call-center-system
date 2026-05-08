@@ -381,7 +381,9 @@ data class UpdateTaskCustomerStatusRequest(
     @SerializedName("call_result")
     val callResult: String? = null,
     @SerializedName("call_id")
-    val callId: Int? = null
+    val callId: Int? = null,
+    @SerializedName("call_duration")
+    val callDuration: Int? = null // 通话时长（秒）
 )
 
 /**

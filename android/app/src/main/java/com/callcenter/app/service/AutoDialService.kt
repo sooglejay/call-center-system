@@ -351,53 +351,71 @@ class AutoDialService : Service() {
 
     /**
      * 自动标记通话状态
+     *
+     * @param status 状态码（connected / unanswered 等）
+     * @param displayName 展示名（"真人已接通" / "响铃未接通"）
+     * @param callDurationMs 通话时长（毫秒），可选；为空时自动从 RootCallStateDetector 取
      */
-    private suspend fun autoMarkCallStatus(status: String, displayName: String) {
+    private suspend fun autoMarkCallStatus(
+        status: String,
+        displayName: String,
+        callDurationMs: Long? = null
+    ) {
         Log.d(TAG, "========== [AutoMark] 自动标记通话状态 ==========")
-        Log.d(TAG, "[AutoMark] status=$status, displayName=$displayName")
+        Log.d(TAG, "[AutoMark] status=$status, displayName=$displayName, callDurationMs=$callDurationMs")
         Log.d(TAG, "[AutoMark] 当前客户: ${_currentCustomer.value?.name}, phone=${_currentCustomer.value?.phone}")
         Log.d(TAG, "[AutoMark] 当前任务ID: ${_taskId.value}")
-        
+
         DebugLogger.log("[AutoMark] ========== 自动标记通话状态 ==========")
-        DebugLogger.log("[AutoMark] status=$status, displayName=$displayName")
+        DebugLogger.log("[AutoMark] status=$status, displayName=$displayName, callDurationMs=$callDurationMs")
         DebugLogger.log("[AutoMark] 客户: ${_currentCustomer.value?.name}, phone=${_currentCustomer.value?.phone}")
         DebugLogger.log("[AutoMark] taskId=${_taskId.value}")
-        
+
         lastResolvedCallResult = displayName
         if (status == "connected") {
             lastCallWasConnected = true
         }
-        
+
         // 标记已自动标记，避免 processQueue 中重复标记
         hasAutoMarkedCurrentCall = true
-        
+
         val customer = _currentCustomer.value
         if (customer == null) {
             Log.w(TAG, "[AutoMark] 当前客户为空，无法标记")
             DebugLogger.log("[AutoMark] 错误: 当前客户为空，无法标记")
             return
         }
-        
+
         val taskId = _taskId.value
         if (taskId == null) {
             Log.w(TAG, "[AutoMark] 当前任务ID为空，无法标记")
             DebugLogger.log("[AutoMark] 错误: 当前任务ID为空，无法标记")
             return
         }
-        
+
+        // 计算通话时长（秒）：优先使用入参，否则尝试从 RootCallStateDetector 取
+        val effectiveDurationMs = callDurationMs
+            ?: runCatching {
+                if (::rootCallStateDetector.isInitialized) rootCallStateDetector.getCurrentCallDuration() else 0L
+            }.getOrDefault(0L)
+        val durationSeconds: Int? = if (effectiveDurationMs > 0) {
+            ((effectiveDurationMs + 500L) / 1000L).toInt() // 四舍五入到秒
+        } else null
+        DebugLogger.log("[AutoMark] 计算通话时长: effectiveDurationMs=$effectiveDurationMs, durationSeconds=$durationSeconds")
+
         try {
             // 调用标记方法
             DebugLogger.log("[AutoMark] 调用 markCustomerAsCalledWithStatus...")
-            markCustomerAsCalledWithStatus(customer, status, displayName)
-            
+            markCustomerAsCalledWithStatus(customer, status, displayName, durationSeconds)
+
             // 添加到通话状态历史记录
             FloatingCustomerService.addCallStateHistory(
                 state = displayName,
                 number = customer.phone,
                 customerName = customer.name,
-                duration = rootCallStateDetector.getCurrentCallDuration()
+                duration = effectiveDurationMs
             )
-            
+
             Log.d(TAG, "[AutoMark] 自动标记完成: $status")
             DebugLogger.log("[AutoMark] 自动标记完成: $status")
             Log.d(TAG, "========== [AutoMark] 标记完成 ==========")
@@ -411,17 +429,22 @@ class AutoDialService : Service() {
     /**
      * 根据状态标记客户
      */
-    private suspend fun markCustomerAsCalledWithStatus(customer: Customer, status: String, callResult: String) {
+    private suspend fun markCustomerAsCalledWithStatus(
+        customer: Customer,
+        status: String,
+        callResult: String,
+        callDurationSeconds: Int? = null
+    ) {
         val taskId = _taskId.value
-        Log.d(TAG, "[AutoMark] markCustomerAsCalledWithStatus: taskId=$taskId, customerId=${customer.id}, status=$status, callResult=$callResult")
-        DebugLogger.log("[markCustomerAsCalledWithStatus] taskId=$taskId, customerId=${customer.id}, status=$status, callResult=$callResult")
-        
+        Log.d(TAG, "[AutoMark] markCustomerAsCalledWithStatus: taskId=$taskId, customerId=${customer.id}, status=$status, callResult=$callResult, callDurationSeconds=$callDurationSeconds")
+        DebugLogger.log("[markCustomerAsCalledWithStatus] taskId=$taskId, customerId=${customer.id}, status=$status, callResult=$callResult, callDurationSeconds=$callDurationSeconds")
+
         if (taskId == null) {
             Log.e(TAG, "[AutoMark] taskId为空，无法更新客户状态")
             DebugLogger.log("[markCustomerAsCalledWithStatus] 错误: taskId为空")
             return
         }
-        
+
         try {
             // 更新客户状态
             DebugLogger.log("[markCustomerAsCalledWithStatus] 开始调用 API 更新客户状态...")
@@ -431,7 +454,8 @@ class AutoDialService : Service() {
                 request = UpdateTaskCustomerStatusRequest(
                     status = "called",
                     callResult = callResult,
-                    callId = currentCallRecordId
+                    callId = currentCallRecordId,
+                    callDuration = callDurationSeconds
                 )
             )
             
@@ -2085,7 +2109,7 @@ class AutoDialService : Service() {
                                 // 先设置标志，避免 processQueue 中重复调用
                                 hasAutoMarkedCurrentCall = true
                                 serviceScope.launch {
-                                    autoMarkCallStatus(statusKey, callResult.second)
+                                    autoMarkCallStatus(statusKey, callResult.second, callDurationMs = callDuration)
                                 }
 
                                 Log.d(TAG, "通话结果处理完成，返回")
