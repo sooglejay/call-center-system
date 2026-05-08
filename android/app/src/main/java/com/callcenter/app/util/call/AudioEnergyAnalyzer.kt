@@ -16,6 +16,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * 音频能量分析结果
@@ -56,6 +58,8 @@ data class AudioEnergyResult(
  * - 使用 MIC 音频源捕获从扬声器播放的声音
  * - 录音质量取决于免提音量和环境噪音
  *
+ * 备注：部分设备/ROM 在通话中使用 `VOICE_COMMUNICATION` 能获得更稳定的近似“通话场景”音频（含 AEC 等处理）。
+ *
  * @see <a href="https://developer.android.com/guide/topics/media/mediarecorder">MediaRecorder</a>
  */
 class AudioEnergyAnalyzer(private val context: Context) {
@@ -80,6 +84,16 @@ class AudioEnergyAnalyzer(private val context: Context) {
         private const val ENERGY_CHANGE_THRESHOLD = 0.25f
         private const val STEADY_PATTERN_THRESHOLD = 0.18f  // 语音信箱更平稳
         private const val FLUCTUATING_PATTERN_THRESHOLD = 0.30f
+
+        // AMD（Answering Machine Detection）配置：哔声 + 连续语音
+        private const val AMD_BEEP_MIN_CHECK_MS = 1500L
+        private const val AMD_BEEP_CONSECUTIVE_FRAMES = 2
+        private const val AMD_BEEP_RATIO_THRESHOLD = 0.35
+        private const val AMD_BEEP_MIN_ENERGY = 25f
+        private val AMD_BEEP_FREQS_HZ = intArrayOf(880, 900, 950, 1000, 1050)
+
+        private const val AMD_CONTINUOUS_SPEECH_MS_THRESHOLD = 2500L
+        private const val AMD_SPEECH_MIN_ENERGY = 60f
     }
 
     private var audioRecord: AudioRecord? = null
@@ -96,6 +110,23 @@ class AudioEnergyAnalyzer(private val context: Context) {
 
     // 使用的音频源
     private var usedAudioSource: String = "无"
+
+    /**
+     * AMD（答录机检测）提示
+     */
+    data class AmdHint(
+        val type: KeywordCallType,
+        val confidence: Float,
+        val reason: String
+    )
+
+    @Volatile private var amdHint: AmdHint? = null
+    @Volatile private var amdBeepDetected: Boolean = false
+    @Volatile private var amdBeepFrequencyHz: Int = 0
+    @Volatile private var amdMaxBeepRatio: Double = 0.0
+    @Volatile private var amdContinuousSpeechMs: Long = 0L
+    private var amdBeepConsecutiveFrames: Int = 0
+    private var amdStartTimeMs: Long = 0L
 
     /**
      * 检查是否有录音权限
@@ -169,15 +200,16 @@ class AudioEnergyAnalyzer(private val context: Context) {
 
                 DebugLogger.log("[AudioEnergy] 缓冲区大小: $bufferSize bytes")
 
-                // Android 10+ 只能使用 MIC 或 VOICE_RECOGNITION
-                // VOICE_CALL、VOICE_DOWNLINK 等需要 CAPTURE_AUDIO_OUTPUT 系统权限
+                // Android 10+ 禁止第三方应用访问 VOICE_CALL/VOICE_DOWNLINK 等通话音频流（需 CAPTURE_AUDIO_OUTPUT 系统权限）
+                // 但部分设备在通话场景下使用 VOICE_COMMUNICATION 能获得更稳定的输入（仍属于麦克风链路）。
                 val audioSources = listOf(
+                    MediaRecorder.AudioSource.VOICE_COMMUNICATION to "VOICE_COMMUNICATION",  // 通话场景优化（含 AEC 等）
                     MediaRecorder.AudioSource.VOICE_RECOGNITION to "VOICE_RECOGNITION",  // 语音识别优化，推荐
                     MediaRecorder.AudioSource.MIC to "MIC",  // 基本麦克风
                     MediaRecorder.AudioSource.CAMCORDER to "CAMCORDER",  // 摄像机模式，某些设备可用
                 )
 
-                DebugLogger.log("[AudioEnergy] 开始尝试 MIC 音频源...")
+                DebugLogger.log("[AudioEnergy] 开始尝试录音音源...")
                 DebugLogger.log("[AudioEnergy] 注意: Android 10+ 禁止使用 VOICE_CALL/VOICE_DOWNLINK")
 
                 for ((source, name) in audioSources) {
@@ -212,6 +244,13 @@ class AudioEnergyAnalyzer(private val context: Context) {
                 // 清空之前的样本
                 energySamples.clear()
                 startTimeMs = System.currentTimeMillis()
+                amdStartTimeMs = startTimeMs
+                amdHint = null
+                amdBeepDetected = false
+                amdBeepFrequencyHz = 0
+                amdMaxBeepRatio = 0.0
+                amdContinuousSpeechMs = 0L
+                amdBeepConsecutiveFrames = 0
 
                 // 初始化音频文件（如果需要保存）
                 if (saveAudioData) {
@@ -319,6 +358,7 @@ class AudioEnergyAnalyzer(private val context: Context) {
         var sampleCount = 0
         var totalReadCount = 0L
         var lastLogTime = System.currentTimeMillis()
+        var lastFrameTime = System.currentTimeMillis()
 
         Log.d(TAG, "开始采样循环: bufferSize=${buffer.size}, saveAudioData=$saveAudioData")
 
@@ -330,6 +370,14 @@ class AudioEnergyAnalyzer(private val context: Context) {
                 if (readCount > 0) {
                     // 计算 RMS 能量
                     val energy = calculateRmsEnergy(buffer, readCount)
+
+                    // 估算本帧时长（避免依赖固定 sleep 或 buffer 时长）
+                    val frameNow = System.currentTimeMillis()
+                    val frameDurationMs = (frameNow - lastFrameTime).coerceIn(50L, 200L)
+                    lastFrameTime = frameNow
+
+                    // AMD：哔声 + 连续语音检测（提前给出 HUMAN/VOICEMAIL 提示）
+                    updateAmdState(buffer, readCount, energy, frameDurationMs)
 
                     // 添加到样本列表
                     if (energySamples.size < MAX_ENERGY_SAMPLES) {
@@ -379,6 +427,118 @@ class AudioEnergyAnalyzer(private val context: Context) {
             sum += samples[i].toDouble() * samples[i].toDouble()
         }
         return Math.sqrt(sum / count).toFloat()
+    }
+
+    /**
+     * 获取 AMD 提示（可能为 null）。
+     *
+     * 说明：该提示用于实时阶段快速区分“真人/语音信箱”，不会替代最终的能量模式分析。
+     */
+    fun getAmdHint(): AmdHint? = amdHint
+
+    private fun updateAmdState(samples: ShortArray, count: Int, rmsEnergy: Float, frameDurationMs: Long) {
+        // 已有最终结果时不再更新（VOICEMAIL 视为强信号锁定）
+        val current = amdHint
+        if (current?.type == KeywordCallType.VOICEMAIL) return
+
+        val elapsedMs = System.currentTimeMillis() - amdStartTimeMs
+
+        val beep = detectBeep(samples, count, rmsEnergy)
+        if (beep != null && elapsedMs >= AMD_BEEP_MIN_CHECK_MS) {
+            amdBeepConsecutiveFrames++
+            if (beep.ratio > amdMaxBeepRatio) {
+                amdMaxBeepRatio = beep.ratio
+                amdBeepFrequencyHz = beep.frequencyHz
+            }
+
+            if (!amdBeepDetected && amdBeepConsecutiveFrames >= AMD_BEEP_CONSECUTIVE_FRAMES) {
+                amdBeepDetected = true
+                amdHint = AmdHint(
+                    type = KeywordCallType.VOICEMAIL,
+                    confidence = 0.90f,
+                    reason = "AMD(VOICE_COMMUNICATION)检测到哔声: ${amdBeepFrequencyHz}Hz ratio=${String.format("%.2f", amdMaxBeepRatio)}"
+                )
+                DebugLogger.log("[AMD] ✓ ${amdHint?.reason}")
+                return
+            }
+        } else {
+            amdBeepConsecutiveFrames = 0
+        }
+
+        // 连续语音：在未检测到哔声前，用连续说话时长作为“真人”强信号
+        val inSpeech = rmsEnergy >= maxOf(AMD_SPEECH_MIN_ENERGY, SILENCE_THRESHOLD * 3f)
+        if (inSpeech && !amdBeepDetected) {
+            amdContinuousSpeechMs += frameDurationMs
+            if (amdContinuousSpeechMs >= AMD_CONTINUOUS_SPEECH_MS_THRESHOLD) {
+                amdHint = AmdHint(
+                    type = KeywordCallType.HUMAN,
+                    confidence = 0.80f,
+                    reason = "AMD检测到连续语音>2.5s(${amdContinuousSpeechMs}ms)"
+                )
+                DebugLogger.log("[AMD] ✓ ${amdHint?.reason}")
+            }
+        } else {
+            // 遇到静音时重置连续计时（允许对话型波动重新累计）
+            amdContinuousSpeechMs = 0L
+        }
+    }
+
+    private data class BeepCandidate(val frequencyHz: Int, val ratio: Double)
+
+    private fun detectBeep(samples: ShortArray, count: Int, rmsEnergy: Float): BeepCandidate? {
+        // 太静时不做哔声判断，避免噪音/底噪误触
+        if (rmsEnergy < AMD_BEEP_MIN_ENERGY) return null
+
+        // 总能量（用于归一化）
+        var totalPower = 0.0
+        for (i in 0 until count) {
+            val v = samples[i].toDouble()
+            totalPower += v * v
+        }
+        if (totalPower <= 0.0) return null
+
+        var bestFreq = 0
+        var bestRatio = 0.0
+
+        for (f in AMD_BEEP_FREQS_HZ) {
+            val p = goertzelPower(samples, count, f.toDouble(), SAMPLE_RATE)
+            val ratio = p / totalPower
+            if (ratio > bestRatio) {
+                bestRatio = ratio
+                bestFreq = f
+            }
+        }
+
+        return if (bestRatio >= AMD_BEEP_RATIO_THRESHOLD) {
+            BeepCandidate(bestFreq, bestRatio)
+        } else {
+            null
+        }
+    }
+
+    /**
+     * Goertzel 算法：计算目标频点能量（功率）。
+     */
+    private fun goertzelPower(samples: ShortArray, count: Int, targetFreqHz: Double, sampleRate: Int): Double {
+        val k = (0.5 + (count * targetFreqHz / sampleRate)).toInt()
+        val w = 2.0 * Math.PI * k / count
+        val cosine = cos(w)
+        val sine = sin(w)
+        val coeff = 2.0 * cosine
+
+        var q0 = 0.0
+        var q1 = 0.0
+        var q2 = 0.0
+
+        for (i in 0 until count) {
+            q0 = coeff * q1 - q2 + samples[i].toDouble()
+            q2 = q1
+            q1 = q0
+        }
+
+        val real = q1 - q2 * cosine
+        val imag = q2 * sine
+        return real * real + imag * imag
     }
 
     /**

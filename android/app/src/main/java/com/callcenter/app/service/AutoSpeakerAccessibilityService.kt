@@ -269,61 +269,29 @@ class AutoSpeakerAccessibilityService : AccessibilityService() {
                 recordingButtonClicked = true
                 DebugLogger.log("[AccessibilityService] ✓ 录音按钮已点击")
             } else {
-                DebugLogger.log("[AccessibilityService] ✗ 未直接找到录音按钮，尝试查找'更多'按钮")
+                DebugLogger.log("[AccessibilityService] ✗ 未直接找到录音按钮，尝试通过描述/开关查找")
 
                 // 尝试通过描述查找
                 found = findAndClickButtonByDescription(rootNode, recordingKeywords, "录音")
 
-                if (!found) {
-                    // 尝试点击"更多"按钮展开菜单
-                    DebugLogger.log("[AccessibilityService] 尝试点击'更多'按钮展开菜单")
-                    val moreButtonClicked = clickMoreButton()
-
-                    if (moreButtonClicked) {
-                        // 等待菜单展开
-                        DebugLogger.log("[AccessibilityService] 等待菜单展开...")
-                        Thread.sleep(500)
-
-                        // 重新获取根节点并查找录音相关控件
-                        val newRootNode = rootInActiveWindow
-                        if (newRootNode != null) {
-                            // 检查是否有地区限制提示
-                            if (checkRegionRestriction(newRootNode)) {
-                                DebugLogger.log("[AccessibilityService] ⚠️ 检测到地区限制：通话录音服务未在您所在的国家/地区提供")
-                                DebugLogger.log("[AccessibilityService] 尝试查找'请求录制通话'选项")
-                            }
-
-                            // 尝试查找并开启所有相关的 Switch 开关（Google Pixel 风格）
-                            DebugLogger.log("[AccessibilityService] 在展开菜单中查找录音开关")
-                            val switchCount = findAllAndClickSwitches(newRootNode, recordingKeywords, "录音相关开关")
-
-                            if (switchCount > 0) {
-                                recordingButtonClicked = true
-                                DebugLogger.log("[AccessibilityService] ✓ 找到并开启了 $switchCount 个录音开关")
-                            }
-
-                            // 再尝试查找普通按钮（备用方案）
-                            DebugLogger.log("[AccessibilityService] 在展开菜单中查找录音按钮")
-                            found = findAndClickButton(newRootNode, recordingKeywords, "录音")
-
-                            if (found) {
-                                recordingButtonClicked = true
-                                DebugLogger.log("[AccessibilityService] ✓ 在展开菜单中找到并点击录音按钮")
-                            } else if (switchCount == 0) {
-                                DebugLogger.log("[AccessibilityService] ✗ 展开菜单后仍未找到录音控件")
-                                // 标记设备不支持录音，避免后续重复查找
-                                markRecordingNotSupported(this@AutoSpeakerAccessibilityService)
-                            }
-                        }
-                    } else {
-                        // 点击"更多"按钮失败，可能不存在更多菜单
-                        DebugLogger.log("[AccessibilityService] ✗ 未找到'更多'按钮")
-                        // 标记设备不支持录音
-                        markRecordingNotSupported(this@AutoSpeakerAccessibilityService)
-                    }
-                } else {
-                    // 通过描述找到了录音按钮，无需标记
+                if (found) {
+                    recordingButtonClicked = true
+                    DebugLogger.log("[AccessibilityService] ✓ 通过描述找到并点击录音按钮")
+                    return
                 }
+
+                // 不再点击“更多”按钮（部分机型点击后也找不到录音控件，且会产生额外副作用）
+                // 尝试直接在当前界面查找并开启所有相关的 Switch 开关（Google Pixel 风格）
+                DebugLogger.log("[AccessibilityService] 在当前界面查找录音开关")
+                val switchCount = findAllAndClickSwitches(rootNode, recordingKeywords, "录音相关开关")
+                if (switchCount > 0) {
+                    recordingButtonClicked = true
+                    DebugLogger.log("[AccessibilityService] ✓ 找到并开启了 $switchCount 个录音开关")
+                    return
+                }
+
+                DebugLogger.log("[AccessibilityService] ✗ 未找到录音按钮/开关，标记设备不支持")
+                markRecordingNotSupported(this@AutoSpeakerAccessibilityService)
             }
 
         } catch (e: Exception) {

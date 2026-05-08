@@ -1760,6 +1760,58 @@ class AutoDialService : Service() {
                                                             DebugLogger.log("[RealTimeDetect] 录音已停止，结束检测")
                                                             break
                                                         }
+
+                                                        // AMD（VOICE_COMMUNICATION）：优先使用“哔声/连续语音”快速提示
+                                                        val amdHint = audioEnergyAnalyzer?.getAmdHint()
+                                                        if (amdHint != null) {
+                                                            val elapsed = System.currentTimeMillis() - startTime
+                                                            DebugLogger.log("[AMDDetect] ${elapsed}ms: type=${amdHint.type}, conf=${amdHint.confidence}, reason=${amdHint.reason}")
+                                                            when (amdHint.type) {
+                                                                KeywordCallType.HUMAN -> {
+                                                                    detectedAsHuman = true
+                                                                    keywordCallType = KeywordCallType.HUMAN
+                                                                    detectedKeywords = listOf(amdHint.reason)
+                                                                    FloatingCustomerService.addCallStateHistory(
+                                                                        "识别为真人(AMD)",
+                                                                        _currentCustomer.value?.phone,
+                                                                        _currentCustomer.value?.name
+                                                                    )
+                                                                    break
+                                                                }
+                                                                KeywordCallType.VOICEMAIL -> {
+                                                                    keywordCallType = KeywordCallType.VOICEMAIL
+                                                                    detectedKeywords = listOf(amdHint.reason)
+                                                                    FloatingCustomerService.addCallStateHistory(
+                                                                        "识别为语音信箱(AMD)",
+                                                                        _currentCustomer.value?.phone,
+                                                                        _currentCustomer.value?.name
+                                                                    )
+
+                                                                    // 检查是否开启了语音信箱自动挂断功能
+                                                                    try {
+                                                                        val autoHangupEnabled = featureToggleManager.isEnabled(FeatureToggle.AUTO_HANGUP_ON_VOICEMAIL)
+                                                                        if (autoHangupEnabled) {
+                                                                            DebugLogger.log("[VoicemailAutoHangup] (AMD) 检测到语音信箱，自动挂断并拨打下一个")
+                                                                            FloatingCustomerService.addCallStateHistory(
+                                                                                "自动挂断语音信箱(AMD)",
+                                                                                _currentCustomer.value?.phone,
+                                                                                _currentCustomer.value?.name
+                                                                            )
+                                                                            hangupCurrentCall()
+                                                                            lastResolvedCallResult = "语音信箱"
+                                                                            autoMarkCallStatus("voicemail", "语音信箱")
+                                                                        }
+                                                                    } catch (e: Exception) {
+                                                                        DebugLogger.log("[VoicemailAutoHangup] (AMD) 检查开关失败: ${e.message}")
+                                                                    }
+
+                                                                    break
+                                                                }
+                                                                else -> {
+                                                                    // UNKNOWN/IVR：继续走文本长度检测
+                                                                }
+                                                            }
+                                                        }
                                                         
                                                         // 获取当前 PCM 数据
                                                         val pcmData = audioEnergyAnalyzer?.getCurrentPcmData()
@@ -1793,8 +1845,8 @@ class AutoDialService : Service() {
                                                         }
                                                     }
                                                     
-                                                    // 如果超时仍未识别到文本，判定为语音信箱
-                                                    if (!detectedAsHuman) {
+                                                    // 如果没有任何早期判定（AMD/文本长度），则超时默认判定为语音信箱
+                                                    if (!detectedAsHuman && keywordCallType == null) {
                                                         val totalTime = System.currentTimeMillis() - startTime
                                                         DebugLogger.log("[RealTimeDetect] ✗ ${totalTime}ms内未识别到文本，判定为语音信箱")
                                                         
