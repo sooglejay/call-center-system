@@ -111,14 +111,16 @@ class MyStatsViewModel @Inject constructor(
                         Log.d(TAG, "日志上传成功: ${response.message}")
                     },
                     onFailure = { exception ->
-                        _logUploadMessage.value = "上传失败: ${exception.message}"
-                        Log.e(TAG, "日志上传失败: ${exception.message}")
+                        val msg = exception.message ?: exception.toString()
+                        _logUploadMessage.value = "上传失败: $msg"
+                        Log.e(TAG, "日志上传失败: $msg", exception)
                     }
                 )
 
             } catch (e: Exception) {
-                _logUploadMessage.value = "上传异常: ${e.message}"
-                Log.e(TAG, "日志上传异常: ${e.message}")
+                val msg = e.message ?: e.toString()
+                _logUploadMessage.value = "上传异常: $msg"
+                Log.e(TAG, "日志上传异常: $msg", e)
             } finally {
                 _isUploadingLogs.value = false
             }
@@ -146,18 +148,36 @@ class MyStatsViewModel @Inject constructor(
                 Result.success(response.body()!!)
             } else {
                 // 处理错误响应
-                val errorBody = response.errorBody()?.string()
+                val errorBody = try {
+                    response.errorBody()?.string()
+                } catch (e: Exception) {
+                    null
+                }
+                Log.w(
+                    TAG,
+                    "日志上传接口返回失败: code=${response.code()}, message=${response.message()}, errorBody=${errorBody?.take(500)}"
+                )
                 val errorMessage = if (response.code() == 413) {
                     // 文件过大错误
                     "日志文件过大，请升级App至最新版本"
                 } else if (errorBody?.contains("FILE_TOO_LARGE") == true) {
                     "日志文件过大，请升级App至最新版本"
                 } else {
-                    "上传失败: ${response.code()}"
+                    // 尽量把服务端返回带出来，避免出现“失败但原因不明”
+                    val serverMsg = errorBody
+                        ?.takeIf { it.isNotBlank() }
+                        ?.replace("\n", " ")
+                        ?.take(120)
+                    if (serverMsg != null) {
+                        "上传失败: ${response.code()} ($serverMsg)"
+                    } else {
+                        "上传失败: ${response.code()}"
+                    }
                 }
                 Result.failure(Exception(errorMessage))
             }
         } catch (e: Exception) {
+            Log.e(TAG, "日志上传请求异常: ${e.message ?: e}", e)
             Result.failure(e)
         }
     }
