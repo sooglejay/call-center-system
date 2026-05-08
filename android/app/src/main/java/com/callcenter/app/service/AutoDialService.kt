@@ -257,7 +257,10 @@ class AutoDialService : Service() {
         rootCallStateDetector.addListener(object : RootPhoneStateListener {
             override fun onActive(number: String?, setupTime: Long) {
                 Log.d(TAG, "[CallStateListener] 通话已接通: $number, 接通耗时: ${setupTime}ms")
-                DebugLogger.log("[CallStateListener] Root检测到通话已接通: number=$number, setupTime=${setupTime}ms")
+                DebugLogger.log(
+                    "[CallStateListener] Root检测到通话已接通: number=$number, setupTime=${setupTime}ms, " +
+                        "customer=${_currentCustomer.value?.name}, phone=${_currentCustomer.value?.phone}"
+                )
                 lastCallWasConnected = true
                 lastResolvedCallResult = "真人已接通"
                 // 通话接通时自动标记为真人已接通
@@ -272,7 +275,9 @@ class AutoDialService : Service() {
 
             override fun onIdle(duration: Long) {
                 Log.d(TAG, "[CallStateListener] 通话结束, 时长: ${duration}ms")
-                DebugLogger.log("[CallStateListener] Root检测到通话结束: duration=${duration}ms")
+                DebugLogger.log(
+                    "[CallStateListener] Root检测到通话结束: duration=${duration}ms, customer=${_currentCustomer.value?.name}, phone=${_currentCustomer.value?.phone}"
+                )
                 // 通话结束时，根据时长判断结果
                 serviceScope.launch {
                     if (!hasAutoMarkedCurrentCall) {
@@ -306,7 +311,9 @@ class AutoDialService : Service() {
 
             override fun onStateChanged(oldState: RootCallState, newState: RootCallState) {
                 Log.d(TAG, "[CallStateListener] 状态变更: $oldState -> $newState")
-                DebugLogger.log("[CallStateListener] Root状态变更: $oldState -> $newState")
+                DebugLogger.log(
+                    "[CallStateListener] Root状态变更: $oldState -> $newState, customer=${_currentCustomer.value?.name}, phone=${_currentCustomer.value?.phone}"
+                )
                 
                 // 检测特定状态并自动标记（简化为三种状态）
                 serviceScope.launch {
@@ -561,23 +568,26 @@ class AutoDialService : Service() {
         
         // 详细日志
         Log.d(TAG, "canDialNext检查: isInForeground=$isInForeground, isAppActive=$isAppActive, callState=$callState")
-        DebugLogger.log("[CanDialNext] isInForeground=$isInForeground, isAppActive=$isAppActive, callState=$callState")
+        DebugLogger.log(
+            "[CanDialNext] 客户=${_currentCustomer.value?.name}, 电话=${_currentCustomer.value?.phone}, " +
+                "isInForeground=$isInForeground, isAppActive=$isAppActive, callState=$callState"
+        )
         
         // 使用宽松的前台检查（只要有 Activity 可见就算）
         if (!isInForeground && !isAppActive) {
             Log.w(TAG, "不能拨打: App不在前台且无Activity可见")
-            DebugLogger.log("[CanDialNext] ✗ App不在前台且无Activity可见")
+            DebugLogger.log("[CanDialNext] 客户=${_currentCustomer.value?.name}, 电话=${_currentCustomer.value?.phone}, ✗ App不在前台且无Activity可见")
             return false
         }
         
         if (callState != TelephonyManager.CALL_STATE_IDLE) {
             Log.w(TAG, "不能拨打: 当前通话状态不是空闲, state=$callState")
-            DebugLogger.log("[CanDialNext] ✗ 通话状态不是IDLE: $callState")
+            DebugLogger.log("[CanDialNext] 客户=${_currentCustomer.value?.name}, 电话=${_currentCustomer.value?.phone}, ✗ 通话状态不是IDLE: $callState")
             return false
         }
         
         Log.d(TAG, "canDialNext: 条件满足，可以拨打")
-        DebugLogger.log("[CanDialNext] ✓ 条件满足，可以拨打")
+        DebugLogger.log("[CanDialNext] 客户=${_currentCustomer.value?.name}, 电话=${_currentCustomer.value?.phone}, ✓ 条件满足，可以拨打")
         return true
     }
 
@@ -592,7 +602,7 @@ class AutoDialService : Service() {
             
             if (canDialNext()) {
                 Log.d(TAG, "条件满足，可以继续拨打")
-                DebugLogger.log("[WaitDial] ✓ 条件满足，等待了 ${waitCount} 次检查")
+                DebugLogger.log("[WaitDial] 客户=${_currentCustomer.value?.name}, 电话=${_currentCustomer.value?.phone}, ✓ 条件满足，等待了 ${waitCount} 次检查")
                 return
             }
             
@@ -610,7 +620,10 @@ class AutoDialService : Service() {
             
             // 每5次循环记录一次详细日志
             if (waitCount % 5 == 0) {
-                DebugLogger.log("[WaitDial] 等待中 #$waitCount: isInForeground=$isInForeground, isAppActive=$isAppActive, callState=$callState")
+                DebugLogger.log(
+                    "[WaitDial] 客户=${_currentCustomer.value?.name}, 电话=${_currentCustomer.value?.phone}, " +
+                        "等待中 #$waitCount: isInForeground=$isInForeground, isAppActive=$isAppActive, callState=$callState"
+                )
             }
             
             delay(500) // 缩短检查间隔到500ms，更快响应
@@ -627,7 +640,7 @@ class AutoDialService : Service() {
                 val success = AutoSpeakerInCallService.disconnectCurrentCall()
                 if (success) {
                     Log.d(TAG, "通过 InCallService 挂断电话成功")
-                    DebugLogger.log("[Hangup] ✓ 通过 InCallService 挂断电话")
+                    DebugLogger.log("[Hangup] 客户=${_currentCustomer.value?.name}, 电话=${_currentCustomer.value?.phone}, ✓ 通过 InCallService 挂断电话")
                     return
                 }
             }
@@ -642,10 +655,10 @@ class AutoDialService : Service() {
             sendOrderedBroadcast(intent, null)
             
             Log.d(TAG, "尝试通过广播挂断当前电话")
-            DebugLogger.log("[Hangup] 通过广播发送挂断命令")
+            DebugLogger.log("[Hangup] 客户=${_currentCustomer.value?.name}, 电话=${_currentCustomer.value?.phone}, 通过广播发送挂断命令")
         } catch (e: Exception) {
             Log.e(TAG, "挂断电话失败: ${e.message}")
-            DebugLogger.log("[Hangup] ✗ 挂断电话失败: ${e.message}")
+            DebugLogger.log("[Hangup] 客户=${_currentCustomer.value?.name}, 电话=${_currentCustomer.value?.phone}, ✗ 挂断电话失败: ${e.message}")
             UserNotifier.showError("挂断电话失败: ${e.message}")
         }
     }
@@ -1622,7 +1635,8 @@ class AutoDialService : Service() {
                         callState = state,
                         audioMode = audioMode,
                         isServiceRunning = _isRunning.value,
-                        currentCustomer = _currentCustomer.value?.name,
+                        currentCustomerName = _currentCustomer.value?.name,
+                        currentCustomerPhone = _currentCustomer.value?.phone,
                         extraInfo = mapOf(
                             "callConnected" to callConnected,
                             "timeSinceDial" to "${timeSinceDial}ms",
@@ -1657,6 +1671,11 @@ class AutoDialService : Service() {
                                     DebugLogger.logSeparator("录音识别启动")
                                     DebugLogger.log("[RecordDetect] 创建录音识别实例")
                                     audioEnergyAnalyzer = AudioEnergyAnalyzer(this@AutoDialService)
+
+                                    // 给 analyzer 的内部日志补充客户信息，便于对照排查
+                                    audioEnergyAnalyzer?.setLogPrefix(
+                                        "[客户=${_currentCustomer.value?.name ?: "null"},电话=${_currentCustomer.value?.phone ?: "null"}]"
+                                    )
 
                                     // 【关键修复】启用音频数据保存，用于实时识别和离线关键词检测
                                     audioEnergyAnalyzer?.setSaveAudioData(true)
@@ -1762,7 +1781,10 @@ class AutoDialService : Service() {
                                                         val amdHint = audioEnergyAnalyzer?.getAmdHint()
                                                         if (amdHint != null) {
                                                             val elapsed = System.currentTimeMillis() - startTime
-                                                            DebugLogger.log("[AMDDetect] ${elapsed}ms: type=${amdHint.type}, conf=${amdHint.confidence}, reason=${amdHint.reason}")
+                                                            DebugLogger.log(
+                                                                "[AMDDetect] 客户=${_currentCustomer.value?.name}, 电话=${_currentCustomer.value?.phone}, " +
+                                                                    "${elapsed}ms: type=${amdHint.type}, conf=${amdHint.confidence}, reason=${amdHint.reason}"
+                                                            )
                                                             when (amdHint.type) {
                                                                 KeywordCallType.HUMAN -> {
                                                                     detectedAsHuman = true
@@ -1788,7 +1810,10 @@ class AutoDialService : Service() {
                                                                     try {
                                                                         val autoHangupEnabled = featureToggleManager.isEnabled(FeatureToggle.AUTO_HANGUP_ON_VOICEMAIL)
                                                                         if (autoHangupEnabled) {
-                                                                            DebugLogger.log("[VoicemailAutoHangup] (AMD) 检测到未接通(原语音信箱)，自动挂断并拨打下一个")
+                                                                            DebugLogger.log(
+                                                                                "[VoicemailAutoHangup] 客户=${_currentCustomer.value?.name}, 电话=${_currentCustomer.value?.phone}, " +
+                                                                                    "(AMD) 检测到未接通(原语音信箱)，自动挂断并拨打下一个"
+                                                                            )
                                                                             FloatingCustomerService.addCallStateHistory(
                                                                                 "自动挂断未接通(AMD)",
                                                                                 _currentCustomer.value?.phone,
@@ -1860,7 +1885,10 @@ class AutoDialService : Service() {
                                                         try {
                                                             val autoHangupEnabled = featureToggleManager.isEnabled(FeatureToggle.AUTO_HANGUP_ON_VOICEMAIL)
                                                             if (autoHangupEnabled) {
-                                                                DebugLogger.log("[VoicemailAutoHangup] 检测到未接通(原语音信箱)，自动挂断并拨打下一个")
+                                                                DebugLogger.log(
+                                                                    "[VoicemailAutoHangup] 客户=${_currentCustomer.value?.name}, 电话=${_currentCustomer.value?.phone}, " +
+                                                                        "检测到未接通(原语音信箱)，自动挂断并拨打下一个"
+                                                                )
                                                                 FloatingCustomerService.addCallStateHistory(
                                                                     "自动挂断未接通",
                                                                     _currentCustomer.value?.phone,
@@ -1966,6 +1994,7 @@ class AutoDialService : Service() {
                                 Log.d(TAG, "开始智能分类判断...")
 
                                 DebugLogger.log("[Classify] ========== 分类参数 ==========")
+                                DebugLogger.log("[Classify] 客户=${_currentCustomer.value?.name}, 电话=${_currentCustomer.value?.phone}")
                                 DebugLogger.log("[Classify] 通话时长(offhookDuration): $callDuration ms")
                                 DebugLogger.log("[Classify] 关键词类型: $keywordCallType")
                                 DebugLogger.log("[Classify] 检测到的关键词: $detectedKeywords")
@@ -1979,6 +2008,7 @@ class AutoDialService : Service() {
                                 )
 
                                 DebugLogger.log("[Classify] ========== 分类结果 ==========")
+                                DebugLogger.log("[Classify] 客户=${_currentCustomer.value?.name}, 电话=${_currentCustomer.value?.phone}")
                                 DebugLogger.log("[Classify] 是否接通: ${callResult.first}")
                                 DebugLogger.log("[Classify] 结果描述: ${callResult.second}")
                                 Log.d(TAG, "智能分类完成: isConnected=${callResult.first}, result=${callResult.second}")
@@ -2159,7 +2189,11 @@ class AutoDialService : Service() {
         // 使用分类器判断
         val result = callResultClassifier.classify(context)
 
-        Log.d(TAG, "智能分类结果: type=${result.type}, confidence=${result.confidence}, reason=${result.reason}, keywords=$detectedKeywords")
+        Log.d(
+            TAG,
+            "智能分类结果: customer=${_currentCustomer.value?.name}, phone=${_currentCustomer.value?.phone}, " +
+                "type=${result.type}, confidence=${result.confidence}, reason=${result.reason}, keywords=$detectedKeywords"
+        )
 
         return when (result.type) {
             CallResultType.CONNECTED -> {

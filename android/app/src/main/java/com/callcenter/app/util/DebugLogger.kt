@@ -106,7 +106,8 @@ object DebugLogger {
         callState: Int,
         audioMode: Int,
         isServiceRunning: Boolean,
-        currentCustomer: String?,
+        currentCustomerName: String?,
+        currentCustomerPhone: String?,
         extraInfo: Map<String, Any?> = emptyMap()
     ) {
         val callStateStr = when (callState) {
@@ -128,7 +129,12 @@ object DebugLogger {
             extraInfo.entries.joinToString(", ") { "${it.key}=${it.value}" }
         } else ""
         
-        log("[$phase] TelephonyState=$callStateStr($callState), AudioMode=$audioModeStr($audioMode), ServiceRunning=$isServiceRunning, Customer=$currentCustomer${if (extraStr.isNotEmpty()) ", $extraStr" else ""}")
+        val customerStr = buildString {
+            append(currentCustomerName ?: "null")
+            if (!currentCustomerPhone.isNullOrBlank()) append("(").append(currentCustomerPhone).append(")")
+        }
+
+        log("[$phase] TelephonyState=$callStateStr($callState), AudioMode=$audioModeStr($audioMode), ServiceRunning=$isServiceRunning, Customer=$customerStr${if (extraStr.isNotEmpty()) ", $extraStr" else ""}")
     }
     
     /**

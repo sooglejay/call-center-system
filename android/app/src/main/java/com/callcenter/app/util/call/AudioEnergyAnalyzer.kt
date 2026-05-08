@@ -12,6 +12,7 @@ import android.media.audiofx.AutomaticGainControl
 import android.media.audiofx.NoiseSuppressor
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.callcenter.app.BuildConfig
 import com.callcenter.app.util.DebugLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
@@ -97,6 +98,10 @@ class AudioEnergyAnalyzer(private val context: Context) {
 
         private const val AMD_CONTINUOUS_SPEECH_MS_THRESHOLD = 2500L
         private const val AMD_SPEECH_MIN_ENERGY = 60f
+
+        // AMD 详细日志（仅 Debug 构建启用）
+        private const val AMD_VERBOSE_LOG_INTERVAL_MS = 1000L
+        private const val AMD_BEEP_CANDIDATE_LOG_THRESHOLD = 0.20
     }
 
     private var audioRecord: AudioRecord? = null
@@ -114,6 +119,12 @@ class AudioEnergyAnalyzer(private val context: Context) {
     // 使用的音频源
     private var usedAudioSource: String = "无"
 
+    // 日志前缀（用于把客户信息打到 analyzer 日志里）
+    @Volatile private var logPrefix: String? = null
+
+    // AMD 详细日志节流
+    private var amdLastVerboseLogMs: Long = 0L
+
     /**
      * AMD（答录机检测）提示
      */
@@ -130,6 +141,22 @@ class AudioEnergyAnalyzer(private val context: Context) {
     @Volatile private var amdContinuousSpeechMs: Long = 0L
     private var amdBeepConsecutiveFrames: Int = 0
     private var amdStartTimeMs: Long = 0L
+
+    /**
+     * 设置日志前缀（建议传入类似："[客户=张三,电话=138****]"）。
+     */
+    fun setLogPrefix(prefix: String?) {
+        logPrefix = prefix?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
+    private fun dlog(message: String) {
+        val p = logPrefix
+        if (p.isNullOrBlank()) {
+            DebugLogger.log(message)
+        } else {
+            DebugLogger.log("$p $message")
+        }
+    }
 
     /**
      * 检查是否有录音权限
@@ -169,27 +196,27 @@ class AudioEnergyAnalyzer(private val context: Context) {
      * @return 是否成功开始
      */
     suspend fun start(): Boolean {
-        DebugLogger.log("[AudioEnergy] start() 被调用")
+        dlog("[AudioEnergy] start() 被调用")
 
         if (!hasRecordPermission()) {
             Log.w(TAG, "没有录音权限，无法进行音频能量分析")
-            DebugLogger.log("[AudioEnergy] ✗ 没有录音权限")
+            dlog("[AudioEnergy] ✗ 没有录音权限")
             return false
         }
 
         // 检查免提状态
         val speakerOn = isSpeakerphoneOn()
-        DebugLogger.log("[AudioEnergy] 免提状态: $speakerOn")
+        dlog("[AudioEnergy] 免提状态: $speakerOn")
 
         if (!speakerOn) {
             Log.w(TAG, "免提未开启，录音效果可能不佳")
-            DebugLogger.log("[AudioEnergy] ⚠ 免提未开启，建议开启免提以获得更好的录音效果")
+            dlog("[AudioEnergy] ⚠ 免提未开启，建议开启免提以获得更好的录音效果")
             // 不直接返回 false，允许继续尝试（某些设备可能仍然可以录音）
         }
 
         if (isRecording.getAndSet(true)) {
             Log.w(TAG, "音频能量采集已在进行中")
-            DebugLogger.log("[AudioEnergy] 音频采集已在进行中")
+            dlog("[AudioEnergy] 音频采集已在进行中")
             return true
         }
 
@@ -213,34 +240,34 @@ class AudioEnergyAnalyzer(private val context: Context) {
                     MediaRecorder.AudioSource.VOICE_COMMUNICATION to "VOICE_COMMUNICATION",  // 通话场景优化（可能含 AEC）
                 )
 
-                DebugLogger.log("[AudioEnergy] 开始尝试录音音源...")
-                DebugLogger.log("[AudioEnergy] 注意: Android 10+ 禁止使用 VOICE_CALL/VOICE_DOWNLINK")
+                dlog("[AudioEnergy] 开始尝试录音音源...")
+                dlog("[AudioEnergy] 注意: Android 10+ 禁止使用 VOICE_CALL/VOICE_DOWNLINK")
 
                 for ((source, name) in audioSources) {
                     try {
                         audioRecord = createAudioRecord(bufferSize, source)
                         if (audioRecord?.state == AudioRecord.STATE_INITIALIZED) {
                             Log.d(TAG, "成功使用音源: $name")
-                            DebugLogger.log("[AudioEnergy] ✓ 成功使用音源: $name")
+                            dlog("[AudioEnergy] ✓ 成功使用音源: $name")
                             usedAudioSource = name
                             break
                         } else {
                             Log.d(TAG, "音源 $name 不可用")
-                            DebugLogger.log("[AudioEnergy] ✗ 音源 $name 不可用")
+                            dlog("[AudioEnergy] ✗ 音源 $name 不可用")
                             audioRecord?.release()
                             audioRecord = null
                         }
                     } catch (e: Exception) {
                         Log.d(TAG, "音源 $name 创建失败: ${e.message}")
-                        DebugLogger.log("[AudioEnergy] ✗ 音源 $name 创建失败: ${e.message}")
+                        dlog("[AudioEnergy] ✗ 音源 $name 创建失败: ${e.message}")
                         audioRecord = null
                     }
                 }
 
                 if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
                     Log.e(TAG, "AudioRecord 初始化失败，所有 MIC 音源都不可用")
-                    DebugLogger.log("[AudioEnergy] ✗ AudioRecord 初始化失败")
-                    DebugLogger.log("[AudioEnergy] 可能原因: 1.麦克风被其他应用占用 2.权限未授予 3.设备不支持")
+                    dlog("[AudioEnergy] ✗ AudioRecord 初始化失败")
+                    dlog("[AudioEnergy] 可能原因: 1.麦克风被其他应用占用 2.权限未授予 3.设备不支持")
                     isRecording.set(false)
                     return@withContext false
                 }
@@ -257,7 +284,7 @@ class AudioEnergyAnalyzer(private val context: Context) {
                         ns?.enabled = false
                         agc?.enabled = false
 
-                        DebugLogger.log(
+                        dlog(
                             "[AudioEnergy] 音效: AEC=${aec?.enabled ?: "NA"}, NS=${ns?.enabled ?: "NA"}, AGC=${agc?.enabled ?: "NA"}"
                         )
                     }
@@ -277,15 +304,23 @@ class AudioEnergyAnalyzer(private val context: Context) {
                 // 初始化音频文件（如果需要保存）
                 if (saveAudioData) {
                     initAudioFile()
-                    DebugLogger.log("[AudioEnergy] 音频文件路径: ${audioFile?.absolutePath}")
+                    dlog("[AudioEnergy] 音频文件路径: ${audioFile?.absolutePath}")
                 } else {
-                    DebugLogger.log("[AudioEnergy] 不保存音频数据 (saveAudioData=false)")
+                    dlog("[AudioEnergy] 不保存音频数据 (saveAudioData=false)")
                 }
 
                 audioRecord?.startRecording()
                 Log.d(TAG, "音频能量采集已开始，音源: $usedAudioSource，免提: $speakerOn")
-                DebugLogger.log("[AudioEnergy] ✓ 音频采集已开始")
-                DebugLogger.log("[AudioEnergy] 音源: $usedAudioSource, 免提: $speakerOn, 采样率: ${SAMPLE_RATE}Hz")
+                dlog("[AudioEnergy] ✓ 音频采集已开始")
+                dlog("[AudioEnergy] 音源: $usedAudioSource, 免提: $speakerOn, 采样率: ${SAMPLE_RATE}Hz")
+
+                if (BuildConfig.DEBUG) {
+                    dlog(
+                        "[AMDCore] 配置: minCheck=${AMD_BEEP_MIN_CHECK_MS}ms, consec=${AMD_BEEP_CONSECUTIVE_FRAMES}, " +
+                            "ratioTh=${AMD_BEEP_RATIO_THRESHOLD}, minEnergy=${AMD_BEEP_MIN_ENERGY}, freqs=${AMD_BEEP_FREQS_HZ.joinToString()}, " +
+                            "contSpeechTh=${AMD_CONTINUOUS_SPEECH_MS_THRESHOLD}ms, speechMinEnergy=${AMD_SPEECH_MIN_ENERGY}, silenceTh=${SILENCE_THRESHOLD}"
+                    )
+                }
 
                 // 开始采集循环
                 startSamplingLoop()
@@ -293,18 +328,18 @@ class AudioEnergyAnalyzer(private val context: Context) {
                 true
             } catch (e: SecurityException) {
                 Log.e(TAG, "录音权限被拒绝: ${e.message}")
-                DebugLogger.log("[AudioEnergy] ✗ SecurityException: ${e.message}")
+                dlog("[AudioEnergy] ✗ SecurityException: ${e.message}")
                 isRecording.set(false)
                 false
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // CancellationException 是协程取消的正常情况（如语音信箱检测后挂断电话）
                 Log.d(TAG, "音频采集被取消")
-                DebugLogger.log("[AudioEnergy] 音频采集被取消（正常情况）")
+                dlog("[AudioEnergy] 音频采集被取消（正常情况）")
                 isRecording.set(false)
                 throw e  // 重新抛出，保持协程取消机制
             } catch (e: Exception) {
                 Log.e(TAG, "启动音频采集失败: ${e.message}")
-                DebugLogger.log("[AudioEnergy] ✗ 启动异常: ${e.message}")
+                dlog("[AudioEnergy] ✗ 启动异常: ${e.message}")
                 isRecording.set(false)
                 false
             }
@@ -426,6 +461,13 @@ class AudioEnergyAnalyzer(private val context: Context) {
                     val now = System.currentTimeMillis()
                     if (now - lastLogTime > 5000) {
                         Log.d(TAG, "采样状态: samples=$sampleCount, lastEnergy=$energy, totalReads=$totalReadCount, duration=${getDurationMs()}ms")
+                        if (BuildConfig.DEBUG) {
+                            val hint = amdHint
+                            dlog(
+                                "[AudioEnergy] 采样状态: samples=$sampleCount, lastEnergy=${String.format("%.1f", energy)}, reads=$totalReadCount, " +
+                                    "duration=${getDurationMs()}ms, amdHint=${hint?.type ?: "null"}, beepDetected=$amdBeepDetected, contSpeechMs=$amdContinuousSpeechMs"
+                            )
+                        }
                         lastLogTime = now
                     }
                 } else if (readCount < 0) {
@@ -465,12 +507,25 @@ class AudioEnergyAnalyzer(private val context: Context) {
 
         val elapsedMs = System.currentTimeMillis() - amdStartTimeMs
 
-        val beep = detectBeep(samples, count, rmsEnergy)
+        val now = System.currentTimeMillis()
+        val shouldVerbose = BuildConfig.DEBUG && (now - amdLastVerboseLogMs >= AMD_VERBOSE_LOG_INTERVAL_MS)
+        if (shouldVerbose) {
+            amdLastVerboseLogMs = now
+        }
+
+        val beep = detectBeep(samples, count, rmsEnergy, verbose = shouldVerbose)
         if (beep != null && elapsedMs >= AMD_BEEP_MIN_CHECK_MS) {
             amdBeepConsecutiveFrames++
             if (beep.ratio > amdMaxBeepRatio) {
                 amdMaxBeepRatio = beep.ratio
                 amdBeepFrequencyHz = beep.frequencyHz
+            }
+
+            if (BuildConfig.DEBUG && (shouldVerbose || beep.ratio >= AMD_BEEP_CANDIDATE_LOG_THRESHOLD)) {
+                dlog(
+                    "[AMDCore] beepCandidate: elapsed=${elapsedMs}ms, freq=${beep.frequencyHz}Hz, ratio=${String.format("%.3f", beep.ratio)}, " +
+                        "consec=${amdBeepConsecutiveFrames}/${AMD_BEEP_CONSECUTIVE_FRAMES}, maxRatio=${String.format("%.3f", amdMaxBeepRatio)}"
+                )
             }
 
             if (!amdBeepDetected && amdBeepConsecutiveFrames >= AMD_BEEP_CONSECUTIVE_FRAMES) {
@@ -480,15 +535,19 @@ class AudioEnergyAnalyzer(private val context: Context) {
                     confidence = 0.90f,
                     reason = "AMD(VOICE_COMMUNICATION)检测到哔声: ${amdBeepFrequencyHz}Hz ratio=${String.format("%.2f", amdMaxBeepRatio)}"
                 )
-                DebugLogger.log("[AMD] ✓ ${amdHint?.reason}")
+                dlog("[AMD] ✓ ${amdHint?.reason}")
                 return
             }
         } else {
+            if (amdBeepConsecutiveFrames != 0 && BuildConfig.DEBUG && shouldVerbose) {
+                dlog("[AMDCore] beepReset: elapsed=${elapsedMs}ms, reason=${if (beep == null) "noCandidate" else "minCheckNotReached"}")
+            }
             amdBeepConsecutiveFrames = 0
         }
 
         // 连续语音：在未检测到哔声前，用连续说话时长作为“真人”强信号
-        val inSpeech = rmsEnergy >= maxOf(AMD_SPEECH_MIN_ENERGY, SILENCE_THRESHOLD * 3f)
+        val speechEnergyThreshold = maxOf(AMD_SPEECH_MIN_ENERGY, SILENCE_THRESHOLD * 3f)
+        val inSpeech = rmsEnergy >= speechEnergyThreshold
         if (inSpeech && !amdBeepDetected) {
             amdContinuousSpeechMs += frameDurationMs
             if (amdContinuousSpeechMs >= AMD_CONTINUOUS_SPEECH_MS_THRESHOLD) {
@@ -497,19 +556,42 @@ class AudioEnergyAnalyzer(private val context: Context) {
                     confidence = 0.80f,
                     reason = "AMD检测到连续语音>2.5s(${amdContinuousSpeechMs}ms)"
                 )
-                DebugLogger.log("[AMD] ✓ ${amdHint?.reason}")
+                dlog("[AMD] ✓ ${amdHint?.reason}")
             }
         } else {
             // 遇到静音时重置连续计时（允许对话型波动重新累计）
+            if (amdContinuousSpeechMs != 0L && BuildConfig.DEBUG && shouldVerbose) {
+                dlog(
+                    "[AMDCore] speechReset: elapsed=${elapsedMs}ms, rms=${String.format("%.1f", rmsEnergy)}, " +
+                        "th=${String.format("%.1f", speechEnergyThreshold)}, beepDetected=$amdBeepDetected"
+                )
+            }
             amdContinuousSpeechMs = 0L
+        }
+
+        if (BuildConfig.DEBUG && shouldVerbose) {
+            val hint = amdHint
+            dlog(
+                "[AMDCore] tick: elapsed=${elapsedMs}ms, frame=${frameDurationMs}ms, read=$count, " +
+                    "rms=${String.format("%.1f", rmsEnergy)}, speechTh=${String.format("%.1f", speechEnergyThreshold)}, " +
+                    "inSpeech=$inSpeech, contSpeechMs=$amdContinuousSpeechMs, beepDetected=$amdBeepDetected, " +
+                    "beepConsec=$amdBeepConsecutiveFrames, hint=${hint?.type ?: "null"}"
+            )
         }
     }
 
     private data class BeepCandidate(val frequencyHz: Int, val ratio: Double)
 
-    private fun detectBeep(samples: ShortArray, count: Int, rmsEnergy: Float): BeepCandidate? {
+    private fun detectBeep(samples: ShortArray, count: Int, rmsEnergy: Float, verbose: Boolean): BeepCandidate? {
         // 太静时不做哔声判断，避免噪音/底噪误触
-        if (rmsEnergy < AMD_BEEP_MIN_ENERGY) return null
+        if (rmsEnergy < AMD_BEEP_MIN_ENERGY) {
+            if (BuildConfig.DEBUG && verbose) {
+                dlog(
+                    "[AMDCore] beepSkip: rms=${String.format("%.1f", rmsEnergy)} < minEnergy=${AMD_BEEP_MIN_ENERGY}"
+                )
+            }
+            return null
+        }
 
         // 总能量（用于归一化）
         var totalPower = 0.0
@@ -517,18 +599,34 @@ class AudioEnergyAnalyzer(private val context: Context) {
             val v = samples[i].toDouble()
             totalPower += v * v
         }
-        if (totalPower <= 0.0) return null
+        if (totalPower <= 0.0) {
+            if (BuildConfig.DEBUG && verbose) {
+                dlog("[AMDCore] beepSkip: totalPower<=0")
+            }
+            return null
+        }
 
         var bestFreq = 0
         var bestRatio = 0.0
 
+        val ratios = if (BuildConfig.DEBUG && verbose) LinkedHashMap<Int, Double>() else null
+
         for (f in AMD_BEEP_FREQS_HZ) {
             val p = goertzelPower(samples, count, f.toDouble(), SAMPLE_RATE)
             val ratio = p / totalPower
+            ratios?.put(f, ratio)
             if (ratio > bestRatio) {
                 bestRatio = ratio
                 bestFreq = f
             }
+        }
+
+        if (BuildConfig.DEBUG && verbose && ratios != null) {
+            val top = ratios.entries.sortedByDescending { it.value }.take(3)
+            dlog(
+                "[AMDCore] beepScan: rms=${String.format("%.1f", rmsEnergy)}, best=${bestFreq}Hz/${String.format("%.3f", bestRatio)}, " +
+                    "ratioTh=${AMD_BEEP_RATIO_THRESHOLD}, top=${top.joinToString { "${it.key}Hz=${String.format("%.3f", it.value)}" }}"
+            )
         }
 
         return if (bestRatio >= AMD_BEEP_RATIO_THRESHOLD) {
@@ -567,7 +665,7 @@ class AudioEnergyAnalyzer(private val context: Context) {
      * 停止采集并分析结果
      */
     suspend fun stopAndAnalyze(): AudioEnergyResult? {
-        DebugLogger.log("[AudioEnergy] stopAndAnalyze() 被调用")
+        dlog("[AudioEnergy] stopAndAnalyze() 被调用")
         isRecording.set(false)
 
         return withContext(Dispatchers.IO) {
@@ -575,10 +673,10 @@ class AudioEnergyAnalyzer(private val context: Context) {
                 audioRecord?.stop()
                 audioRecord?.release()
                 audioRecord = null
-                DebugLogger.log("[AudioEnergy] AudioRecord 已停止并释放")
+                dlog("[AudioEnergy] AudioRecord 已停止并释放")
             } catch (e: Exception) {
                 Log.e(TAG, "停止音频采集时出错: ${e.message}")
-                DebugLogger.log("[AudioEnergy] 停止音频采集出错: ${e.message}")
+                dlog("[AudioEnergy] 停止音频采集出错: ${e.message}")
             }
 
             // 关闭文件
@@ -586,21 +684,21 @@ class AudioEnergyAnalyzer(private val context: Context) {
                 fileOutputStream?.flush()
                 fileOutputStream?.close()
                 fileOutputStream = null
-                DebugLogger.log("[AudioEnergy] 音频文件已关闭")
+                dlog("[AudioEnergy] 音频文件已关闭")
             } catch (e: Exception) {
                 Log.e(TAG, "关闭音频文件时出错: ${e.message}")
-                DebugLogger.log("[AudioEnergy] 关闭音频文件出错: ${e.message}")
+                dlog("[AudioEnergy] 关闭音频文件出错: ${e.message}")
             }
 
             val durationMs = System.currentTimeMillis() - startTimeMs
-            DebugLogger.log("[AudioEnergy] 采集时长: ${durationMs}ms")
-            DebugLogger.log("[AudioEnergy] 采集样本数: ${energySamples.size}")
-            DebugLogger.log("[AudioEnergy] 使用音源: $usedAudioSource")
+            dlog("[AudioEnergy] 采集时长: ${durationMs}ms")
+            dlog("[AudioEnergy] 采集样本数: ${energySamples.size}")
+            dlog("[AudioEnergy] 使用音源: $usedAudioSource")
 
             // 检查是否有足够的样本
             if (energySamples.isEmpty()) {
                 Log.w(TAG, "没有采集到音频样本")
-                DebugLogger.log("[AudioEnergy] ✗ 没有采集到音频样本")
+                dlog("[AudioEnergy] ✗ 没有采集到音频样本")
                 return@withContext AudioEnergyResult(
                     averageEnergy = 0f,
                     energyStdDev = 0f,
@@ -615,7 +713,7 @@ class AudioEnergyAnalyzer(private val context: Context) {
 
             if (durationMs < MIN_ANALYSIS_DURATION_MS) {
                 Log.w(TAG, "分析时长不足: ${durationMs}ms < ${MIN_ANALYSIS_DURATION_MS}ms")
-                DebugLogger.log("[AudioEnergy] ✗ 分析时长不足: ${durationMs}ms < ${MIN_ANALYSIS_DURATION_MS}ms")
+                dlog("[AudioEnergy] ✗ 分析时长不足: ${durationMs}ms < ${MIN_ANALYSIS_DURATION_MS}ms")
                 return@withContext AudioEnergyResult(
                     averageEnergy = 0f,
                     energyStdDev = 0f,
@@ -636,7 +734,7 @@ class AudioEnergyAnalyzer(private val context: Context) {
      * 分析能量模式
      */
     private fun analyzeEnergyPattern(durationMs: Long): AudioEnergyResult {
-        DebugLogger.log("[AudioEnergy] 开始分析能量模式...")
+        dlog("[AudioEnergy] 开始分析能量模式...")
 
         val samples = energySamples.toList()
 
@@ -663,11 +761,11 @@ class AudioEnergyAnalyzer(private val context: Context) {
         val changeRate = energyChanges.toFloat() / (durationMs / 1000f)
 
         // 记录计算过程
-        DebugLogger.log("[AudioEnergy] 平均能量: $averageEnergy")
-        DebugLogger.log("[AudioEnergy] 标准差: $stdDev")
-        DebugLogger.log("[AudioEnergy] 归一化标准差: $normalizedStdDev")
-        DebugLogger.log("[AudioEnergy] 能量变化次数: $energyChanges")
-        DebugLogger.log("[AudioEnergy] 变化率: ${changeRate}次/秒")
+        dlog("[AudioEnergy] 平均能量: $averageEnergy")
+        dlog("[AudioEnergy] 标准差: $stdDev")
+        dlog("[AudioEnergy] 归一化标准差: $normalizedStdDev")
+        dlog("[AudioEnergy] 能量变化次数: $energyChanges")
+        dlog("[AudioEnergy] 变化率: ${changeRate}次/秒")
 
         // 判断模式
         val (pattern, confidence, reason) = determinePattern(
