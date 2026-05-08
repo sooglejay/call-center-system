@@ -10,6 +10,7 @@ import android.media.MediaRecorder
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.AutomaticGainControl
 import android.media.audiofx.NoiseSuppressor
+import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.callcenter.app.BuildConfig
@@ -178,6 +179,11 @@ class AudioEnergyAnalyzer(private val context: Context) {
      */
     fun isSpeakerphoneOn(): Boolean {
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        // Android 12+：优先使用 communicationDevice 判断（部分 ROM 下 isSpeakerphoneOn 不可靠）
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val dev = audioManager.communicationDevice
+            if (dev?.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) return true
+        }
         return audioManager.isSpeakerphoneOn
     }
 

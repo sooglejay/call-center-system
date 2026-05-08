@@ -176,10 +176,18 @@ class CallHelper @Inject constructor(
         try {
             // Phase 1: 设置音频模式为通话模式
             try {
-                audioManager.mode = AudioManager.MODE_IN_CALL
-                Log.d(TAG, "[$reason] Phase 1: MODE_IN_CALL")
+                // 优先 MODE_IN_COMMUNICATION（更符合 setCommunicationDevice 语义，部分机型更稳定）
+                audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+                Log.d(TAG, "[$reason] Phase 1: MODE_IN_COMMUNICATION")
             } catch (e: Exception) {
                 Log.e(TAG, "[$reason] Phase 1 失败: ${e.message}")
+            }
+
+            // 兼容：部分 ROM 仍需要 MODE_IN_CALL 才能切路由
+            try {
+                audioManager.mode = AudioManager.MODE_IN_CALL
+                Log.d(TAG, "[$reason] Phase 1b: MODE_IN_CALL")
+            } catch (_: Exception) {
             }
 
             // Phase 2: 使用 AudioManager API 设置扬声器
@@ -270,8 +278,23 @@ class CallHelper @Inject constructor(
             @Suppress("DEPRECATION")
             val isSpeakerOn = audioManager.isSpeakerphoneOn
             val mode = audioManager.mode
-            Log.d(TAG, "扬声器状态: isSpeakerphoneOn=$isSpeakerOn, mode=$mode")
-            isSpeakerOn
+
+            // Android 12+：isSpeakerphoneOn 在某些机型/ROM 下可能永远为 false，应结合 communicationDevice 判断
+            val commDeviceType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                audioManager.communicationDevice?.type
+            } else {
+                null
+            }
+
+            val commIsSpeaker = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) &&
+                (commDeviceType == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)
+
+            Log.d(
+                TAG,
+                "扬声器状态: isSpeakerphoneOn=$isSpeakerOn, mode=$mode, commDeviceType=${commDeviceType ?: "NA"}, commIsSpeaker=$commIsSpeaker"
+            )
+
+            isSpeakerOn || commIsSpeaker
         } catch (e: Exception) {
             Log.e(TAG, "检查扬声器状态失败: ${e.message}")
             false

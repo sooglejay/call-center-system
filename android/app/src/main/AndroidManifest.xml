@@ -151,6 +151,15 @@
             android:excludeFromRecents="true"
             android:taskAffinity="" />
 
+        <!-- 无障碍开启引导 Activity（透明弹窗，用于 Service 中引导开启无障碍）-->
+        <activity
+            android:name=".ui.activity.AccessibilityGuideActivity"
+            android:enabled="true"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true"
+            android:taskAffinity="" />
+
         <!-- FileProvider - 用于安装APK -->
         <provider
             android:name="androidx.core.content.FileProvider"

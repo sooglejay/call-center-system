@@ -28,6 +28,7 @@ import com.callcenter.app.data.local.preferences.AppConfig
 import com.callcenter.app.data.local.preferences.AppConfigManager
 import com.callcenter.app.data.repository.CallRecordRepository
 import com.callcenter.app.data.repository.TaskRepository
+import com.callcenter.app.ui.activity.AccessibilityGuideActivity
 import com.callcenter.app.ui.activity.PermissionRequestActivity
 import com.callcenter.app.ui.viewmodel.AutoDialScopeType
 import com.callcenter.app.util.AppLifecycleManager
@@ -180,6 +181,9 @@ class AutoDialService : Service() {
     private var dialsPerCustomer: Int = 1  // 每个客户连续拨打次数，默认1次
     private var currentDialRound: Int = 1  // 当前客户的第几轮拨打
     private var taskTitle: String? = null
+
+    // 无障碍引导节流：避免在通话中频繁弹窗
+    private var lastAccessibilityGuideMs: Long = 0L
 
     private var isPaused: Boolean = false
     private var currentCallRecordId: Int? = null
@@ -527,11 +531,17 @@ class AutoDialService : Service() {
                 _currentCustomer.value?.phone,
                 _currentCustomer.value?.name
             )
-            return
+            // 兼容：无障碍事件可能触发较晚/部分机型不触发，这里仍尝试立即用 AudioManager 强制开启一次作为补强
+        } else {
+            maybeGuideEnableAccessibility("enableSpeakerphoneWithRetry")
         }
         
-        Log.w(TAG, "InCallService 和无障碍服务都未激活，使用 AudioManager 方式（可能不稳定）")
-        DebugLogger.log("[AutoDialService] ⚠️ InCallService 和无障碍服务都未激活！使用 AudioManager 方式")
+        if (!AutoSpeakerAccessibilityService.isServiceEnabled) {
+            Log.w(TAG, "InCallService 和无障碍服务都未激活，使用 AudioManager 方式（可能不稳定）")
+            DebugLogger.log("[AutoDialService] ⚠️ InCallService 和无障碍服务都未激活！使用 AudioManager 方式")
+        } else {
+            DebugLogger.log("[AutoDialService] (补强) 无障碍已激活，但仍尝试 AudioManager 强制开免提")
+        }
         
         val success = callHelper.enableSpeakerphoneAsync()
         
@@ -551,6 +561,38 @@ class AutoDialService : Service() {
                 _currentCustomer.value?.phone,
                 _currentCustomer.value?.name
             )
+        }
+    }
+
+    private fun maybeGuideEnableAccessibility(trigger: String) {
+        // 只在无障碍未开启时引导
+        if (AutoSpeakerAccessibilityService.isServiceEnabled) return
+
+        val now = System.currentTimeMillis()
+        if (now - lastAccessibilityGuideMs < 60_000L) return
+        lastAccessibilityGuideMs = now
+
+        DebugLogger.log(
+            "[AccessibilityGuide] 客户=${_currentCustomer.value?.name}, 电话=${_currentCustomer.value?.phone}, " +
+                "触发引导: $trigger"
+        )
+
+        // Android 后台启动 Activity 受限：只在前台/活跃时弹窗引导，否则用 Toast 提示
+        val canShowUi = AppLifecycleManager.isAppInForeground() || AppLifecycleManager.isAppActive()
+        if (!canShowUi) {
+            UserNotifier.showError("未开启无障碍服务，自动免提可能失效。请回到应用并按提示开启。")
+            return
+        }
+
+        runCatching {
+            startActivity(
+                AccessibilityGuideActivity.createIntent(
+                    context = this,
+                    source = trigger
+                )
+            )
+        }.onFailure { e ->
+            DebugLogger.log("[AccessibilityGuide] ✗ 打开引导页面失败: ${e.message}")
         }
     }
 
@@ -1709,14 +1751,25 @@ class AutoDialService : Service() {
                                     // 等待免提开启后再开始录音
                                     DebugLogger.log("[RecordDetect] 等待免提开启...")
                                     DebugLogger.log("[RecordDetect] InCallService 是否激活: ${AutoSpeakerInCallService.isServiceActive}")
+                                    DebugLogger.log("[RecordDetect] 无障碍服务是否激活: ${AutoSpeakerAccessibilityService.isServiceEnabled}")
                                     
                                     var speakerWaitCount = 0
-                                    val maxSpeakerWait = 20 // 最多等待 2 秒
+                                    val maxSpeakerWait = 30 // 最多等待 3 秒
+                                    var lastForceEnableMs = 0L
+                                    // 立即尝试强制开启一次（部分机型需要多次 setCommunicationDevice 才生效）
+                                    runCatching { enableSpeakerphoneWithRetry() }
                                     while (!audioEnergyAnalyzer!!.isSpeakerphoneOn() && speakerWaitCount < maxSpeakerWait) {
                                         delay(100)
                                         speakerWaitCount++
                                         if (speakerWaitCount % 5 == 0) {
                                             DebugLogger.log("[RecordDetect] 免提等待中... (${speakerWaitCount * 100}ms)")
+                                        }
+
+                                        // 每 500ms 再强制尝试一次，避免仅等待而不触发实际开免提
+                                        val now = System.currentTimeMillis()
+                                        if (now - lastForceEnableMs >= 500L) {
+                                            lastForceEnableMs = now
+                                            runCatching { enableSpeakerphoneWithRetry() }
                                         }
                                     }
                                     
