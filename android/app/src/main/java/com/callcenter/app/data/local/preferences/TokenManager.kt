@@ -4,10 +4,10 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "auth_prefs")
 
@@ -23,9 +23,23 @@ class TokenManager(private val context: Context) {
         private val USERNAME_KEY = stringPreferencesKey("username")
         private val PASSWORD_KEY = stringPreferencesKey("password")
         private val USER_ID_KEY = stringPreferencesKey("user_id")
+        // 兼容旧版本：曾用 intPreferencesKey("user_id") 存储
+        private val LEGACY_USER_ID_INT_KEY = intPreferencesKey("user_id")
         private val USER_ROLE_KEY = stringPreferencesKey("user_role")
         private val USER_REAL_NAME_KEY = stringPreferencesKey("user_real_name")
         private val SAVED_ACCOUNTS_KEY = stringPreferencesKey("saved_accounts")
+    }
+
+    private suspend fun readStringSafely(key: Preferences.Key<String>): String? {
+        val prefs = context.dataStore.data.first()
+        return try {
+            prefs[key]
+        } catch (e: ClassCastException) {
+            // DataStore 中该 key 的类型与当前声明不一致（常见于升级后 key 类型变更）
+            // 直接清理该键，避免后续每次读取都崩溃
+            context.dataStore.edit { it.remove(key) }
+            null
+        }
     }
 
     /**
@@ -41,9 +55,7 @@ class TokenManager(private val context: Context) {
      * 获取认证令牌
      */
     suspend fun getToken(): String? {
-        return context.dataStore.data.map { prefs ->
-            prefs[TOKEN_KEY]
-        }.first()
+        return readStringSafely(TOKEN_KEY)
     }
 
     /**
@@ -59,9 +71,7 @@ class TokenManager(private val context: Context) {
      * 获取服务器地址
      */
     suspend fun getServerUrl(): String? {
-        return context.dataStore.data.map { prefs ->
-            prefs[SERVER_URL_KEY]
-        }.first()
+        return readStringSafely(SERVER_URL_KEY)
     }
 
     /**
@@ -85,9 +95,36 @@ class TokenManager(private val context: Context) {
      * 获取用户ID
      */
     suspend fun getUserId(): Int? {
-        return context.dataStore.data.map { prefs ->
-            prefs[USER_ID_KEY]?.toIntOrNull()
-        }.first()
+        val prefs = context.dataStore.data.first()
+
+        // 1) 新存储：String
+        val userIdStr = try {
+            prefs[USER_ID_KEY]
+        } catch (e: ClassCastException) {
+            null
+        }
+        userIdStr?.toIntOrNull()?.let { return it }
+
+        // 2) 旧存储：Int（自动迁移到 String）
+        val legacyUserId = try {
+            prefs[LEGACY_USER_ID_INT_KEY]
+        } catch (e: ClassCastException) {
+            null
+        }
+
+        if (legacyUserId != null) {
+            context.dataStore.edit { editPrefs ->
+                editPrefs[USER_ID_KEY] = legacyUserId.toString()
+                editPrefs.remove(LEGACY_USER_ID_INT_KEY)
+            }
+            return legacyUserId
+        }
+
+        // 3) 异常数据：清理错误键，避免反复崩溃
+        if (userIdStr == null) {
+            runCatching { context.dataStore.edit { it.remove(USER_ID_KEY) } }
+        }
+        return null
     }
 
     /**
@@ -104,9 +141,7 @@ class TokenManager(private val context: Context) {
      * 获取保存的密码
      */
     suspend fun getPassword(): String? {
-        return context.dataStore.data.map { prefs ->
-            prefs[PASSWORD_KEY]
-        }.first()
+        return readStringSafely(PASSWORD_KEY)
     }
 
     /**
@@ -142,9 +177,7 @@ class TokenManager(private val context: Context) {
      * 返回: List<Pair<username, password>>
      */
     suspend fun getSavedAccounts(): List<Pair<String, String>> {
-        val accountsStr = context.dataStore.data.map { prefs ->
-            prefs[SAVED_ACCOUNTS_KEY]
-        }.first() ?: return emptyList()
+        val accountsStr = readStringSafely(SAVED_ACCOUNTS_KEY) ?: return emptyList()
         
         return accountsStr.split("|").mapNotNull { account ->
             val parts = account.split(":", limit = 2)
@@ -184,27 +217,21 @@ class TokenManager(private val context: Context) {
      * 获取用户名
      */
     suspend fun getUsername(): String? {
-        return context.dataStore.data.map { prefs ->
-            prefs[USERNAME_KEY]
-        }.first()
+        return readStringSafely(USERNAME_KEY)
     }
 
     /**
      * 获取用户角色
      */
     suspend fun getUserRole(): String? {
-        return context.dataStore.data.map { prefs ->
-            prefs[USER_ROLE_KEY]
-        }.first()
+        return readStringSafely(USER_ROLE_KEY)
     }
 
     /**
      * 获取用户真实姓名
      */
     suspend fun getUserRealName(): String? {
-        return context.dataStore.data.map { prefs ->
-            prefs[USER_REAL_NAME_KEY]
-        }.first()
+        return readStringSafely(USER_REAL_NAME_KEY)
     }
 
     /**

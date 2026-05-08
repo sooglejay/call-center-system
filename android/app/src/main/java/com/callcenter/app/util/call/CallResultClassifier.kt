@@ -197,6 +197,30 @@ class CallResultClassifier(
                     )
                 }
 
+                // 经验规则：OFFHOOK 已持续一段时间且能量不是 STEADY（单向播报），更倾向真人接通
+                duration >= 15000 && (energyPattern == AudioEnergyPattern.MODERATE ||
+                    energyPattern == AudioEnergyPattern.FLUCTUATING ||
+                    energyPattern == AudioEnergyPattern.INTERMITTENT) -> {
+                    Log.d(TAG, "========== 多维度判断：通话时长${duration/1000}秒+$energyPattern → 已接听 ==========")
+                    return CallResult(
+                        type = CallResultType.CONNECTED,
+                        confidence = 0.70f,
+                        reason = "OFFHOOK状态，通话时长${duration/1000}秒且能量模式为$energyPattern，判定为真人接听",
+                        layer = 2
+                    )
+                }
+
+                // 录音能量过低/未知时：如果 OFFHOOK 很久，可能是录音链路失败但确实接通了
+                duration >= 60000 && energyPattern == AudioEnergyPattern.UNKNOWN -> {
+                    Log.d(TAG, "========== 多维度判断：通话时长${duration/1000}秒+UNKNOWN（可能录音失败）→ 倾向已接听 ==========")
+                    return CallResult(
+                        type = CallResultType.CONNECTED,
+                        confidence = 0.58f,
+                        reason = "OFFHOOK状态，通话时长${duration/1000}秒但能量模式未知，可能录音/取音失败，倾向判定为真人接听",
+                        layer = 1
+                    )
+                }
+
                 duration in 10000..20000 && energyPattern == AudioEnergyPattern.FLUCTUATING -> {
                     // 通话时长10-20秒，能量波动，可能是真人，但置信度中等
                     Log.d(TAG, "========== 多维度判断：通话时长${duration/1000}秒+FLUCTUATING → 可能已接听 ==========")

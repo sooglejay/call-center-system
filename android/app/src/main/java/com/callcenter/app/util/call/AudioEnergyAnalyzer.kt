@@ -7,6 +7,9 @@ import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.AutomaticGainControl
+import android.media.audiofx.NoiseSuppressor
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.callcenter.app.util.DebugLogger
@@ -201,12 +204,13 @@ class AudioEnergyAnalyzer(private val context: Context) {
                 DebugLogger.log("[AudioEnergy] 缓冲区大小: $bufferSize bytes")
 
                 // Android 10+ 禁止第三方应用访问 VOICE_CALL/VOICE_DOWNLINK 等通话音频流（需 CAPTURE_AUDIO_OUTPUT 系统权限）
-                // 但部分设备在通话场景下使用 VOICE_COMMUNICATION 能获得更稳定的输入（仍属于麦克风链路）。
+                // 注意：VOICE_COMMUNICATION 可能启用 AEC（回声消除），会把“扬声器播放的远端声音”当作回声抑制掉，
+                // 导致我们用于 AMD 的“抓远端声音”反而变弱。
                 val audioSources = listOf(
-                    MediaRecorder.AudioSource.VOICE_COMMUNICATION to "VOICE_COMMUNICATION",  // 通话场景优化（含 AEC 等）
                     MediaRecorder.AudioSource.VOICE_RECOGNITION to "VOICE_RECOGNITION",  // 语音识别优化，推荐
                     MediaRecorder.AudioSource.MIC to "MIC",  // 基本麦克风
                     MediaRecorder.AudioSource.CAMCORDER to "CAMCORDER",  // 摄像机模式，某些设备可用
+                    MediaRecorder.AudioSource.VOICE_COMMUNICATION to "VOICE_COMMUNICATION",  // 通话场景优化（可能含 AEC）
                 )
 
                 DebugLogger.log("[AudioEnergy] 开始尝试录音音源...")
@@ -239,6 +243,24 @@ class AudioEnergyAnalyzer(private val context: Context) {
                     DebugLogger.log("[AudioEnergy] 可能原因: 1.麦克风被其他应用占用 2.权限未授予 3.设备不支持")
                     isRecording.set(false)
                     return@withContext false
+                }
+
+                // 关闭可能影响“抓远端声音”的音频效果（尤其是 AEC 会压制扬声器回声=远端语音）
+                runCatching {
+                    val sessionId = audioRecord?.audioSessionId ?: 0
+                    if (sessionId != 0) {
+                        val aec = if (AcousticEchoCanceler.isAvailable()) AcousticEchoCanceler.create(sessionId) else null
+                        val ns = if (NoiseSuppressor.isAvailable()) NoiseSuppressor.create(sessionId) else null
+                        val agc = if (AutomaticGainControl.isAvailable()) AutomaticGainControl.create(sessionId) else null
+
+                        aec?.enabled = false
+                        ns?.enabled = false
+                        agc?.enabled = false
+
+                        DebugLogger.log(
+                            "[AudioEnergy] 音效: AEC=${aec?.enabled ?: "NA"}, NS=${ns?.enabled ?: "NA"}, AGC=${agc?.enabled ?: "NA"}"
+                        )
+                    }
                 }
 
                 // 清空之前的样本
