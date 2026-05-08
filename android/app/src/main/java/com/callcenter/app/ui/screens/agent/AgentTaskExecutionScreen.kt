@@ -195,8 +195,8 @@ fun AgentTaskExecutionScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // 自动拨号时，顶部固定显示当前客户信息
-            if (isAutoDialingThisTask) {
+    // 自动拨号时，顶部固定显示当前客户信息
+    if (isAutoDialingThisTask) {
                 TaskAutoDialCustomerPanel(
                     currentCustomer = currentDialCustomer,
                     dialedCount = dialedCount,
@@ -206,36 +206,28 @@ fun AgentTaskExecutionScreen(
                     onCallStatusMarked = { status ->
                         // 发送通话状态标记到AutoDialService
                         val intent = android.content.Intent(context, com.callcenter.app.service.AutoDialService::class.java).apply {
-                            action = when (status) {
-                                "connected" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_CONNECTED
-                                "voicemail" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_VOICEMAIL
-                                "unanswered" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_UNANSWERED
-                                "rejected" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_REJECTED
-                                "busy" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_BUSY
-                                "power_off" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_POWER_OFF
-                                "no_answer" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_NO_ANSWER
-                                "ivr" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_IVR
-                                "other" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_OTHER
-                                else -> null
+                            // 任务执行页仅两态：connected / unanswered
+                            // 兼容：如果外部仍传入 voicemail/rejected/...，统一按 unanswered 处理
+                            action = if (status == "connected") {
+                                com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_CONNECTED
+                            } else {
+                                com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_UNANSWERED
                             }
                         }
                         if (intent.action != null) {
                             context.startService(intent)
                         }
 
-                        // 更新本地客户状态（简化为三种状态）
+                        // 更新本地客户状态（两态）
                         val dialCustomer = currentDialCustomer
                         if (dialCustomer != null) {
-                            val callResult = when (status) {
-                                "connected" -> "已接听"
-                                "voicemail" -> "语音信箱"
-                                // 其他所有状态都归为响铃未接
-                                else -> "响铃未接"
-                            }
+                            val isConnected = status == "connected"
+                            val callResult = if (isConnected) "真人已接通" else "响铃未接通"
+                            val callStatus = if (isConnected) "connected" else "unanswered"
                             viewModel.updateCustomerStatus(
                                 taskId = taskId,
                                 customerId = dialCustomer.id,
-                                status = "called",
+                                status = callStatus,
                                 callResult = callResult
                             )
                         }
@@ -558,36 +550,25 @@ fun AgentTaskExecutionScreen(
                 
                 // 1. 发送通话状态标记到AutoDialService（用于后台记录）
                 val intent = android.content.Intent(context, com.callcenter.app.service.AutoDialService::class.java).apply {
-                    action = when (status) {
-                        "connected" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_CONNECTED
-                        "voicemail" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_VOICEMAIL
-                        "unanswered" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_UNANSWERED
-                        "rejected" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_REJECTED
-                        "busy" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_BUSY
-                        "power_off" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_POWER_OFF
-                        "no_answer" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_NO_ANSWER
-                        "ivr" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_IVR
-                        "other" -> com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_OTHER
-                        else -> {
-                            onComplete?.invoke()
-                            return@AutoFloatingWindow
-                        }
+                    // 任务执行页仅两态：connected / unanswered
+                    // 兼容：如果外部仍传入 voicemail/rejected/...，统一按 unanswered 处理
+                    action = if (status == "connected") {
+                        com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_CONNECTED
+                    } else {
+                        com.callcenter.app.service.AutoDialService.ACTION_CALL_STATUS_UNANSWERED
                     }
                 }
                 context.startService(intent)
 
-                // 2. 更新本地客户状态（立即刷新UI，简化为三种状态）
+                // 2. 更新本地客户状态（立即刷新UI，两态）
                 if (currentCustomer != null) {
-                    val callResult = when (status) {
-                        "connected" -> "已接听"
-                        "voicemail" -> "语音信箱"
-                        // 其他所有状态都归为响铃未接
-                        else -> "响铃未接"
-                    }
+                    val isConnected = status == "connected"
+                    val callResult = if (isConnected) "真人已接通" else "响铃未接通"
+                    val callStatus = if (isConnected) "connected" else "unanswered"
                     viewModel.updateCustomerStatus(
                         taskId = taskId,
                         customerId = currentCustomer.id,
-                        status = "called",
+                        status = callStatus,
                         callResult = callResult
                     )
                 }
@@ -624,46 +605,44 @@ private fun TaskExecutionContent(
     data class GroupedCustomers(
         val pending: List<TaskCustomer>,
         val connected: List<TaskCustomer>,
-        val voicemail: List<TaskCustomer>,
         val unanswered: List<TaskCustomer>
     )
     
     val groupedCustomers = remember(customers) {
-        // 按通话状态分组（简化为三种状态：已接听、语音信箱、响铃未接）
-        val pending = customers.filter { it.callStatus == "pending" }
-        val connected = customers.filter { it.callStatus == "connected" || it.callResult == "已接听" }
-        val voicemail = customers.filter { it.callStatus == "voicemail" || it.callResult == "语音信箱" }
-        // 响铃未接：合并对方拒接、对方忙线、对方关机、无人接听、IVR语音等所有未接通状态
-        val unanswered = customers.filter {
-            it.callStatus == "unanswered" ||
-            it.callStatus == "rejected" ||
-            it.callStatus == "busy" ||
-            it.callStatus == "power_off" ||
-            it.callStatus == "no_answer" ||
-            it.callStatus == "ivr" ||
-            it.callResult == "响铃未接" ||
-            it.callResult == "对方拒接" ||
-            it.callResult == "对方忙线" ||
-            it.callResult == "关机/停机" ||
-            it.callResult == "对方关机" ||
-            it.callResult == "无人接听" ||
-            it.callResult == "IVR语音"
+        // 按通话状态分组（两态：真人已接通 / 响铃未接通）
+        val pending = customers.filter { it.callStatus == "pending" || it.callStatus.isNullOrBlank() }
+
+        val connected = customers.filter {
+            it.callStatus == "connected" ||
+                it.callResult == "真人已接通" ||
+                it.callResult == "已接听" ||
+                it.callResult == "connected" ||
+                it.callResult == "answered"
         }
-        GroupedCustomers(pending, connected, voicemail, unanswered)
+
+        // 除 pending / connected 外的全部，统一归为“响铃未接通”（兼容历史 voicemail/failed/...）
+        val unanswered = customers.filter {
+            val status = it.callStatus
+            if (status == "pending" || status.isNullOrBlank()) return@filter false
+            if (status == "connected") return@filter false
+            val result = it.callResult
+            if (result == "真人已接通" || result == "已接听" || result == "connected" || result == "answered") return@filter false
+            true
+        }
+
+        GroupedCustomers(pending, connected, unanswered)
     }
 
     val pendingCustomers = groupedCustomers.pending
     val connectedCustomers = groupedCustomers.connected
-    val voicemailCustomers = groupedCustomers.voicemail
     val unansweredCustomers = groupedCustomers.unanswered
 
-    // 根据选中的Tab过滤客户列表（简化为三种状态）
+    // 根据选中的Tab过滤客户列表（两态）
     val displayedCustomers = when (selectedTab) {
         0 -> customers // 全部
         1 -> pendingCustomers // 待拨打
-        2 -> connectedCustomers // 已接听
-        3 -> voicemailCustomers // 语音信箱
-        4 -> unansweredCustomers // 响铃未接（包含拒接、忙线、关机、无人接听、IVR等）
+        2 -> connectedCustomers // 真人已接通
+        3 -> unansweredCustomers // 响铃未接通
         else -> customers
     }
 
@@ -690,7 +669,6 @@ private fun TaskExecutionContent(
                     totalCount = customers.size,
                     pendingCount = pendingCustomers.size,
                     connectedCount = connectedCustomers.size,
-                    voicemailCount = voicemailCustomers.size,
                     unansweredCount = unansweredCustomers.size,
                     selectedTab = selectedTab,
                     onTabSelected = onTabSelected
@@ -702,9 +680,8 @@ private fun TaskExecutionContent(
                 val title = when (selectedTab) {
                     0 -> "全部客户"
                     1 -> "待拨打"
-                    2 -> "已接听"
-                    3 -> "语音信箱"
-                    4 -> "响铃未接"
+                    2 -> "真人已接通"
+                    3 -> "响铃未接通"
                     else -> "全部客户"
                 }
                 val count = displayedCustomers.size
@@ -712,8 +689,7 @@ private fun TaskExecutionContent(
                     0 -> MaterialTheme.colorScheme.primary
                     1 -> MaterialTheme.colorScheme.primary
                     2 -> MaterialTheme.colorScheme.tertiary
-                    3 -> MaterialTheme.colorScheme.secondary
-                    4 -> MaterialTheme.colorScheme.error
+                    3 -> MaterialTheme.colorScheme.error
                     else -> MaterialTheme.colorScheme.primary
                 }
                 CustomerGroupHeader(
@@ -920,14 +896,13 @@ private fun CustomerFilterTabs(
 
 /**
  * 客户筛选Tab按钮（支持通话状态筛选）
- * 支持切换显示全部/待拨打/已接听/语音信箱/响铃未接/拒接/忙线/关机停机/无人接听/IVR语音/其他
+ * 支持切换显示全部/待拨打/真人已接通/响铃未接通
  */
 @Composable
 private fun CustomerFilterTabsWithCallStatus(
     totalCount: Int,
     pendingCount: Int,
     connectedCount: Int,
-    voicemailCount: Int,
     unansweredCount: Int,
     selectedTab: Int,
     onTabSelected: (Int) -> Unit
@@ -969,7 +944,7 @@ private fun CustomerFilterTabsWithCallStatus(
                 )
             }
 
-            // 第二行Tab: 已接听 | 语音信箱 | 响铃未接
+            // 第二行Tab: 真人已接通 | 响铃未接通
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -977,7 +952,7 @@ private fun CustomerFilterTabsWithCallStatus(
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
                 FilterTabItem(
-                    label = "已接听",
+                    label = "真人已接通",
                     count = connectedCount,
                     isSelected = selectedTab == 2,
                     onClick = { onTabSelected(2) }
@@ -991,24 +966,10 @@ private fun CustomerFilterTabsWithCallStatus(
                 )
 
                 FilterTabItem(
-                    label = "语音信箱",
-                    count = voicemailCount,
+                    label = "响铃未接通",
+                    count = unansweredCount,
                     isSelected = selectedTab == 3,
                     onClick = { onTabSelected(3) }
-                )
-
-                Divider(
-                    modifier = Modifier
-                        .width(1.dp)
-                        .height(40.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-
-                FilterTabItem(
-                    label = "响铃未接",
-                    count = unansweredCount,
-                    isSelected = selectedTab == 4,
-                    onClick = { onTabSelected(4) }
                 )
             }
         }
@@ -1141,15 +1102,8 @@ private fun RetryTaskPriorityChip(
 private fun getStatusMetaByTab(tab: Int): RetryTaskStatusMeta {
     return when (tab) {
         1 -> RetryTaskStatusMeta("pending", "待拨打")
-        2 -> RetryTaskStatusMeta("connected", "已接听")
-        3 -> RetryTaskStatusMeta("voicemail", "语音信箱")
-        4 -> RetryTaskStatusMeta("unanswered", "响铃未接")
-        5 -> RetryTaskStatusMeta("rejected", "拒接")
-        6 -> RetryTaskStatusMeta("busy", "忙线")
-        7 -> RetryTaskStatusMeta("power_off", "关机/停机")
-        8 -> RetryTaskStatusMeta("no_answer", "无人接听")
-        9 -> RetryTaskStatusMeta("ivr", "IVR语音")
-        10 -> RetryTaskStatusMeta("other", "其他")
+        2 -> RetryTaskStatusMeta("connected", "真人已接通")
+        3 -> RetryTaskStatusMeta("unanswered", "响铃未接通")
         else -> RetryTaskStatusMeta("all", "全部客户")
     }
 }
@@ -1159,28 +1113,57 @@ private fun getStatusKeyByTab(tab: Int): String = getStatusMetaByTab(tab).key
 private fun filterTaskCustomersByStatus(customers: List<TaskCustomer>, statusKey: String): List<TaskCustomer> {
     return when (statusKey) {
         "pending" -> customers.filter { it.callStatus == "pending" || it.callStatus.isNullOrBlank() }
-        "connected" -> customers.filter { it.callStatus == "connected" || it.callResult == "已接听" }
-        "voicemail" -> customers.filter { it.callStatus == "voicemail" || it.callResult == "语音信箱" }
-        "unanswered" -> customers.filter { it.callStatus == "unanswered" || it.callResult == "响铃未接" }
-        "rejected" -> customers.filter { it.callStatus == "rejected" || it.callResult == "对方拒接" }
-        "busy" -> customers.filter { it.callStatus == "busy" || it.callResult == "对方忙线" }
-        "power_off" -> customers.filter { it.callStatus == "power_off" || it.callResult == "关机/停机" || it.callResult == "对方关机" }
-        "no_answer" -> customers.filter { it.callStatus == "no_answer" || it.callResult == "无人接听" }
-        "ivr" -> customers.filter { it.callStatus == "ivr" || it.callResult == "IVR语音" }
-        "other" -> customers.filter {
-            (it.callStatus == "called" || it.callStatus == "completed") &&
-                it.callResult != "已接听" &&
-                it.callResult != "语音信箱" &&
-                it.callResult != "响铃未接" &&
-                it.callResult != "对方拒接" &&
-                it.callResult != "对方忙线" &&
-                it.callResult != "关机/停机" &&
-                it.callResult != "对方关机" &&
-                it.callResult != "无人接听" &&
-                it.callResult != "IVR语音"
+        "connected" -> customers.filter {
+            it.callStatus == "connected" ||
+                it.callResult == "真人已接通" ||
+                it.callResult == "已接听" ||
+                it.callResult == "connected" ||
+                it.callResult == "answered"
+        }
+        "unanswered" -> customers.filter {
+            val status = it.callStatus
+            if (status == "pending" || status.isNullOrBlank()) return@filter false
+            if (status == "connected") return@filter false
+            val result = it.callResult
+            if (result == "真人已接通" || result == "已接听" || result == "connected" || result == "answered") return@filter false
+            true
         }
         else -> customers
     }
+}
+
+/**
+ * 任务执行页通话状态展示归一：
+ * - pending（待拨打）
+ * - connected（真人已接通）
+ * - unanswered（响铃未接通，兼容历史 voicemail/failed/...）
+ */
+private fun normalizeTaskCallStatusForDisplay(callStatus: String?, callResult: String?): String {
+    val status = callStatus?.trim()?.lowercase()
+
+    // 1) 优先使用 callStatus
+    when (status) {
+        null, "", "pending" -> return "pending"
+        "connected", "completed" -> return "connected"
+        "unanswered" -> return "unanswered"
+        // 兼容历史值：统一归为响铃未接通
+        "voicemail", "failed", "rejected", "busy", "power_off", "no_answer", "ivr", "other", "called", "calling", "ringing" ->
+            return "unanswered"
+    }
+
+    // 2) 回退使用 callResult
+    val r = callResult?.trim()
+    if (r.isNullOrBlank()) return "pending"
+    if (
+        r == "真人已接通" ||
+        r == "已接听" ||
+        r.equals("connected", ignoreCase = true) ||
+        r.equals("answered", ignoreCase = true) ||
+        r == "通话完成"
+    ) {
+        return "connected"
+    }
+    return "unanswered"
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1199,7 +1182,7 @@ fun AgentCreateRetryTaskScreen(
     val error by taskViewModel.error.collectAsState()
     val isCreating by createTaskViewModel.isCreating.collectAsState()
     val createError by createTaskViewModel.error.collectAsState()
-    val statusMeta = remember(statusKey) { getStatusMetaByTab((1..10).firstOrNull { getStatusKeyByTab(it) == statusKey } ?: 0) }
+    val statusMeta = remember(statusKey) { getStatusMetaByTab((1..3).firstOrNull { getStatusKeyByTab(it) == statusKey } ?: 0) }
 
     var title by rememberSaveable { mutableStateOf("${statusMeta.label}重拨任务") }
     var description by rememberSaveable { mutableStateOf("从「${statusMeta.label}」客户列表快速创建") }
@@ -1471,37 +1454,9 @@ private fun TaskCustomerCard(
                         }
                     }
                 }
-                // 客户列表中显示具体的通话结果，否则显示状态标签
-                if (!customer.callResult.isNullOrBlank()) {
-                    // 显示具体的通话结果
-                    val (resultColor, resultText) = when (customer.callResult) {
-                        "已接听" -> MaterialTheme.colorScheme.primary to "已接听"
-                        "通话完成" -> MaterialTheme.colorScheme.primary to "通话完成"
-                        "语音信箱" -> MaterialTheme.colorScheme.secondary to "语音信箱"
-                        "响铃未接" -> MaterialTheme.colorScheme.error to "响铃未接"
-                        "对方拒接" -> MaterialTheme.colorScheme.error to "对方拒接"
-                        "对方忙线" -> MaterialTheme.colorScheme.tertiary to "对方忙线"
-                        "对方关机" -> MaterialTheme.colorScheme.outline to "对方关机"
-                        "关机/停机" -> MaterialTheme.colorScheme.outline to "关机/停机"
-                        "无人接听" -> MaterialTheme.colorScheme.outline to "无人接听"
-                        "IVR语音" -> MaterialTheme.colorScheme.secondary to "IVR语音"
-                        "拨打失败" -> MaterialTheme.colorScheme.error to "拨打失败"
-                        else -> MaterialTheme.colorScheme.outline to customer.callResult
-                    }
-                    Surface(
-                        color = resultColor.copy(alpha = 0.1f),
-                        shape = MaterialTheme.shapes.small
-                    ) {
-                        Text(
-                            text = resultText,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = resultColor
-                        )
-                    }
-                } else {
-                    CustomerStatusChip(status = customer.callStatus)
-                }
+                // 任务执行页统一展示为：待拨打 / 真人已接通 / 响铃未接通（不展示历史细分状态）
+                val displayStatus = normalizeTaskCallStatusForDisplay(customer.callStatus, customer.callResult)
+                CustomerStatusChip(status = displayStatus)
             }
 
             if (recordings.isNotEmpty()) {
@@ -1578,16 +1533,11 @@ private fun TaskCustomerCard(
         var editName by remember { mutableStateOf(customer.name ?: "") }
         var editPhone by remember { mutableStateOf(customer.phone ?: "") }
         var editCompany by remember { mutableStateOf(customer.company ?: "") }
-        // 通话状态选择（三种状态）
-        var selectedCallResult by remember {
-            mutableStateOf(
-                when (customer.callResult) {
-                    "已接听" -> "已接听"
-                    "语音信箱" -> "语音信箱"
-                    else -> "响铃未接"
-                }
-            )
+        val originalDisplayStatus = remember(customer.callStatus, customer.callResult) {
+            normalizeTaskCallStatusForDisplay(customer.callStatus, customer.callResult)
         }
+        // 通话状态选择：支持将状态改回待拨打
+        var selectedCallStatus by remember { mutableStateOf(originalDisplayStatus) }
 
         AlertDialog(
             onDismissRequest = { showEditDialog = false },
@@ -1630,10 +1580,22 @@ private fun TaskCustomerCard(
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         FilterChip(
-                            selected = selectedCallResult == "已接听",
-                            onClick = { selectedCallResult = "已接听" },
-                            label = { Text("已接听", style = MaterialTheme.typography.labelSmall) },
-                            leadingIcon = if (selectedCallResult == "已接听") {
+                            selected = selectedCallStatus == "pending",
+                            onClick = { selectedCallStatus = "pending" },
+                            label = { Text("待拨打", style = MaterialTheme.typography.labelSmall) },
+                            leadingIcon = if (selectedCallStatus == "pending") {
+                                { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                            } else null,
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.surfaceVariant
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                        FilterChip(
+                            selected = selectedCallStatus == "connected",
+                            onClick = { selectedCallStatus = "connected" },
+                            label = { Text("真人已接通", style = MaterialTheme.typography.labelSmall) },
+                            leadingIcon = if (selectedCallStatus == "connected") {
                                 { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
                             } else null,
                             colors = FilterChipDefaults.filterChipColors(
@@ -1642,22 +1604,10 @@ private fun TaskCustomerCard(
                             modifier = Modifier.weight(1f)
                         )
                         FilterChip(
-                            selected = selectedCallResult == "语音信箱",
-                            onClick = { selectedCallResult = "语音信箱" },
-                            label = { Text("语音信箱", style = MaterialTheme.typography.labelSmall) },
-                            leadingIcon = if (selectedCallResult == "语音信箱") {
-                                { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
-                            } else null,
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer
-                            ),
-                            modifier = Modifier.weight(1f)
-                        )
-                        FilterChip(
-                            selected = selectedCallResult == "响铃未接",
-                            onClick = { selectedCallResult = "响铃未接" },
-                            label = { Text("响铃未接", style = MaterialTheme.typography.labelSmall) },
-                            leadingIcon = if (selectedCallResult == "响铃未接") {
+                            selected = selectedCallStatus == "unanswered",
+                            onClick = { selectedCallStatus = "unanswered" },
+                            label = { Text("响铃未接通", style = MaterialTheme.typography.labelSmall) },
+                            leadingIcon = if (selectedCallStatus == "unanswered") {
                                 { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
                             } else null,
                             colors = FilterChipDefaults.filterChipColors(
@@ -1678,13 +1628,13 @@ private fun TaskCustomerCard(
                             editCompany.takeIf { it != customer.company }
                         )
                         // 更新通话状态
-                        if (selectedCallResult != customer.callResult) {
-                            val status = when (selectedCallResult) {
-                                "已接听" -> "connected"
-                                "语音信箱" -> "voicemail"
-                                else -> "unanswered"
+                        if (selectedCallStatus != originalDisplayStatus) {
+                            val callResult = when (selectedCallStatus) {
+                                "connected" -> "真人已接通"
+                                "unanswered" -> "响铃未接通"
+                                else -> null
                             }
-                            onUpdateStatus(status, selectedCallResult)
+                            onUpdateStatus(selectedCallStatus, callResult)
                         }
                         showEditDialog = false
                     }
@@ -1872,14 +1822,11 @@ private fun formatFileSize(size: Long): String {
 
 @Composable
 private fun CustomerStatusChip(status: String) {
-    // 简化为三种通话状态：已接听、语音信箱、响铃未接
     val (color, text) = when (status) {
-        "connected" -> MaterialTheme.colorScheme.primary to "已接听"
-        "voicemail" -> MaterialTheme.colorScheme.secondary to "语音信箱"
-        // 以下状态统一归为响铃未接
-        "completed", "called", "failed", "unanswered", "rejected", "busy", "power_off", "no_answer", "ivr" ->
-            MaterialTheme.colorScheme.error to "响铃未接"
-        else -> MaterialTheme.colorScheme.outline to "待拨打"
+        "pending" -> MaterialTheme.colorScheme.outline to "待拨打"
+        "connected", "completed" -> MaterialTheme.colorScheme.primary to "真人已接通"
+        // 除 pending / connected 外的全部，统一归为响铃未接通（兼容历史 voicemail/failed/...）
+        else -> MaterialTheme.colorScheme.error to "响铃未接通"
     }
 
     Surface(
@@ -2200,13 +2147,26 @@ private fun TaskAutoDialCustomerPanel(
                         fontWeight = FontWeight.Medium
                     )
                     Spacer(modifier = Modifier.height(6.dp))
-                    // 第一行：已接听、语音信箱、响铃未接
+                    // 第一行：待拨打、真人已接通、响铃未接通
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         TaskStatusButton(
-                            text = "已接听",
+                            text = "待拨打",
+                            color = Color(0xFF9E9E9E),
+                            isSelected = selectedCallStatus == "pending",
+                            isLoading = updatingStatus == "pending",
+                            onClick = {
+                                selectedCallStatus = "pending"
+                                updatingStatus = "pending"
+                                onCallStatusMarked("pending")
+                                updatingStatus = null
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                        TaskStatusButton(
+                            text = "真人已接通",
                             color = Color(0xFF4CAF50),
                             isSelected = selectedCallStatus == "connected",
                             isLoading = updatingStatus == "connected",
@@ -2219,20 +2179,7 @@ private fun TaskAutoDialCustomerPanel(
                             modifier = Modifier.weight(1f)
                         )
                         TaskStatusButton(
-                            text = "语音信箱",
-                            color = Color(0xFF2196F3),
-                            isSelected = selectedCallStatus == "voicemail",
-                            isLoading = updatingStatus == "voicemail",
-                            onClick = {
-                                selectedCallStatus = "voicemail"
-                                updatingStatus = "voicemail"
-                                onCallStatusMarked("voicemail")
-                                updatingStatus = null
-                            },
-                            modifier = Modifier.weight(1f)
-                        )
-                        TaskStatusButton(
-                            text = "响铃未接",
+                            text = "响铃未接通",
                             color = Color(0xFFFF9800),
                             isSelected = selectedCallStatus == "unanswered",
                             isLoading = updatingStatus == "unanswered",
@@ -2240,100 +2187,6 @@ private fun TaskAutoDialCustomerPanel(
                                 selectedCallStatus = "unanswered"
                                 updatingStatus = "unanswered"
                                 onCallStatusMarked("unanswered")
-                                updatingStatus = null
-                            },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-
-                    // 第二行：拒接、忙线、关机/停机
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        TaskStatusButton(
-                            text = "拒接",
-                            color = Color(0xFFE91E63),
-                            isSelected = selectedCallStatus == "rejected",
-                            isLoading = updatingStatus == "rejected",
-                            onClick = {
-                                selectedCallStatus = "rejected"
-                                updatingStatus = "rejected"
-                                onCallStatusMarked("rejected")
-                                updatingStatus = null
-                            },
-                            modifier = Modifier.weight(1f)
-                        )
-                        TaskStatusButton(
-                            text = "忙线",
-                            color = Color(0xFFFF9800),
-                            isSelected = selectedCallStatus == "busy",
-                            isLoading = updatingStatus == "busy",
-                            onClick = {
-                                selectedCallStatus = "busy"
-                                updatingStatus = "busy"
-                                onCallStatusMarked("busy")
-                                updatingStatus = null
-                            },
-                            modifier = Modifier.weight(1f)
-                        )
-                        TaskStatusButton(
-                            text = "关机/停机",
-                            color = Color(0xFF607D8B),
-                            isSelected = selectedCallStatus == "power_off",
-                            isLoading = updatingStatus == "power_off",
-                            onClick = {
-                                selectedCallStatus = "power_off"
-                                updatingStatus = "power_off"
-                                onCallStatusMarked("power_off")
-                                updatingStatus = null
-                            },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-
-                    // 第三行：无人接听、IVR语音、其他
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        TaskStatusButton(
-                            text = "无人接听",
-                            color = Color(0xFFFF9800),
-                            isSelected = selectedCallStatus == "no_answer",
-                            isLoading = updatingStatus == "no_answer",
-                            onClick = {
-                                selectedCallStatus = "no_answer"
-                                updatingStatus = "no_answer"
-                                onCallStatusMarked("no_answer")
-                                updatingStatus = null
-                            },
-                            modifier = Modifier.weight(1f)
-                        )
-                        TaskStatusButton(
-                            text = "IVR语音",
-                            color = Color(0xFF00BCD4),
-                            isSelected = selectedCallStatus == "ivr",
-                            isLoading = updatingStatus == "ivr",
-                            onClick = {
-                                selectedCallStatus = "ivr"
-                                updatingStatus = "ivr"
-                                onCallStatusMarked("ivr")
-                                updatingStatus = null
-                            },
-                            modifier = Modifier.weight(1f)
-                        )
-                        TaskStatusButton(
-                            text = "其他",
-                            color = Color(0xFF9E9E9E),
-                            isSelected = selectedCallStatus == "other",
-                            isLoading = updatingStatus == "other",
-                            onClick = {
-                                selectedCallStatus = "other"
-                                updatingStatus = "other"
-                                onCallStatusMarked("other")
                                 updatingStatus = null
                             },
                             modifier = Modifier.weight(1f)
