@@ -609,24 +609,43 @@ private fun TaskExecutionContent(
     )
     
     val groupedCustomers = remember(customers) {
-        // 按通话状态分组（两态：真人已接通 / 响铃未接通）
-        val pending = customers.filter { it.callStatus == "pending" || it.callStatus.isNullOrBlank() }
-
-        val connected = customers.filter {
-            it.callStatus == "connected" ||
-                it.callResult == "真人已接通" ||
-                it.callResult == "已接听" ||
-                it.callResult == "connected" ||
-                it.callResult == "answered"
+        // 按通话状态分组（三态归两组：待拨打/拨打中 → pending；真人已接通 → connected；其余最终判定 → unanswered）
+        // 关键：called/calling/ringing 这种"已发起但未出最终结果"的中间态视为待拨打，避免误归为未接通
+        fun isConnectedResult(r: String?): Boolean {
+            if (r.isNullOrBlank()) return false
+            return r == "真人已接通" || r == "已接听" ||
+                r.equals("connected", ignoreCase = true) ||
+                r.equals("answered", ignoreCase = true) ||
+                r == "通话完成"
         }
 
-        // 除 pending / connected 外的全部，统一归为“响铃未接通”（兼容历史 voicemail/failed/...）
+        fun isInProgressStatus(s: String?): Boolean {
+            val v = s?.trim()?.lowercase()
+            return v == "called" || v == "calling" || v == "ringing"
+        }
+
+        val pending = customers.filter {
+            val status = it.callStatus
+            if (status == "pending" || status.isNullOrBlank()) return@filter true
+            // 已发起但还没拿到最终结果，且 callResult 也未携带最终判定 → 拨打中，归到 pending 组
+            if (isInProgressStatus(status) && !isConnectedResult(it.callResult) && it.callResult.isNullOrBlank()) {
+                return@filter true
+            }
+            false
+        }
+
+        val connected = customers.filter {
+            it.callStatus == "connected" || isConnectedResult(it.callResult)
+        }
+
+        // 除 pending / connected 外的全部，统一归为"响铃未接通"（兼容历史 voicemail/failed/...）
         val unanswered = customers.filter {
             val status = it.callStatus
             if (status == "pending" || status.isNullOrBlank()) return@filter false
             if (status == "connected") return@filter false
-            val result = it.callResult
-            if (result == "真人已接通" || result == "已接听" || result == "connected" || result == "answered") return@filter false
+            if (isConnectedResult(it.callResult)) return@filter false
+            // 拨打中且没有最终结果 → 归 pending，不归 unanswered
+            if (isInProgressStatus(status) && it.callResult.isNullOrBlank()) return@filter false
             true
         }
 
@@ -1135,35 +1154,45 @@ private fun filterTaskCustomersByStatus(customers: List<TaskCustomer>, statusKey
 /**
  * 任务执行页通话状态展示归一：
  * - pending（待拨打）
+ * - dialing（拨打中：已发起通话但还未拿到最终判定）
  * - connected（真人已接通）
  * - unanswered（响铃未接通，兼容历史 voicemail/failed/...）
+ *
+ * 关键：当 callStatus=called/calling/ringing 而 callResult 还没有"已接通"标识时，
+ * 不能直接判负为"响铃未接通"，否则刚拨号但还没出最终结果的客户会被误显示为未接通。
  */
 private fun normalizeTaskCallStatusForDisplay(callStatus: String?, callResult: String?): String {
     val status = callStatus?.trim()?.lowercase()
+    val r = callResult?.trim()
+    val isConnectedResult = !r.isNullOrBlank() && (
+        r == "真人已接通" ||
+            r == "已接听" ||
+            r.equals("connected", ignoreCase = true) ||
+            r.equals("answered", ignoreCase = true) ||
+            r == "通话完成"
+        )
+    val isUnansweredResult = !r.isNullOrBlank() && !isConnectedResult
 
     // 1) 优先使用 callStatus
     when (status) {
         null, "", "pending" -> return "pending"
         "connected", "completed" -> return "connected"
         "unanswered" -> return "unanswered"
+        // 拨打中的中间态：尚未给出最终判定
+        // 若 callResult 已经携带最终结果，则按结果展示，否则保持"拨打中"
+        "called", "calling", "ringing" -> return when {
+            isConnectedResult -> "connected"
+            isUnansweredResult -> "unanswered"
+            else -> "dialing"
+        }
         // 兼容历史值：统一归为响铃未接通
-        "voicemail", "failed", "rejected", "busy", "power_off", "no_answer", "ivr", "other", "called", "calling", "ringing" ->
+        "voicemail", "failed", "rejected", "busy", "power_off", "no_answer", "ivr", "other" ->
             return "unanswered"
     }
 
     // 2) 回退使用 callResult
-    val r = callResult?.trim()
     if (r.isNullOrBlank()) return "pending"
-    if (
-        r == "真人已接通" ||
-        r == "已接听" ||
-        r.equals("connected", ignoreCase = true) ||
-        r.equals("answered", ignoreCase = true) ||
-        r == "通话完成"
-    ) {
-        return "connected"
-    }
-    return "unanswered"
+    return if (isConnectedResult) "connected" else "unanswered"
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1824,8 +1853,9 @@ private fun formatFileSize(size: Long): String {
 private fun CustomerStatusChip(status: String) {
     val (color, text) = when (status) {
         "pending" -> MaterialTheme.colorScheme.outline to "待拨打"
+        "dialing" -> MaterialTheme.colorScheme.tertiary to "拨打中"
         "connected", "completed" -> MaterialTheme.colorScheme.primary to "真人已接通"
-        // 除 pending / connected 外的全部，统一归为响铃未接通（兼容历史 voicemail/failed/...）
+        // 除 pending / dialing / connected 外的全部，统一归为响铃未接通（兼容历史 voicemail/failed/...）
         else -> MaterialTheme.colorScheme.error to "响铃未接通"
     }
 
