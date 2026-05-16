@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Card, Descriptions, QRCode, Button, Spin, Typography, Divider, Tooltip, Table, Tag, Space } from 'antd';
 import { DownloadOutlined, AndroidOutlined, QrcodeOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { versionApi } from '../../services/api';
+import { getApkDownloadUrl } from '../../utils/apkDownloadUrl';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -108,7 +109,7 @@ export default function AppDownload() {
           <Button
             type="link"
             icon={<DownloadOutlined />}
-            href={record.apk_url}
+            href={getApkDownloadUrl(record.apk_url, record.download_url)}
             target="_blank"
           >
             下载
@@ -117,7 +118,7 @@ export default function AppDownload() {
             title={
               <div style={{ padding: 8 }}>
                 <QRCode
-                  value={record.apk_url}
+                  value={getApkDownloadUrl(record.apk_url, record.download_url)}
                   size={200}
                 />
                 <div style={{ textAlign: 'center', marginTop: 8, color: '#666' }}>
@@ -130,7 +131,7 @@ export default function AppDownload() {
           >
             <div style={{ cursor: 'pointer', display: 'inline-flex' }}>
               <QRCode
-                value={record.apk_url}
+                value={getApkDownloadUrl(record.apk_url, record.download_url)}
                 size={48}
               />
             </div>
@@ -170,7 +171,7 @@ export default function AppDownload() {
               <Button
                 type="primary"
                 icon={<DownloadOutlined />}
-                href={latestVersion.apk_url || latestVersion.download_url}
+                href={getApkDownloadUrl(latestVersion.apk_url, latestVersion.download_url)}
                 target="_blank"
               >
                 下载APK
@@ -179,7 +180,7 @@ export default function AppDownload() {
                 title={
                   <div style={{ padding: 8 }}>
                     <QRCode
-                      value={latestVersion.apk_url || latestVersion.download_url || ''}
+                      value={getApkDownloadUrl(latestVersion.apk_url, latestVersion.download_url)}
                       size={200}
                     />
                     <div style={{ textAlign: 'center', marginTop: 8, color: '#666' }}>
@@ -192,7 +193,7 @@ export default function AppDownload() {
               >
                 <div style={{ cursor: 'pointer' }}>
                   <QRCode
-                    value={latestVersion.apk_url || latestVersion.download_url || ''}
+                    value={getApkDownloadUrl(latestVersion.apk_url, latestVersion.download_url)}
                     size={48}
                   />
                 </div>
@@ -212,7 +213,7 @@ export default function AppDownload() {
             </Descriptions.Item>
             <Descriptions.Item label="下载地址">
               <Text copyable style={{ fontSize: 12 }}>
-                {latestVersion.apk_url || latestVersion.download_url}
+                {getApkDownloadUrl(latestVersion.apk_url, latestVersion.download_url)}
               </Text>
             </Descriptions.Item>
             <Descriptions.Item label="更新日志" span={3}>
@@ -236,7 +237,7 @@ export default function AppDownload() {
               border: '1px solid #f0f0f0'
             }}>
               <QRCode
-                value={latestVersion.apk_url || latestVersion.download_url || ''}
+                value={getApkDownloadUrl(latestVersion.apk_url, latestVersion.download_url)}
                 size={200}
               />
             </div>

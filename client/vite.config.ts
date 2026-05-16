@@ -14,6 +14,11 @@ export default defineConfig({
         target: 'http://localhost:8081',  // 后端服务地址
         changeOrigin: true,
         secure: false
+      },
+      '/uploads': {
+        target: 'http://localhost:8081',  // APK 等上传文件
+        changeOrigin: true,
+        secure: false
       }
     }
   }

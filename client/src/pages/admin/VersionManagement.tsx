@@ -30,6 +30,8 @@ import {
 } from '@ant-design/icons';
 import { Tooltip } from 'antd';
 import type { UploadFile } from 'antd/es/upload/interface';
+import { versionApi } from '../../services/api';
+import { getApkDownloadUrl } from '../../utils/apkDownloadUrl';
 
 const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
@@ -41,6 +43,7 @@ interface VersionInfo {
   version_name: string;
   platform: string;
   apk_url: string;
+  download_url?: string;
   update_log: string;
   force_update: number;
   min_version_code: number;
@@ -61,18 +64,12 @@ export default function VersionManagement() {
   const fetchVersions = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/version/list', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setVersions(data);
-        // 设置当前活跃版本
-        const active = data.find((v: VersionInfo) => v.is_active === 1);
-        setCurrentVersion(active || null);
-      }
+      const response = await versionApi.getVersions();
+      const data = response.data || [];
+      setVersions(data);
+      // 设置当前活跃版本
+      const active = data.find((v: VersionInfo) => v.is_active === 1);
+      setCurrentVersion(active || null);
     } catch (error) {
       message.error('获取版本列表失败');
     } finally {
@@ -97,23 +94,9 @@ export default function VersionManagement() {
     formData.append('version_code', versionCode);
 
     try {
-      const response = await fetch('/api/version/upload', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: formData
-      });
-
-      if (response.ok) {
-        await response.json();
-        message.success('APK上传成功');
-        return true;
-      } else {
-        const error = await response.json();
-        message.error(error.error || '上传失败');
-        return false;
-      }
+      await versionApi.uploadApk(formData);
+      message.success('APK上传成功');
+      return true;
     } catch (error) {
       message.error('上传失败');
       return false;
@@ -128,25 +111,12 @@ export default function VersionManagement() {
     }
 
     try {
-      const response = await fetch('/api/version/create', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify(values)
-      });
-
-      if (response.ok) {
-        message.success('版本发布成功');
-        setModalVisible(false);
-        form.resetFields();
-        setUploadedFile(null);
-        fetchVersions();
-      } else {
-        const error = await response.json();
-        message.error(error.error || '发布失败');
-      }
+      await versionApi.createVersion(values);
+      message.success('版本发布成功');
+      setModalVisible(false);
+      form.resetFields();
+      setUploadedFile(null);
+      fetchVersions();
     } catch (error) {
       message.error('发布失败');
     }
@@ -160,20 +130,9 @@ export default function VersionManagement() {
       content: `确定要删除版本 ${record.version_name} 吗？`,
       onOk: async () => {
         try {
-          const response = await fetch(`/api/version/${record.id}`, {
-            method: 'DELETE',
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('token')}`
-            }
-          });
-
-          if (response.ok) {
-            message.success('删除成功');
-            fetchVersions();
-          } else {
-            const error = await response.json();
-            message.error(error.error || '删除失败');
-          }
+          await versionApi.deleteVersion(record.id);
+          message.success('删除成功');
+          fetchVersions();
         } catch (error) {
           message.error('删除失败');
         }
@@ -241,7 +200,7 @@ export default function VersionManagement() {
           <Button
             type="link"
             icon={<DownloadOutlined />}
-            href={record.apk_url}
+            href={getApkDownloadUrl(record.apk_url, record.download_url)}
             target="_blank"
           >
             下载
@@ -250,7 +209,7 @@ export default function VersionManagement() {
             title={
               <div style={{ padding: 8 }}>
                 <QRCode
-                  value={record.apk_url}
+                  value={getApkDownloadUrl(record.apk_url, record.download_url)}
                   size={200}
                   icon="/logo.png"
                   iconSize={40}
@@ -265,7 +224,7 @@ export default function VersionManagement() {
           >
             <div style={{ cursor: 'pointer', display: 'inline-flex' }}>
               <QRCode
-                value={record.apk_url}
+                value={getApkDownloadUrl(record.apk_url, record.download_url)}
                 size={48}
                 icon="/logo.png"
                 iconSize={14}
@@ -309,7 +268,7 @@ export default function VersionManagement() {
               <Button
                 type="primary"
                 icon={<DownloadOutlined />}
-                href={currentVersion.apk_url}
+                href={getApkDownloadUrl(currentVersion.apk_url, currentVersion.download_url)}
                 target="_blank"
               >
                 下载APK
@@ -318,7 +277,7 @@ export default function VersionManagement() {
                 title={
                   <div style={{ padding: 8 }}>
                     <QRCode
-                      value={currentVersion.apk_url}
+                      value={getApkDownloadUrl(currentVersion.apk_url, currentVersion.download_url)}
                       size={200}
                       icon="/logo.png"
                       iconSize={40}
@@ -333,7 +292,7 @@ export default function VersionManagement() {
               >
                 <div style={{ cursor: 'pointer' }}>
                   <QRCode
-                    value={currentVersion.apk_url}
+                    value={getApkDownloadUrl(currentVersion.apk_url, currentVersion.download_url)}
                     size={48}
                     icon="/logo.png"
                     iconSize={14}
@@ -354,7 +313,7 @@ export default function VersionManagement() {
               {new Date(currentVersion.created_at).toLocaleString()}
             </Descriptions.Item>
             <Descriptions.Item label="下载地址">
-              <Text copyable style={{ fontSize: 12 }}>{currentVersion.apk_url}</Text>
+              <Text copyable style={{ fontSize: 12 }}>{getApkDownloadUrl(currentVersion.apk_url, currentVersion.download_url)}</Text>
             </Descriptions.Item>
             <Descriptions.Item label="更新日志" span={3}>
               <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{currentVersion.update_log}</pre>
@@ -377,7 +336,7 @@ export default function VersionManagement() {
               border: '1px solid #f0f0f0'
             }}>
               <QRCode 
-                value={currentVersion.apk_url} 
+                value={getApkDownloadUrl(currentVersion.apk_url, currentVersion.download_url)} 
                 size={200}
                 icon="/logo.png"
                 iconSize={40}

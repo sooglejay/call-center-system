@@ -452,6 +452,21 @@ if [ "$SKIP_NGINX" = false ] && [ -n "$CONFIG_FILE" ]; then
         proxy_read_timeout 300s;
     }
     
+    # 上传文件代理 - APK 下载等资源由后端提供
+    location /$SUBPATH/uploads/ {
+        proxy_pass http://localhost:$API_PORT/uploads/;
+        proxy_http_version 1.1;
+        
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 300s;
+    }
+
     # 静态资源缓存
     location /$SUBPATH/assets/ {
         proxy_pass http://localhost:$HTTP_PORT/assets/;

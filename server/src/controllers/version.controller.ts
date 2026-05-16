@@ -34,6 +34,34 @@ const ensureWritableApkDir = () => {
   return preferredDir;
 };
 
+const getPublicBaseUrl = (req: Request) => {
+  const forwardedProto = req.get('x-forwarded-proto')?.split(',')[0]?.trim();
+  const protocol = forwardedProto || req.protocol;
+  return `${protocol}://${req.get('host')}`;
+};
+
+const getApkUrlPath = (apkUrl: string) => {
+  if (!apkUrl) {
+    return '';
+  }
+
+  try {
+    return new URL(apkUrl).pathname;
+  } catch (error) {
+    return apkUrl.startsWith('/') ? apkUrl : `/uploads/apk/${path.basename(apkUrl)}`;
+  }
+};
+
+const withCurrentDownloadUrl = <T extends Record<string, any>>(req: Request, version: T): T => {
+  const apkPath = getApkUrlPath(version.apk_url);
+
+  return {
+    ...version,
+    apk_url: apkPath,
+    download_url: apkPath ? `${getPublicBaseUrl(req)}${apkPath}` : ''
+  };
+};
+
 /**
  * 检查版本更新
  * GET /api/version/check
@@ -68,7 +96,7 @@ export const checkVersion = async (req: Request, res: Response) => {
       });
     }
 
-    const latestVersion = result.rows[0];
+    const latestVersion = withCurrentDownloadUrl(req, result.rows[0]);
     
     // 检查是否需要强制更新
     const minVersionCode = latestVersion.min_version_code || latestVersion.version_code;
@@ -77,7 +105,8 @@ export const checkVersion = async (req: Request, res: Response) => {
     res.json({
       version_code: latestVersion.version_code,
       version_name: latestVersion.version_name,
-      apk_url: latestVersion.apk_url,
+      apk_url: latestVersion.download_url,
+      download_url: latestVersion.download_url,
       update_log: latestVersion.update_log,
       force_update: needForceUpdate || latestVersion.force_update === 1,
       min_version_code: minVersionCode
@@ -105,7 +134,7 @@ export const getVersionList = async (req: Request, res: Response) => {
       [platform]
     );
 
-    res.json(result.rows);
+    res.json(result.rows.map((version: any) => withCurrentDownloadUrl(req, version)));
   } catch (error) {
     console.error('获取版本列表失败:', error);
     res.status(500).json({ error: '获取版本列表失败' });
@@ -137,9 +166,8 @@ export const createVersion = async (req: Request, res: Response) => {
       });
     }
 
-    // 构建APK下载URL
-    const baseUrl = `${req.protocol}://${req.get('host')}`;
-    const apkUrl = `${baseUrl}/uploads/apk/${apkFileName}`;
+    // 数据库保存相对路径，避免域名变更后历史版本仍指向旧域名
+    const apkUrl = `/uploads/apk/${apkFileName}`;
 
     // 检查该版本是否已存在
     const existingVersion = query(
@@ -246,9 +274,8 @@ export const uploadApk = async (req: Request, res: Response) => {
     // 移动文件
     fs.renameSync(req.file.path, newPath);
 
-    // 构建下载URL
-    const baseUrl = `${req.protocol}://${req.get('host')}`;
-    const apkUrl = `${baseUrl}/uploads/apk/${newFileName}`;
+    // 数据库保存相对路径，避免域名变更后历史版本仍指向旧域名
+    const apkUrl = `/uploads/apk/${newFileName}`;
 
     // 检查该版本号是否已存在
     const existingVersion = query(
@@ -270,7 +297,7 @@ export const uploadApk = async (req: Request, res: Response) => {
         message: 'APK已覆盖更新',
         file_name: newFileName,
         file_size: req.file.size,
-        download_url: apkUrl,
+        download_url: `${getPublicBaseUrl(req)}${apkUrl}`,
         updated: true,
         version_code: version_code
       });
@@ -280,7 +307,7 @@ export const uploadApk = async (req: Request, res: Response) => {
       message: 'APK上传成功',
       file_name: newFileName,
       file_size: req.file.size,
-      download_url: apkUrl
+      download_url: `${getPublicBaseUrl(req)}${apkUrl}`
     });
   } catch (error) {
     console.error('上传APK失败:', error);
@@ -356,7 +383,7 @@ export const getCurrentVersion = async (req: Request, res: Response) => {
       return res.json(null);
     }
 
-    res.json(result.rows[0]);
+    res.json(withCurrentDownloadUrl(req, result.rows[0]));
   } catch (error) {
     console.error('获取当前版本失败:', error);
     res.status(500).json({ error: '获取当前版本失败' });
