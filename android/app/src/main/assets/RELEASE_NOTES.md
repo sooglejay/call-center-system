@@ -1,3 +1,17 @@
+## v153 (2026-05-16) - 2026-05-16 Web APK 下载域名迁移兼容修复
+
+- 本次完成：修复 Web 后台在域名从 A 切换到 B 后，APK 下载按钮、二维码和复制地址仍访问旧 A 域名导致无法下载的问题。
+- 前端：新增 `getApkDownloadUrl()`，将历史数据库中保存的 `/uploads/apk/...` 旧绝对 URL 归一到当前 Web 访问域名，并兼容 `/callcenter` 子路径部署。
+- 后端：新上传/发布 APK 时改为保存相对路径，版本列表/当前版本接口返回基于当前请求域名生成的 `download_url`，同时兼容存量旧绝对 URL。
+- 部署：补充 `/uploads/` 与 `/callcenter/uploads/` 的 Nginx/Vite 代理配置，确保 APK 静态资源可从当前域名访问。
+- 验证结果：已执行 `pnpm run build`（client）和 `pnpm run build`（server），均构建通过。
+
+### 构建信息
+- **Commit ID**: `f7e4a236`
+- **Commit Message**: fix: make apk downloads follow current domain
+
+---
+
 ## v152 (2026-05-10) - 146   现在支持以下 Google Pixel 录音相关的开关：
 
 ### 现在可以正确识别的场景
